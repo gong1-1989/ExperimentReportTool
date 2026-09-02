@@ -71,6 +71,7 @@ TableBlockEditor::TableBlockEditor(const ContentBlock& block, QWidget* parent)
     if (!block.data.isEmpty()) {
         setBlockData(block.data);
     }
+    setupTable();
 }
 
 QJsonObject TableBlockEditor::blockData() const
@@ -148,6 +149,7 @@ QString TableBlockEditor::plainText() const
 void TableBlockEditor::onAddRow()
 {
     m_table->insertRow(m_table->rowCount());
+    setupTable();
     notifyContentChanged();
 }
 
@@ -163,6 +165,7 @@ void TableBlockEditor::onRemoveRow()
 {
     if (m_table->rowCount() > 1) {
         m_table->removeRow(m_table->currentRow() >= 0 ? m_table->currentRow() : m_table->rowCount() - 1);
+        setupTable();
         notifyContentChanged();
     }
 }
@@ -171,6 +174,7 @@ void TableBlockEditor::onRemoveColumn()
 {
     if (m_table->columnCount() > 1) {
         m_table->removeColumn(m_table->currentColumn() >= 0 ? m_table->currentColumn() : m_table->columnCount() - 1);
+        m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         notifyContentChanged();
     }
 }
@@ -179,7 +183,12 @@ void TableBlockEditor::onCellChanged(int row, int col)
 {
     Q_UNUSED(row);
     Q_UNUSED(col);
+    //setupTable();
     notifyContentChanged();
+}
+
+void TableBlockEditor::setupTable(){
+    setMinimumHeight((m_table->rowCount()+1)*33);
 }
 
 // ===========================================================================
@@ -219,8 +228,9 @@ ImageBlockEditor::ImageBlockEditor(const ContentBlock& block, QWidget* parent)
     connect(m_captionEdit, &QLineEdit::textChanged, this, &ImageBlockEditor::onCaptionChanged);
 
     if (!block.data.isEmpty()) {
-        setBlockData(block.data);
+        setBlockData(block.data);        
     }
+    setMinimumSize(m_displayWidth,m_imageLabel->height()+m_selectBtn->height());
 }
 
 QJsonObject ImageBlockEditor::blockData() const
@@ -273,12 +283,14 @@ void ImageBlockEditor::updateImageDisplay()
     }
 
     // 按宽度缩放
-    const int maxWidth = qMin(m_displayWidth, width() - 40);
-    if (pixmap.width() > maxWidth) {
-        pixmap = pixmap.scaledToWidth(maxWidth, Qt::SmoothTransformation);
+    //const int maxWidth = qMin(m_displayWidth, width() - 40);
+    if (pixmap.width() > m_displayWidth) {
+        pixmap = pixmap.scaledToWidth(m_displayWidth, Qt::SmoothTransformation);
     }
+    //m_displayWidth=pixmap.width();
+    m_imageLabel->setMinimumHeight(pixmap.height());
     m_imageLabel->setPixmap(pixmap);
-    m_imageLabel->setStyleSheet("QLabel { border: none; background: transparent; }");
+    m_imageLabel->setStyleSheet("QLabel { border: none; background: transparent; }");    
 }
 
 // ===========================================================================
@@ -318,19 +330,21 @@ CodeBlockEditor::CodeBlockEditor(const ContentBlock& block, QWidget* parent)
         "border: 1px solid #333; border-radius: 4px; padding: 8px; "
         "selection-background-color: #264f78; }");
     m_codeEdit->setPlaceholderText(tr("在此输入代码..."));
-    m_codeEdit->setMaximumHeight(400);
+    m_codeEdit->setMinimumHeight(100);
     layout->addWidget(m_codeEdit);
 
     connect(m_copyBtn, &QPushButton::clicked, this, &CodeBlockEditor::onCopyCode);
     connect(m_languageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &CodeBlockEditor::onLanguageChanged);
     connect(m_codeEdit, &QPlainTextEdit::textChanged, this, [this]() {
+        setMinimumHeight(m_codeEdit->height()+m_languageCombo->height());
         notifyContentChanged();
     });
 
     if (!block.data.isEmpty()) {
         setBlockData(block.data);
     }
+    setMinimumHeight(m_codeEdit->height()+m_languageCombo->height());
 }
 
 QJsonObject CodeBlockEditor::blockData() const
@@ -427,6 +441,7 @@ void ChartBlockEditor::setupChartArea()
     // 图表容器
     m_chartContainer = new QWidget(this);
     m_chartContainer->setMinimumHeight(300);
+    setMinimumHeight(350);
     m_chartContainer->setStyleSheet("QWidget { background: white; border: 1px solid #e0e0e0; border-radius: 6px; }");
     QVBoxLayout* containerLayout = new QVBoxLayout(m_chartContainer);
     containerLayout->setContentsMargins(8, 8, 8, 8);

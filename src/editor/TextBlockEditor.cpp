@@ -36,7 +36,7 @@ AutoResizeTextEdit::AutoResizeTextEdit(QWidget* parent)
     // 接受富文本粘贴
     setAcceptRichText(true);
 
-    // 不自动换行（由父容器宽度决定）
+    // 自动换行（由父容器宽度决定）
     setWordWrapMode(QTextOption::WordWrap);
 
     // 连接文档大小变化信号
@@ -109,7 +109,7 @@ void AutoResizeTextEdit::insertFromMimeData(const QMimeData* source)
 void AutoResizeTextEdit::onDocumentSizeChanged(const QSizeF& size)
 {
     Q_UNUSED(size);
-    const int newHeight = qMax(m_minHeight, qCeil(document()->size().height()) + 8);
+    int newHeight = sizeHint().height();
     if (newHeight != height()) {
         setFixedHeight(newHeight);
         emit heightChanged(newHeight);
@@ -143,6 +143,7 @@ TextBlockEditor::TextBlockEditor(const ContentBlock& block, QWidget* parent)
     if (!block.data.isEmpty()) {
         setBlockData(block.data);
     }
+    setMinimumHeight(m_textEdit->height());
 }
 
 // ===========================================================================
@@ -392,7 +393,7 @@ void TextBlockEditor::onTextChanged()
     if (m_textType == BlockType::NumberedList) {
         updateListNumbering();
     }
-
+    setMinimumHeight(m_textEdit->height());
     notifyContentChanged();
 }
 

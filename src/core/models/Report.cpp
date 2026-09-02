@@ -316,8 +316,9 @@ QString Report::statusDisplayName() const
     case ReportStatus::Draft:     return QStringLiteral("草稿");
     case ReportStatus::Submitted: return QStringLiteral("已提交");
     case ReportStatus::Reviewed:  return QStringLiteral("已审核");
-    }
-    return QStringLiteral("未知");
+    default:
+        return QStringLiteral("未知");
+    }    
 }
 
 QString Report::statusToString() const

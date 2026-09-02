@@ -869,6 +869,8 @@ void MainWindow::onReportOpenRequested(qint64 reportId)
     // 创建新的报告编辑器窗口
     ReportEditorWindow* editorWindow = new ReportEditorWindow(report, this);
     editorWindow->setAttribute(Qt::WA_DeleteOnClose);
+    connect(editorWindow,&ReportEditorWindow::windowClosed,this,[this,editorWindow](){
+        m_editorWindows.removeOne(editorWindow);});
     connect(editorWindow, &ReportEditorWindow::reportSaved,
             this, &MainWindow::onReportEditorSaved);
     connect(editorWindow, &ReportEditorWindow::windowClosed,
@@ -922,13 +924,7 @@ void MainWindow::onReportEditorSaved(qint64 reportId)
 void MainWindow::onReportEditorClosed(qint64 reportId)
 {
     Q_UNUSED(reportId);
-    // 从列表中移除已关闭的窗口
-    for (int i = m_editorWindows.size() - 1; i >= 0; --i) {
-        ReportEditorWindow* win = m_editorWindows.at(i);
-        if (!win || !win->isVisible()) {
-            m_editorWindows.removeAt(i);
-        }
-    }
+
     m_reportList->refreshList();
     updateStatusBar();
 }
