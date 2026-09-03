@@ -233,27 +233,35 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
     // 元信息
     if (config.includeMeta) {
         html += "<div class='meta'>";
-        html += QString("<span><strong>作者:</strong> %1</span>").arg(report->author().toHtmlEscaped());
-        html += QString("<span><strong>实验日期:</strong> %1</span>").arg(report->experimentDate().toString("yyyy-MM-dd"));
-        html += QString("<span><strong>创建时间:</strong> %1</span>").arg(report->createdAt().toString("yyyy-MM-dd hh:mm"));
+        html += QString("<span><strong>作者:</strong> %1  </span>").arg(report->author().toHtmlEscaped());
+        html += QString("<span><strong>实验日期:</strong> %1  </span>").arg(report->experimentDate().toString("yyyy-MM-dd"));
+        html += QString("<span><strong>创建时间:</strong> %1  </span>").arg(report->createdAt().toString("yyyy-MM-dd hh:mm"));
         html += "</div>";
     }
+
+    auto stripHtml = [](const QString &htmlStr) -> QString
+    {
+        QTextDocument doc;
+        doc.setHtml(htmlStr);
+        return doc.toPlainText();
+    };
 
     // 内容块
     for (int i = 0; i < report->blockCount(); ++i) {
         const ContentBlock& block = report->blockAt(i);
+
         switch (block.type) {
         case BlockType::Heading1:
-            html += QString("<h2>%1</h2>").arg(block.data.value("text").toString().toHtmlEscaped());
+            html += QString("<h2>%1</h2>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
             break;
         case BlockType::Heading2:
-            html += QString("<h3>%1</h3>").arg(block.data.value("text").toString().toHtmlEscaped());
+            html += QString("<h3>%1</h3>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());;
             break;
         case BlockType::Heading3:
-            html += QString("<h3 style='font-size:12pt;'>%1</h3>").arg(block.data.value("text").toString().toHtmlEscaped());
+            html += QString("<h3 style='font-size:12pt;'>%1</h3>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
             break;
         case BlockType::Paragraph:
-            html += QString("<p>%1</p>").arg(block.data.value("text").toString().toHtmlEscaped());
+            html += QString("<p>%1</p>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
             break;
         case BlockType::BulletList:
             html += "<ul>";
@@ -274,7 +282,7 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
             html += "</ol>";
             break;
         case BlockType::Quote:
-            html += QString("<blockquote>%1</blockquote>").arg(block.data.value("text").toString().toHtmlEscaped());
+            html += QString("<blockquote>%1</blockquote>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
             break;
         case BlockType::CodeBlock:
             html += QString("<pre><code>%1</code></pre>").arg(block.data.value("code").toString().toHtmlEscaped());
@@ -283,8 +291,8 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
             html += "<hr>";
             break;
         case BlockType::Image: {
-            const QString caption = block.data.value("caption").toString();
-            html += QString("<p style='text-align:center; color:#888; font-size:10pt;'>[图片: %1]</p>").arg(caption.toHtmlEscaped());
+            const QString caption = "file:///"+block.data.value("path").toString();
+            html += QString("<p style='text-align:center; color:#888; font-size:10pt;'><img src=\'%1\'></p>").arg(caption);
             break;
         }
         case BlockType::Table:
