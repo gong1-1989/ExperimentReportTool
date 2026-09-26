@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SearchResultDialog</class>
+ <widget class="QDialog" name="SearchResultDialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>900</width><height>650</height></rect></property>
+  <property name="windowTitle"><string>全文搜索</string></property>
+  <property name="minimumSize"><size><width>900</width><height>650</height></size></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing"><number>8</number></property>
+   <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
+   <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="searchLayout">
+     <item><widget class="QLineEdit" name="m_searchEdit"><property name="placeholderText"><string>输入搜索关键词...</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_searchBtn"><property name="text"><string>搜索</string></property></widget></item>
+     <item><widget class="QLabel" name="labelProject"><property name="text"><string>项目:</string></property></widget></item>
+     <item><widget class="QComboBox" name="m_projectFilter"/></item>
+     <item><widget class="QLabel" name="labelHistory"><property name="text"><string>历史:</string></property></widget></item>
+     <item><widget class="QComboBox" name="m_historyCombo"/></item>
+     <item><widget class="QPushButton" name="m_clearHistoryBtn"><property name="text"><string>清除</string></property></widget></item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QSplitter" name="m_splitter">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <widget class="QListWidget" name="m_resultList"/>
+     <widget class="QTextBrowser" name="m_detailBrowser"/>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="m_statusLabel">
+     <property name="text"><string>输入关键词开始搜索</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

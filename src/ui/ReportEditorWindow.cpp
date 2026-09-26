@@ -4,6 +4,7 @@
  */
 
 #include "ReportEditorWindow.h"
+#include "ui_ReportEditorWindow.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/ReportEditor.h"
 #include "editor/TextBlockEditor.h"
 #include "export/ExportManager.h"
@@ -25,6 +26,10 @@
 #include <QCloseEvent>
 #include <QApplication>
 #include <QClipboard>
+#include <QLabel>
+#include <QComboBox>
+#include <QMenu>
+#include <QFile>
 
 // ===========================================================================
 // 构造与析构
@@ -32,6 +37,7 @@
 
 ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* parent)
     : QMainWindow(parent)
+    , ui(new Ui::ReportEditorWindow)  // 创建 UI 界面对象
     , m_editor(nullptr)
     , m_report(report)
     , m_printManager(nullptr)
@@ -47,7 +53,12 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     , m_isNewReport(report.isNull() || !report->isPersisted())
     , m_zoomFactor(1.0)
 {
-    setupUi();
+    ui->setupUi(this);  // 从 .ui 文件加载界面
+
+    // 动态创建 ReportEditor 组件并设置为中央控件
+    m_editor = new ReportEditor(this);
+    setCentralWidget(m_editor);
+
     m_printManager = new PrintManager(this);
     createActions();
     createMenus();
@@ -74,17 +85,12 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
 
 ReportEditorWindow::~ReportEditorWindow()
 {
+    delete ui;
 }
 
 // ===========================================================================
 // UI 初始化
 // ===========================================================================
-
-void ReportEditorWindow::setupUi()
-{
-    m_editor = new ReportEditor(this);
-    setCentralWidget(m_editor);
-}
 
 void ReportEditorWindow::createActions()
 {
@@ -122,26 +128,26 @@ void ReportEditorWindow::createMenus()
 
     // 文件菜单
     QMenu* fileMenu = bar->addMenu(tr("文件(&F)"));
-    fileMenu->addAction(tr("新建(&N)"), this, &ReportEditorWindow::onNew, QKeySequence::New);
+    fileMenu->addAction(tr("新建(&N)"), QKeySequence::New, this, &ReportEditorWindow::onNew);
     fileMenu->addAction(m_actionSave);
     fileMenu->addAction(tr("另存为(&A)..."), this, &ReportEditorWindow::onSaveAs);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("导出(&E)..."), this, &ReportEditorWindow::onExport);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("打印预览(&V)..."), this, &ReportEditorWindow::onPrintPreview);
-    fileMenu->addAction(tr("打印(&P)..."), this, &ReportEditorWindow::onPrint, QKeySequence::Print);
+    fileMenu->addAction(tr("打印(&P)..."), QKeySequence::Print, this, &ReportEditorWindow::onPrint);
     fileMenu->addAction(tr("页面设置(&G)..."), this, &ReportEditorWindow::onPageSetup);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("版本历史(&H)..."), this, &ReportEditorWindow::onVersionHistory);
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("关闭(&C)"), this, &QWidget::close, QKeySequence::Close);
+    fileMenu->addAction(tr("关闭(&C)"), QKeySequence::Close, this, &QWidget::close);
 
     // 编辑菜单
     QMenu* editMenu = bar->addMenu(tr("编辑(&E)"));
     editMenu->addAction(m_actionUndo);
     editMenu->addAction(m_actionRedo);
     editMenu->addSeparator();
-    editMenu->addAction(tr("查找(&F)..."), this, &ReportEditorWindow::onFind, QKeySequence::Find);
+    editMenu->addAction(tr("查找(&F)..."), QKeySequence::Find, this, &ReportEditorWindow::onFind);
     editMenu->addSeparator();
     editMenu->addAction(tr("编辑标签(&T)..."), this, &ReportEditorWindow::onEditTags);
     editMenu->addAction(tr("管理标签(&M)..."), this, &ReportEditorWindow::onManageTags);
@@ -163,9 +169,9 @@ void ReportEditorWindow::createMenus()
     formatMenu->addAction(m_actionUnderline);
     formatMenu->addSeparator();
     QMenu* headingMenu = formatMenu->addMenu(tr("标题"));
-    headingMenu->addAction(tr("一级标题"), this, [this]() { onHeading(1); }, QKeySequence("Ctrl+1"));
-    headingMenu->addAction(tr("二级标题"), this, [this]() { onHeading(2); }, QKeySequence("Ctrl+2"));
-    headingMenu->addAction(tr("三级标题"), this, [this]() { onHeading(3); }, QKeySequence("Ctrl+3"));
+    headingMenu->addAction(tr("一级标题"), QKeySequence("Ctrl+1"), this, [this]() { onHeading(1); });
+    headingMenu->addAction(tr("二级标题"), QKeySequence("Ctrl+2"), this, [this]() { onHeading(2); });
+    headingMenu->addAction(tr("三级标题"), QKeySequence("Ctrl+3"), this, [this]() { onHeading(3); });
     formatMenu->addSeparator();
     formatMenu->addAction(tr("无序列表"), this, [this]() { onList(false); });
     formatMenu->addAction(tr("有序列表"), this, [this]() { onList(true); });
@@ -173,11 +179,11 @@ void ReportEditorWindow::createMenus()
 
     // 视图菜单
     QMenu* viewMenu = bar->addMenu(tr("视图(&V)"));
-    viewMenu->addAction(tr("全屏"), this, &ReportEditorWindow::onToggleFullscreen, QKeySequence("F11"));
+    viewMenu->addAction(tr("全屏"), QKeySequence("F11"), this, &ReportEditorWindow::onToggleFullscreen);
     viewMenu->addSeparator();
-    viewMenu->addAction(tr("放大"), this, &ReportEditorWindow::onZoomIn, QKeySequence("Ctrl++"));
-    viewMenu->addAction(tr("缩小"), this, &ReportEditorWindow::onZoomOut, QKeySequence("Ctrl+-"));
-    viewMenu->addAction(tr("重置缩放"), this, &ReportEditorWindow::onResetZoom, QKeySequence("Ctrl+0"));
+    viewMenu->addAction(tr("放大"), QKeySequence("Ctrl++"), this, &ReportEditorWindow::onZoomIn);
+    viewMenu->addAction(tr("缩小"), QKeySequence("Ctrl+-"), this, &ReportEditorWindow::onZoomOut);
+    viewMenu->addAction(tr("重置缩放"), QKeySequence("Ctrl+0"), this, &ReportEditorWindow::onResetZoom);
 }
 
 void ReportEditorWindow::createToolBar()
@@ -219,11 +225,11 @@ void ReportEditorWindow::createStatusBar()
     m_statusSaveLabel->setStyleSheet("color: #67C23A; padding: 0 8px;");
     bar->addWidget(m_statusSaveLabel);
 
-    QFrame* vLine = new QFrame();
-    vLine->setFrameShape(QFrame::VLine);         // 竖线
-    vLine->setFrameShadow(QFrame::Sunken);
-    vLine->setFixedWidth(2);
-    bar->addWidget(vLine);
+    // QStatusBar 没有 addStretch 方法，用一个空 QWidget 作为弹簧
+    // 使后续的 permanent widget 靠右显示
+    QWidget* spacer = new QWidget(this);
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    bar->addWidget(spacer, 1);
 
     m_statusWordLabel = new QLabel(tr("字数: 0"), this);
     m_statusWordLabel->setStyleSheet("color: #666; padding: 0 8px;");
@@ -232,6 +238,12 @@ void ReportEditorWindow::createStatusBar()
     m_statusPositionLabel = new QLabel(this);
     m_statusPositionLabel->setStyleSheet("color: #666; padding: 0 8px;");
     bar->addPermanentWidget(m_statusPositionLabel);
+}
+
+void ReportEditorWindow::showStatusMessage(const QString& message, int timeout)
+{
+    // 在状态栏显示临时消息，timeout 毫秒后自动消失
+    statusBar()->showMessage(message, timeout);
 }
 
 void ReportEditorWindow::connectSignals()
@@ -627,12 +639,6 @@ void ReportEditorWindow::updateWindowTitle()
 void ReportEditorWindow::updateActionsState()
 {
     m_actionSave->setEnabled(m_editor->isModified());
-}
-
-void ReportEditorWindow::showStatusMessage(const QString &msg, int timeout)
-{
-    // statusBar()->showMessage 展示提示
-    statusBar()->showMessage(msg, timeout);
 }
 
 Report::Ptr ReportEditorWindow::currentReport() const

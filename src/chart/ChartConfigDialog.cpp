@@ -4,12 +4,12 @@
  */
 
 #include "ChartConfigDialog.h"
+#include "ui_ChartConfigDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "core/utils/Logger.h"
 
 #include <QMessageBox>
 #include <QTabWidget>
 #include <QWidget>
-#include <QPushButton>
 
 // ===========================================================================
 // ChartConfig 序列化
@@ -47,7 +47,9 @@ ChartConfig ChartConfig::fromJson(const QJsonObject& json)
     config.title = json.value("title").toString();
     config.xAxisTitle = json.value("x_axis_title").toString();
     config.yAxisTitle = json.value("y_axis_title").toString();
-    config.dataTableId = json.value("data_table_id").toInt(-1);
+    // 注意：dataTableId 是 qint64 类型，必须使用 toVariant().toLongLong() 读取
+    // 默认值为 0（未配置），不能用 -1，因为 -1 会被误认为是表格块的负 ID
+    config.dataTableId = json.value("data_table_id").toVariant().toLongLong(0);
     config.xAxisColumn = json.value("x_axis_column").toInt(0);
 
     if (json.value("y_axis_columns").isArray()) {
@@ -94,196 +96,102 @@ ChartConfigDialog::ChartConfigDialog(const DataTable::List& tables,
                                        const ChartConfig& config,
                                        QWidget* parent)
     : QDialog(parent)
-    , m_typeCombo(nullptr)
-    , m_titleEdit(nullptr)
-    , m_xAxisTitleEdit(nullptr)
-    , m_yAxisTitleEdit(nullptr)
-    , m_tableCombo(nullptr)
-    , m_xAxisCombo(nullptr)
-    , m_yAxisList(nullptr)
-    , m_showLegendCheck(nullptr)
-    , m_showGridCheck(nullptr)
-    , m_showDataPointsCheck(nullptr)
-    , m_themeCombo(nullptr)
-    , m_widthSpin(nullptr)
-    , m_heightSpin(nullptr)
-    , m_buttonBox(nullptr)
+    , ui(new Ui::ChartConfigDialog)  // 创建 UI 界面对象
     , m_tables(tables)
     , m_config(config)
 {
-    setupUi();
+    ui->setupUi(this);  // 从 .ui 文件加载界面
+
+    // 填充图表类型下拉框（先清空 .ui 中定义的无 data 值的选项）
+    ui->m_typeCombo->clear();
+    ui->m_typeCombo->addItem(tr("折线图"), static_cast<int>(ChartType::Line));
+    ui->m_typeCombo->addItem(tr("柱状图"), static_cast<int>(ChartType::Bar));
+    ui->m_typeCombo->addItem(tr("饼图"), static_cast<int>(ChartType::Pie));
+    ui->m_typeCombo->addItem(tr("散点图"), static_cast<int>(ChartType::Scatter));
+    ui->m_typeCombo->addItem(tr("面积图"), static_cast<int>(ChartType::Area));
+
+    // 填充主题下拉框（先清空 .ui 中定义的无 data 值的选项）
+    ui->m_themeCombo->clear();
+    ui->m_themeCombo->addItem(tr("默认"), "light");
+    ui->m_themeCombo->addItem(tr("深色"), "dark");
+
+    // 填充数据表下拉框
+    for (const DataTable::Ptr& table : m_tables) {
+        ui->m_tableCombo->addItem(table->name(), table->id());
+    }
+
+    // 连接信号
+    connect(ui->m_tableCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &ChartConfigDialog::onTableChanged);
+    connect(ui->m_buttonBox, &QDialogButtonBox::accepted,
+            this, &ChartConfigDialog::onAccept);
+    connect(ui->m_buttonBox, &QDialogButtonBox::rejected,
+            this, &QDialog::reject);
+
+    // 加载配置（必须在填充数据之后调用）
     loadConfig();
+
     setWindowTitle(tr("图表配置"));
     resize(600, 550);
 }
 
-void ChartConfigDialog::setupUi()
+// ===========================================================================
+// 析构函数
+// ===========================================================================
+
+ChartConfigDialog::~ChartConfigDialog()
 {
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
-    mainLayout->setSpacing(12);
-
-    // -----------------------------------------------------------------------
-    // 基本设置
-    // -----------------------------------------------------------------------
-    QGroupBox* basicGroup = new QGroupBox(tr("基本设置"), this);
-    QFormLayout* basicLayout = new QFormLayout(basicGroup);
-
-    m_typeCombo = new QComboBox(basicGroup);
-    m_typeCombo->addItem(tr("折线图"), static_cast<int>(ChartType::Line));
-    m_typeCombo->addItem(tr("柱状图"), static_cast<int>(ChartType::Bar));
-    m_typeCombo->addItem(tr("饼图"), static_cast<int>(ChartType::Pie));
-    m_typeCombo->addItem(tr("散点图"), static_cast<int>(ChartType::Scatter));
-    m_typeCombo->addItem(tr("面积图"), static_cast<int>(ChartType::Area));
-    basicLayout->addRow(tr("图表类型:"), m_typeCombo);
-
-    m_titleEdit = new QLineEdit(basicGroup);
-    m_titleEdit->setPlaceholderText(tr("图表标题"));
-    basicLayout->addRow(tr("标题:"), m_titleEdit);
-
-    m_xAxisTitleEdit = new QLineEdit(basicGroup);
-    m_xAxisTitleEdit->setPlaceholderText(tr("X轴标题"));
-    basicLayout->addRow(tr("X轴标题:"), m_xAxisTitleEdit);
-
-    m_yAxisTitleEdit = new QLineEdit(basicGroup);
-    m_yAxisTitleEdit->setPlaceholderText(tr("Y轴标题"));
-    basicLayout->addRow(tr("Y轴标题:"), m_yAxisTitleEdit);
-
-    mainLayout->addWidget(basicGroup);
-
-    // -----------------------------------------------------------------------
-    // 数据源
-    // -----------------------------------------------------------------------
-    QGroupBox* dataGroup = new QGroupBox(tr("数据源"), this);
-    QFormLayout* dataLayout = new QFormLayout(dataGroup);
-
-    m_tableCombo = new QComboBox(dataGroup);
-    for (const DataTable::Ptr& table : m_tables) {
-        m_tableCombo->addItem(table->name(), table->id());
-    }
-    dataLayout->addRow(tr("数据表:"), m_tableCombo);
-
-    m_xAxisCombo = new QComboBox(dataGroup);
-    dataLayout->addRow(tr("X轴列:"), m_xAxisCombo);
-
-    m_yAxisList = new QListWidget(dataGroup);
-    m_yAxisList->setSelectionMode(QAbstractItemView::MultiSelection);
-    m_yAxisList->setMaximumHeight(100);
-    dataLayout->addRow(tr("Y轴列(可多选):"), m_yAxisList);
-
-    mainLayout->addWidget(dataGroup);
-
-    // -----------------------------------------------------------------------
-    // 样式与尺寸
-    // -----------------------------------------------------------------------
-    QHBoxLayout* styleLayout = new QHBoxLayout();
-
-    // 样式
-    QGroupBox* styleGroup = new QGroupBox(tr("样式"), this);
-    QVBoxLayout* styleVLayout = new QVBoxLayout(styleGroup);
-
-    m_showLegendCheck = new QCheckBox(tr("显示图例"), styleGroup);
-    m_showGridCheck = new QCheckBox(tr("显示网格"), styleGroup);
-    m_showDataPointsCheck = new QCheckBox(tr("显示数据点"), styleGroup);
-
-    styleVLayout->addWidget(m_showLegendCheck);
-    styleVLayout->addWidget(m_showGridCheck);
-    styleVLayout->addWidget(m_showDataPointsCheck);
-
-    m_themeCombo = new QComboBox(styleGroup);
-    m_themeCombo->addItem(tr("浅色"), "light");
-    m_themeCombo->addItem(tr("深色"), "dark");
-    styleVLayout->addWidget(new QLabel(tr("主题:"), styleGroup));
-    styleVLayout->addWidget(m_themeCombo);
-    styleVLayout->addStretch();
-
-    styleLayout->addWidget(styleGroup);
-
-    // 尺寸
-    QGroupBox* sizeGroup = new QGroupBox(tr("尺寸"), this);
-    QFormLayout* sizeLayout = new QFormLayout(sizeGroup);
-
-    m_widthSpin = new QSpinBox(sizeGroup);
-    m_widthSpin->setRange(200, 2000);
-    m_widthSpin->setSuffix(tr(" px"));
-    sizeLayout->addRow(tr("宽度:"), m_widthSpin);
-
-    m_heightSpin = new QSpinBox(sizeGroup);
-    m_heightSpin->setRange(150, 1500);
-    m_heightSpin->setSuffix(tr(" px"));
-    sizeLayout->addRow(tr("高度:"), m_heightSpin);
-
-    sizeLayout->addRow(new QLabel(tr("(图表将按比例缩放)"), sizeGroup));
-
-    styleLayout->addWidget(sizeGroup);
-    mainLayout->addLayout(styleLayout);
-
-    // -----------------------------------------------------------------------
-    // 按钮
-    // -----------------------------------------------------------------------
-    m_buttonBox = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    m_buttonBox->button(QDialogButtonBox::Ok)->setText(tr("确定"));
-    m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &ChartConfigDialog::onAccept);
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    mainLayout->addWidget(m_buttonBox);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_tableCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &ChartConfigDialog::onTableChanged);
+    delete ui;
 }
 
 void ChartConfigDialog::loadConfig()
 {
     // 类型
-    const int typeIdx = m_typeCombo->findData(static_cast<int>(m_config.type));
-    if (typeIdx >= 0) m_typeCombo->setCurrentIndex(typeIdx);
+    const int typeIdx = ui->m_typeCombo->findData(static_cast<int>(m_config.type));
+    if (typeIdx >= 0) ui->m_typeCombo->setCurrentIndex(typeIdx);
 
-    m_titleEdit->setText(m_config.title);
-    m_xAxisTitleEdit->setText(m_config.xAxisTitle);
-    m_yAxisTitleEdit->setText(m_config.yAxisTitle);
+    ui->m_titleEdit->setText(m_config.title);
+    ui->m_xAxisTitleEdit->setText(m_config.xAxisTitle);
+    ui->m_yAxisTitleEdit->setText(m_config.yAxisTitle);
 
     // 数据表
-    const int tableIdx = m_tableCombo->findData(m_config.dataTableId);
+    const int tableIdx = ui->m_tableCombo->findData(m_config.dataTableId);
     if (tableIdx >= 0) {
-        m_tableCombo->setCurrentIndex(tableIdx);
+        ui->m_tableCombo->setCurrentIndex(tableIdx);
     }
     updateColumnLists();
 
     // X轴列
-    if (m_config.xAxisColumn >= 0 && m_config.xAxisColumn < m_xAxisCombo->count()) {
-        m_xAxisCombo->setCurrentIndex(m_config.xAxisColumn);
+    if (m_config.xAxisColumn >= 0 && m_config.xAxisColumn < ui->m_xAxisCombo->count()) {
+        ui->m_xAxisCombo->setCurrentIndex(m_config.xAxisColumn);
     }
 
     // Y轴列
-    for (int i = 0; i < m_yAxisList->count(); ++i) {
+    for (int i = 0; i < ui->m_yAxisList->count(); ++i) {
         if (m_config.yAxisColumns.contains(i)) {
-            m_yAxisList->item(i)->setSelected(true);
+            ui->m_yAxisList->item(i)->setSelected(true);
         }
     }
 
     // 样式
-    m_showLegendCheck->setChecked(m_config.showLegend);
-    m_showGridCheck->setChecked(m_config.showGrid);
-    m_showDataPointsCheck->setChecked(m_config.showDataPoints);
+    ui->m_showLegendCheck->setChecked(m_config.showLegend);
+    ui->m_showGridCheck->setChecked(m_config.showGrid);
+    ui->m_showDataPointsCheck->setChecked(m_config.showDataPoints);
 
-    const int themeIdx = m_themeCombo->findData(m_config.theme);
-    if (themeIdx >= 0) m_themeCombo->setCurrentIndex(themeIdx);
+    const int themeIdx = ui->m_themeCombo->findData(m_config.theme);
+    if (themeIdx >= 0) ui->m_themeCombo->setCurrentIndex(themeIdx);
 
     // 尺寸
-    m_widthSpin->setValue(m_config.width);
-    m_heightSpin->setValue(m_config.height);
+    ui->m_widthSpin->setValue(m_config.width);
+    ui->m_heightSpin->setValue(m_config.height);
 }
 
 void ChartConfigDialog::updateColumnLists()
 {
-    m_xAxisCombo->clear();
-    m_yAxisList->clear();
+    ui->m_xAxisCombo->clear();
+    ui->m_yAxisList->clear();
 
-    const int tableIdx = m_tableCombo->currentIndex();
+    const int tableIdx = ui->m_tableCombo->currentIndex();
     if (tableIdx < 0 || tableIdx >= m_tables.size()) return;
 
     const DataTable::Ptr& table = m_tables.at(tableIdx);
@@ -292,8 +200,8 @@ void ChartConfigDialog::updateColumnLists()
         const QString displayName = colDef.unit.isEmpty()
             ? colDef.name
             : QString("%1 (%2)").arg(colDef.name, colDef.unit);
-        m_xAxisCombo->addItem(displayName, col);
-        m_yAxisList->addItem(displayName);
+        ui->m_xAxisCombo->addItem(displayName, col);
+        ui->m_yAxisList->addItem(displayName);
     }
 }
 
@@ -308,35 +216,35 @@ void ChartConfigDialog::onAccept()
     if (!validateConfig()) return;
 
     // 收集配置
-    m_config.type = static_cast<ChartType>(m_typeCombo->currentData().toInt());
-    m_config.title = m_titleEdit->text().trimmed();
-    m_config.xAxisTitle = m_xAxisTitleEdit->text().trimmed();
-    m_config.yAxisTitle = m_yAxisTitleEdit->text().trimmed();
-    m_config.dataTableId = m_tableCombo->currentData().toLongLong();
-    m_config.xAxisColumn = m_xAxisCombo->currentData().toInt();
+    m_config.type = static_cast<ChartType>(ui->m_typeCombo->currentData().toInt());
+    m_config.title = ui->m_titleEdit->text().trimmed();
+    m_config.xAxisTitle = ui->m_xAxisTitleEdit->text().trimmed();
+    m_config.yAxisTitle = ui->m_yAxisTitleEdit->text().trimmed();
+    m_config.dataTableId = ui->m_tableCombo->currentData().toLongLong();
+    m_config.xAxisColumn = ui->m_xAxisCombo->currentData().toInt();
 
     m_config.yAxisColumns.clear();
-    for (const QListWidgetItem* item : m_yAxisList->selectedItems()) {
-        m_config.yAxisColumns.append(m_yAxisList->row(item));
+    for (const QListWidgetItem* item : ui->m_yAxisList->selectedItems()) {
+        m_config.yAxisColumns.append(ui->m_yAxisList->row(item));
     }
 
-    m_config.showLegend = m_showLegendCheck->isChecked();
-    m_config.showGrid = m_showGridCheck->isChecked();
-    m_config.showDataPoints = m_showDataPointsCheck->isChecked();
-    m_config.theme = m_themeCombo->currentData().toString();
-    m_config.width = m_widthSpin->value();
-    m_config.height = m_heightSpin->value();
+    m_config.showLegend = ui->m_showLegendCheck->isChecked();
+    m_config.showGrid = ui->m_showGridCheck->isChecked();
+    m_config.showDataPoints = ui->m_showDataPointsCheck->isChecked();
+    m_config.theme = ui->m_themeCombo->currentData().toString();
+    m_config.width = ui->m_widthSpin->value();
+    m_config.height = ui->m_heightSpin->value();
 
     accept();
 }
 
 bool ChartConfigDialog::validateConfig()
 {
-    if (m_tableCombo->currentIndex() < 0) {
+    if (ui->m_tableCombo->currentIndex() < 0) {
         QMessageBox::warning(this, tr("输入错误"), tr("请选择数据表"));
         return false;
     }
-    if (m_yAxisList->selectedItems().isEmpty()) {
+    if (ui->m_yAxisList->selectedItems().isEmpty()) {
         QMessageBox::warning(this, tr("输入错误"), tr("请至少选择一个Y轴列"));
         return false;
     }

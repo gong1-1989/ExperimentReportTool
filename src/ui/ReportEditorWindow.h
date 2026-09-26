@@ -17,6 +17,11 @@
 
 #include "core/models/Report.h"
 
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class ReportEditorWindow;
+}
+
 // 前向声明
 class ReportEditor;
 
@@ -41,8 +46,6 @@ public:
 
     /// 是否有未保存的更改
     bool isModified() const;
-
-    void applyFormatToCurrentBlock(const QString& format);
 
 signals:
     /// 报告已保存
@@ -100,7 +103,6 @@ private slots:
 
 private:
     /// 初始化 UI
-    void setupUi();
     void createActions();
     void createMenus();
     void createToolBar();
@@ -116,20 +118,25 @@ private:
     /// 更新动作状态
     void updateActionsState();
 
-    void showStatusMessage(const QString &msg, int timeout = 3000);
+    /// 显示状态栏消息
+    void showStatusMessage(const QString& message, int timeout = 3000);
+
+    /// 对当前块应用格式（粗体、斜体、下划线等）
+    void applyFormatToCurrentBlock(const QString& format);
 
     // -----------------------------------------------------------------------
     // 成员变量
     // -----------------------------------------------------------------------
 
-    ReportEditor* m_editor;          ///< 报告编辑器组件
-    Report::Ptr m_report;            ///< 当前报告
+    Ui::ReportEditorWindow* ui;          ///< UI 界面对象（从 .ui 文件自动生成）
+    ReportEditor* m_editor;              ///< 报告编辑器组件
+    Report::Ptr m_report;                ///< 当前报告
     class PrintManager* m_printManager;  ///< 打印管理器
 
-    // 状态栏标签
-    QLabel* m_statusSaveLabel;       ///< 保存状态
-    QLabel* m_statusWordLabel;       ///< 字数
-    QLabel* m_statusPositionLabel;   ///< 光标位置
+    // 状态栏控件（动态创建）
+    QLabel* m_statusSaveLabel;           ///< 保存状态
+    QLabel* m_statusWordLabel;           ///< 字数
+    QLabel* m_statusPositionLabel;       ///< 光标位置
 
     // 动作
     QAction* m_actionSave;

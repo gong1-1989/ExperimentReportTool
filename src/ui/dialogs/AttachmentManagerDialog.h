@@ -19,6 +19,11 @@
 
 #include "core/models/Attachment.h"
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class AttachmentManagerDialog;
+}
 /**
  * @brief 附件管理对话框
  */
@@ -45,26 +50,20 @@ private slots:
     void onRefresh();
 
 private:
-    void setupUi();
+
+    Ui::AttachmentManagerDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     void loadAttachments();
     void updateAttachmentList();
     void updateButtons();
     Attachment::Ptr currentAttachment() const;
-    void showStatusMessage(const QString &msg, int timeout = 3000);
+
+    /// 显示状态消息（对话框中使用 QMessageBox 提示）
+    void showStatusMessage(const QString& message);
 
     // -----------------------------------------------------------------------
     // UI 控件
     // -----------------------------------------------------------------------
 
-    QListWidget* m_attachmentList;    ///< 附件列表
-    QPushButton* m_uploadBtn;          ///< 上传按钮
-    QPushButton* m_downloadBtn;        ///< 下载按钮
-    QPushButton* m_openBtn;            ///< 打开按钮
-    QPushButton* m_deleteBtn;          ///< 删除按钮
-    QPushButton* m_refreshBtn;         ///< 刷新按钮
-    QPushButton* m_closeBtn;           ///< 关闭按钮
-    QLabel* m_infoLabel;               ///< 信息标签
-    QProgressBar* m_progressBar;       ///< 进度条
 
     // -----------------------------------------------------------------------
     // 数据

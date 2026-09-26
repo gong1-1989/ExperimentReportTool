@@ -149,15 +149,17 @@ CsvParseResult CsvParser::parseDevice(QIODevice* device)
         content = QString::fromUtf8(data.mid(3));
     } else {
         // 无 BOM：尝试自动检测编码
-        // 使用 QStringConverter::encodingForData 检测 UTF-8
+        // QStringConverter::encodingForData 返回 std::optional<Encoding>
+        // 如果检测到有效的编码（如 UTF-8），则 optional 有值
+        // 注意：Qt6 中此函数的第二个参数是 qsizetype*（内容长度），不是 bool*
         auto detected = QStringConverter::encodingForData(data);
 
-        if (detected.has_value()== QStringConverter::Utf8) {
-            // 检测为 UTF-8
-            QStringDecoder decoder(detected.value());
+        if (detected.has_value()) {
+            // 检测到有效编码（通常是 UTF-8），使用检测到的编码解码
+            QStringDecoder decoder(*detected);
             content = decoder(data);
-        }else {
-            // 不是有效的 UTF-8，尝试使用系统本地编码
+        } else {
+            // 未检测到有效编码，尝试使用系统本地编码
             // 在中文 Windows 上通常是 GBK/GB2312
             // 在 Linux/macOS 上通常是 UTF-8
             QStringDecoder decoder(QStringConverter::System);
@@ -275,6 +277,7 @@ QString CsvParser::toCsv(const QList<QStringList>& rows, QChar delimiter)
 {
     QString csv;
     QTextStream stream(&csv);
+    // Qt6 中 QTextStream 默认使用 UTF-8 编码，无需调用 setCodec
 
     // 写入 BOM（Excel 兼容）
     stream << "\xEF\xBB\xBF";

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ChartConfigDialog</class>
+ <widget class="QDialog" name="ChartConfigDialog">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>600</width><height>700</height></rect>
+  </property>
+  <property name="windowTitle"><string>图表配置</string></property>
+  <property name="minimumSize"><size><width>600</width><height>700</height></size></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing"><number>12</number></property>
+   <property name="leftMargin"><number>15</number></property>
+   <property name="topMargin"><number>15</number></property>
+   <property name="rightMargin"><number>15</number></property>
+   <property name="bottomMargin"><number>15</number></property>
+   <item>
+    <widget class="QGroupBox" name="basicGroup">
+     <property name="title"><string>基本设置</string></property>
+     <layout class="QFormLayout" name="basicFormLayout">
+      <item row="0" column="0"><widget class="QLabel" name="labelType"><property name="text"><string>图表类型:</string></property></widget></item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="m_typeCombo">
+        <item><property name="text"><string>折线图</string></property></item>
+        <item><property name="text"><string>柱状图</string></property></item>
+        <item><property name="text"><string>饼图</string></property></item>
+        <item><property name="text"><string>散点图</string></property></item>
+        <item><property name="text"><string>面积图</string></property></item>
+       </widget>
+      </item>
+      <item row="1" column="0"><widget class="QLabel" name="labelTitle"><property name="text"><string>图表标题:</string></property></widget></item>
+      <item row="1" column="1"><widget class="QLineEdit" name="m_titleEdit"><property name="placeholderText"><string>请输入图表标题</string></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="labelXAxis"><property name="text"><string>X轴标题:</string></property></widget></item>
+      <item row="2" column="1"><widget class="QLineEdit" name="m_xAxisTitleEdit"><property name="placeholderText"><string>X轴标题（可选）</string></property></widget></item>
+      <item row="3" column="0"><widget class="QLabel" name="labelYAxis"><property name="text"><string>Y轴标题:</string></property></widget></item>
+      <item row="3" column="1"><widget class="QLineEdit" name="m_yAxisTitleEdit"><property name="placeholderText"><string>Y轴标题（可选）</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="dataGroup">
+     <property name="title"><string>数据设置</string></property>
+     <layout class="QFormLayout" name="dataFormLayout">
+      <item row="0" column="0"><widget class="QLabel" name="labelTable"><property name="text"><string>数据表:</string></property></widget></item>
+      <item row="0" column="1"><widget class="QComboBox" name="m_tableCombo"/></item>
+      <item row="1" column="0"><widget class="QLabel" name="labelXCol"><property name="text"><string>X轴列:</string></property></widget></item>
+      <item row="1" column="1"><widget class="QComboBox" name="m_xAxisCombo"/></item>
+      <item row="2" column="0"><widget class="QLabel" name="labelYCol"><property name="text"><string>Y轴列（可多选）:</string></property></widget></item>
+      <item row="2" column="1"><widget class="QListWidget" name="m_yAxisList"><property name="maximumSize"><size><width>16777215</width><height>100</height></size></property><property name="selectionMode"><enum>QAbstractItemView::MultiSelection</enum></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="styleGroup">
+     <property name="title"><string>样式设置</string></property>
+     <layout class="QGridLayout" name="styleGridLayout">
+      <item row="0" column="0"><widget class="QCheckBox" name="m_showLegendCheck"><property name="text"><string>显示图例</string></property><property name="checked"><bool>true</bool></property></widget></item>
+      <item row="0" column="1"><widget class="QCheckBox" name="m_showGridCheck"><property name="text"><string>显示网格</string></property><property name="checked"><bool>true</bool></property></widget></item>
+      <item row="0" column="2"><widget class="QCheckBox" name="m_showDataPointsCheck"><property name="text"><string>显示数据点</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="labelTheme"><property name="text"><string>主题:</string></property></widget></item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="m_themeCombo">
+        <item><property name="text"><string>默认</string></property></item>
+        <item><property name="text"><string>深色</string></property></item>
+        <item><property name="text"><string>浅色</string></property></item>
+        <item><property name="text"><string>蓝色</string></property></item>
+       </widget>
+      </item>
+      <item row="2" column="0"><widget class="QLabel" name="labelWidth"><property name="text"><string>宽度:</string></property></widget></item>
+      <item row="2" column="1"><widget class="QSpinBox" name="m_widthSpin"><property name="minimum"><number>200</number></property><property name="maximum"><number>4000</number></property><property name="value"><number>800</number></property></widget></item>
+      <item row="2" column="2"><widget class="QLabel" name="labelHeight"><property name="text"><string>高度:</string></property></widget></item>
+      <item row="2" column="3"><widget class="QSpinBox" name="m_heightSpin"><property name="minimum"><number>200</number></property><property name="maximum"><number>4000</number></property><property name="value"><number>600</number></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="m_buttonBox">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="standardButtons"><set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

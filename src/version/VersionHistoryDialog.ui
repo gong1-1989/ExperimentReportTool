@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>VersionHistoryDialog</class>
+ <widget class="QDialog" name="VersionHistoryDialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>850</width><height>600</height></rect></property>
+  <property name="windowTitle"><string>版本历史</string></property>
+  <property name="minimumSize"><size><width>850</width><height>600</height></size></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing"><number>8</number></property>
+   <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
+   <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="topLayout">
+     <item><widget class="QLabel" name="labelVersionName"><property name="text"><string>新版本名称:</string></property></widget></item>
+     <item><widget class="QLineEdit" name="m_versionNameEdit"><property name="placeholderText"><string>输入版本名称（可选）</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_saveBtn"><property name="text"><string>保存新版本</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_refreshBtn"><property name="text"><string>刷新</string></property></widget></item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QSplitter" name="m_splitter">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <widget class="QListWidget" name="m_versionList"/>
+     <widget class="QTextBrowser" name="m_previewBrowser"/>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttonLayout">
+     <item><widget class="QLabel" name="m_statusLabel"><property name="text"><string>就绪</string></property></widget></item>
+     <item><spacer name="horizontalSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+     <item><widget class="QPushButton" name="m_restoreBtn"><property name="text"><string>恢复此版本</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_compareBtn"><property name="text"><string>对比</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_deleteBtn"><property name="text"><string>删除</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_closeBtn"><property name="text"><string>关闭</string></property></widget></item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

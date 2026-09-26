@@ -10,6 +10,7 @@
 
 #include <QList>
 #include <QString>
+#include <QSqlQuery>
 #include "core/models/Attachment.h"
 
 /**

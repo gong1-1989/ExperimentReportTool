@@ -28,8 +28,12 @@
 #include "core/models/DataTable.h"
 #include "chart/ChartConfigDialog.h"
 
-// Qt Charts 命名空间
-QT_USE_NAMESPACE
+// Qt Charts 命名空间处理
+// Qt5: 类在 QtCharts 命名空间中，使用 QT_CHARTS_USE_NAMESPACE 宏引入
+// Qt6: 类已移至全局命名空间，无需额外声明
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QT_CHARTS_USE_NAMESPACE
+#endif
 
 /**
  * @brief 图表渲染器

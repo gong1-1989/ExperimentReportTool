@@ -4,6 +4,7 @@
  */
 
 #include "MainWindow.h"
+#include "ui_MainWindow.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "ui/widgets/ProjectTreeWidget.h"
 #include "ui/widgets/ReportListWidget.h"
 #include "ui/ReportEditorWindow.h"
@@ -24,12 +25,20 @@
 #include <QInputDialog>
 #include <QFileDialog>
 #include <QDir>
+#include <QFile>
 #include <QStandardPaths>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QDateTime>
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QLabel>
+#include <QLineEdit>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QMenu>
 
 // ===========================================================================
 // 构造与析构
@@ -37,6 +46,7 @@
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
+    , ui(new Ui::MainWindow)  // 创建 UI 界面对象
     , m_mainSplitter(nullptr)
     , m_centerSplitter(nullptr)
     , m_projectTree(nullptr)
@@ -51,7 +61,11 @@ MainWindow::MainWindow(QWidget* parent)
     , m_currentReportId(-1)
     , m_zoomFactor(1.0)
 {
+    ui->setupUi(this);  // 从 .ui 文件加载基本界面结构
+
+    // 动态创建复杂控件（自定义组件、工具栏、状态栏等）
     setupUi();
+
     createActions();
     createMenus();
     createToolBar();
@@ -67,45 +81,69 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow()
 {
     saveSettings();
+    delete ui;
 }
 
 // ===========================================================================
-// UI 初始化
+// UI 初始化（动态创建复杂控件）
 // ===========================================================================
 
 void MainWindow::setupUi()
 {
+    // 设置窗口基本属性
     setWindowTitle(AppConstants::APP_DISPLAY_NAME);
     resize(AppConstants::DEFAULT_WINDOW_WIDTH, AppConstants::DEFAULT_WINDOW_HEIGHT);
     setMinimumSize(800, 600);
 
     // -----------------------------------------------------------------------
-    // 主分割器：左（项目树） | 中（报告列表+编辑器） | 右（属性面板）
+    // 主分割器（左-中-右三栏布局）
     // -----------------------------------------------------------------------
     m_mainSplitter = new QSplitter(Qt::Horizontal, this);
-    m_mainSplitter->setHandleWidth(4);
-    m_mainSplitter->setChildrenCollapsible(true);
+    m_mainSplitter->setHandleWidth(6);
+    m_mainSplitter->setChildrenCollapsible(false);
 
     // 左侧：项目树
-    m_projectTree = new ProjectTreeWidget(this);
-    m_projectTree->setMinimumWidth(200);
-    m_mainSplitter->addWidget(m_projectTree);
+    QWidget* leftPanel = new QWidget(this);
+    QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
+    leftLayout->setContentsMargins(4, 4, 4, 4);
+    leftLayout->setSpacing(4);
 
-    // 中间分割器：上（报告列表） | 下（编辑器占位）
-    m_centerSplitter = new QSplitter(Qt::Vertical, m_mainSplitter);
-    m_centerSplitter->setHandleWidth(4);
+    QLabel* projectTitle = new QLabel(tr("📁 项目树"), leftPanel);
+    projectTitle->setStyleSheet("font-weight: bold; padding: 4px; color: #333;");
+    leftLayout->addWidget(projectTitle);
 
-    // 报告列表
-    m_reportList = new ReportListWidget(this);
-    m_centerSplitter->addWidget(m_reportList);
+    m_projectTree = new ProjectTreeWidget(leftPanel);
+    m_projectTree->setHeaderHidden(true);
+    leftLayout->addWidget(m_projectTree);
 
-    // 编辑器区域（占位，后续实现完整编辑器）
+    m_mainSplitter->addWidget(leftPanel);
+
+    // 中间：报告列表 + 编辑器占位（垂直分割）
+    m_centerSplitter = new QSplitter(Qt::Vertical, this);
+    m_centerSplitter->setHandleWidth(6);
+    m_centerSplitter->setChildrenCollapsible(false);
+
+    // 报告列表面板
+    QWidget* reportListPanel = new QWidget(this);
+    QVBoxLayout* reportListLayout = new QVBoxLayout(reportListPanel);
+    reportListLayout->setContentsMargins(4, 4, 4, 4);
+    reportListLayout->setSpacing(4);
+
+    QLabel* reportListTitle = new QLabel(tr("📝 报告列表"), reportListPanel);
+    reportListTitle->setStyleSheet("font-weight: bold; padding: 4px; color: #333;");
+    reportListLayout->addWidget(reportListTitle);
+
+    m_reportList = new ReportListWidget(reportListPanel);
+    reportListLayout->addWidget(m_reportList);
+
+    m_centerSplitter->addWidget(reportListPanel);
+
+    // 编辑器区域（占位）
     m_editorStack = new QStackedWidget(this);
     QLabel* editorPlaceholder = new QLabel(tr(
         "<div style='color: #999; font-size: 16px; text-align: center;'>"
         "<p>📝 报告编辑器</p>"
         "<p style='font-size: 13px;'>双击左侧报告列表中的报告以打开编辑</p>"
-        "<p style='font-size: 12px; color: #bbb;'>（编辑器将在后续版本中实现）</p>"
         "</div>"), this);
     editorPlaceholder->setAlignment(Qt::AlignCenter);
     m_editorStack->addWidget(editorPlaceholder);
@@ -128,8 +166,7 @@ void MainWindow::setupUi()
     propLayout->addWidget(propTitle);
     QLabel* propPlaceholder = new QLabel(tr(
         "<div style='color: #999; font-size: 12px; margin-top: 12px;'>"
-        "选择项目或报告后，<br>此处将显示其属性信息。<br><br>"
-        "（属性面板将在后续版本中实现）"
+        "选择项目或报告后，<br>此处将显示其属性信息。"
         "</div>"), m_propertyPanel);
     propPlaceholder->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     propLayout->addWidget(propPlaceholder);
@@ -350,12 +387,11 @@ void MainWindow::createStatusBar()
     m_statusReportLabel->setStyleSheet("padding: 0 8px;");
     statusBar->addWidget(m_statusReportLabel);
 
-    //statusBar->addStretch();
-    QWidget* stretchWidget = new QWidget(statusBar);
-    stretchWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    stretchWidget->setAttribute(Qt::WA_TransparentForMouseEvents);
-    statusBar->addWidget(stretchWidget);
-
+    // QStatusBar 没有 addStretch 方法，用一个空 QWidget 作为弹簧
+    // 使后续的 permanent widget 靠右显示
+    QWidget* spacer = new QWidget(this);
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    statusBar->addWidget(spacer, 1);
 
     m_statusCountLabel = new QLabel(this);
     m_statusCountLabel->setStyleSheet("padding: 0 8px; color: #666;");
@@ -869,8 +905,6 @@ void MainWindow::onReportOpenRequested(qint64 reportId)
     // 创建新的报告编辑器窗口
     ReportEditorWindow* editorWindow = new ReportEditorWindow(report, this);
     editorWindow->setAttribute(Qt::WA_DeleteOnClose);
-    connect(editorWindow,&ReportEditorWindow::windowClosed,this,[this,editorWindow](){
-        m_editorWindows.removeOne(editorWindow);});
     connect(editorWindow, &ReportEditorWindow::reportSaved,
             this, &MainWindow::onReportEditorSaved);
     connect(editorWindow, &ReportEditorWindow::windowClosed,
@@ -924,7 +958,13 @@ void MainWindow::onReportEditorSaved(qint64 reportId)
 void MainWindow::onReportEditorClosed(qint64 reportId)
 {
     Q_UNUSED(reportId);
-
+    // 从列表中移除已关闭的窗口
+    for (int i = m_editorWindows.size() - 1; i >= 0; --i) {
+        ReportEditorWindow* win = m_editorWindows.at(i);
+        if (!win || !win->isVisible()) {
+            m_editorWindows.removeAt(i);
+        }
+    }
     m_reportList->refreshList();
     updateStatusBar();
 }

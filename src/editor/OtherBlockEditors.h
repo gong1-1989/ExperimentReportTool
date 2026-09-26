@@ -20,11 +20,10 @@
 #include <QComboBox>
 #include <QSpinBox>
 #include <QHeaderView>
-#include <QLineEdit>
+#include <QList>
 
-#include "chart/ChartConfigDialog.h"
-#include "chart/ChartRenderer.h"
 #include "editor/BlockEditor.h"
+#include "chart/ChartConfigDialog.h"  // ChartConfig 结构体定义
 
 // ===========================================================================
 // 表格块编辑器
@@ -58,6 +57,7 @@ private slots:
 
 private:
     void setupTable();
+    void updateTableHeight();  ///< 根据行数动态调整表格高度
 
     QTableWidget* m_table;
     QPushButton* m_addRowBtn;
@@ -186,10 +186,11 @@ public:
     QJsonObject blockData() const override;
     void setBlockData(const QJsonObject& data) override;
     BlockType blockType() const override { return BlockType::Chart; }
-    bool isEmpty() const override { return m_config.dataTableId <= 0; }
+    bool isEmpty() const override { return m_config.dataTableId == 0; }
 
     /// 设置报告 ID（用于查找该报告下的数据表）
-    Q_INVOKABLE void setReportId(qint64 reportId) { m_reportId = reportId; }
+    /// 设置后会自动重新渲染图表（因为表格块的负 ID 需要 reportId 才能解析）
+    Q_INVOKABLE void setReportId(qint64 reportId);
 
 private slots:
     void onConfigureChart();
@@ -199,12 +200,23 @@ private:
     void setupChartArea();
     void renderChart();
 
+    /// 将报告中的表格块转换为临时 DataTable（供图表选择数据源）
+    /// @param block 表格块
+    /// @param index 表格块在报告中的索引（用于生成负 ID）
+    /// @return 转换后的 DataTable 对象
+    DataTable::Ptr tableBlockToDataTable(const ContentBlock& block, int index) const;
+
+    /// 根据 ID 获取数据表（正 ID 从数据库获取，负 ID 从报告表格块获取）
+    /// @param id 数据表 ID（正数=数据库数据表，负数=报告表格块）
+    /// @return 数据表对象，失败返回 nullptr
+    DataTable::Ptr getDataTableById(qint64 id) const;
+
     QWidget* m_chartContainer;       ///< 图表容器
     QLabel* m_placeholderLabel;       ///< 占位标签（未配置时显示）
     QPushButton* m_configBtn;         ///< 配置按钮
     QPushButton* m_editDataBtn;       ///< 编辑数据按钮
-    ChartRenderer* m_renderer;  ///< 图表渲染器
-    ChartConfig m_config;       ///< 图表配置
+    class ChartRenderer* m_renderer;  ///< 图表渲染器（前向声明，指针类型可以不完整）
+    ChartConfig m_config;             ///< 图表配置（完整类型，已包含头文件）
     qint64 m_reportId;                 ///< 所属报告 ID
 };
 

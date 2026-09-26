@@ -90,13 +90,13 @@ void ProjectTreeWidget::refreshTree()
     addTopLevelItem(allItem);
 
     // 递归构建项目树
-    buildTree(allItem, -1);
+    buildTree(nullptr, -1);
 
     // 默认展开第一层
-    expandToDepth(1);
+    expandToDepth(0);
 
     // 默认选中"全部项目"
-    //setCurrentItem(allItem);
+    setCurrentItem(allItem);
 }
 
 qint64 ProjectTreeWidget::currentProjectId() const
@@ -117,7 +117,6 @@ void ProjectTreeWidget::selectProject(qint64 projectId)
             parent->setExpanded(true);
             parent = parent->parent();
         }
-        scrollToItem(item); // 滚动到视图可见，防止节点存在但是在视口外看不见
     }
 }
 

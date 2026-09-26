@@ -4,6 +4,7 @@
  */
 
 #include "TagManagerDialog.h"
+#include "ui_TagManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/TagRepository.h"
 #include "core/utils/Logger.h"
 
@@ -18,21 +19,10 @@
 
 TagManagerDialog::TagManagerDialog(QWidget* parent)
     : QDialog(parent)
-    , m_searchEdit(nullptr)
-    , m_tagList(nullptr)
-    , m_newBtn(nullptr)
-    , m_editBtn(nullptr)
-    , m_deleteBtn(nullptr)
-    , m_editGroup(nullptr)
-    , m_nameEdit(nullptr)
-    , m_colorCombo(nullptr)
-    , m_descEdit(nullptr)
-    , m_saveBtn(nullptr)
-    , m_cancelBtn(nullptr)
-    , m_usageLabel(nullptr)
+    , ui(new Ui::TagManagerDialog)
     , m_editing(false)
 {
-    setupUi();
+    ui->setupUi(this);
     loadTags();
     setWindowTitle(tr("标签管理"));
     resize(700, 500);
@@ -40,116 +30,7 @@ TagManagerDialog::TagManagerDialog(QWidget* parent)
 
 TagManagerDialog::~TagManagerDialog()
 {
-}
-
-// ===========================================================================
-// UI 初始化
-// ===========================================================================
-
-void TagManagerDialog::setupUi()
-{
-    QHBoxLayout* mainLayout = new QHBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(10);
-
-    // -----------------------------------------------------------------------
-    // 左侧：标签列表
-    // -----------------------------------------------------------------------
-    QWidget* leftPanel = new QWidget(this);
-    QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
-    leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setSpacing(6);
-
-    m_searchEdit = new QLineEdit(this);
-    m_searchEdit->setPlaceholderText(tr("搜索标签..."));
-    m_searchEdit->setClearButtonEnabled(true);
-    leftLayout->addWidget(m_searchEdit);
-
-    m_tagList = new QListWidget(this);
-    m_tagList->setStyleSheet(
-        "QListWidget { border: 1px solid #ddd; border-radius: 4px; }"
-        "QListWidget::item { padding: 8px; border-bottom: 1px solid #eee; }"
-        "QListWidget::item:selected { background: #e8f0fe; }"
-        "QListWidget::item:hover { background: #f5f5f5; }");
-    leftLayout->addWidget(m_tagList, 1);
-
-    // 按钮
-    QHBoxLayout* btnLayout = new QHBoxLayout();
-    m_newBtn = new QPushButton(tr("新建"), this);
-    m_editBtn = new QPushButton(tr("编辑"), this);
-    m_deleteBtn = new QPushButton(tr("删除"), this);
-    m_editBtn->setEnabled(false);
-    m_deleteBtn->setEnabled(false);
-    btnLayout->addWidget(m_newBtn);
-    btnLayout->addWidget(m_editBtn);
-    btnLayout->addWidget(m_deleteBtn);
-    leftLayout->addLayout(btnLayout);
-
-    mainLayout->addWidget(leftPanel, 1);
-
-    // -----------------------------------------------------------------------
-    // 右侧：编辑表单
-    // -----------------------------------------------------------------------
-    m_editGroup = new QGroupBox(tr("标签详情"), this);
-    QVBoxLayout* editLayout = new QVBoxLayout(m_editGroup);
-    editLayout->setSpacing(8);
-
-    editLayout->addWidget(new QLabel(tr("名称:"), this));
-    m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setPlaceholderText(tr("输入标签名称"));
-    editLayout->addWidget(m_nameEdit);
-
-    editLayout->addWidget(new QLabel(tr("颜色:"), this));
-    m_colorCombo = new QComboBox(this);
-    // 添加预设颜色
-    for (const QString& color : Tag::presetColors()) {
-        m_colorCombo->addItem(colorSwatchHtml(color) + "  " + color, color);
-    }
-    m_colorCombo->setEditable(false);
-    editLayout->addWidget(m_colorCombo);
-
-    editLayout->addWidget(new QLabel(tr("描述:"), this));
-    m_descEdit = new QTextEdit(this);
-    m_descEdit->setPlaceholderText(tr("标签描述（可选）"));
-    m_descEdit->setMaximumHeight(100);
-    editLayout->addWidget(m_descEdit);
-
-    m_usageLabel = new QLabel(tr("使用次数: -"), this);
-    m_usageLabel->setStyleSheet("color: #666; font-size: 12px;");
-    editLayout->addWidget(m_usageLabel);
-
-    editLayout->addStretch();
-
-    // 保存/取消按钮
-    QHBoxLayout* saveLayout = new QHBoxLayout();
-    saveLayout->addStretch();
-    m_cancelBtn = new QPushButton(tr("取消"), this);
-    m_saveBtn = new QPushButton(tr("保存"), this);
-    m_saveBtn->setStyleSheet(
-        "QPushButton { background: #4A90D9; color: white; padding: 6px 20px; "
-        "border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #357ABD; }");
-    saveLayout->addWidget(m_cancelBtn);
-    saveLayout->addWidget(m_saveBtn);
-    editLayout->addLayout(saveLayout);
-
-    mainLayout->addWidget(m_editGroup, 1);
-
-    // 初始状态：禁用编辑表单
-    setEditMode(false);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_tagList, &QListWidget::itemClicked,
-            this, &TagManagerDialog::onTagSelected);
-    connect(m_newBtn, &QPushButton::clicked, this, &TagManagerDialog::onNewTag);
-    connect(m_editBtn, &QPushButton::clicked, this, &TagManagerDialog::onEditTag);
-    connect(m_deleteBtn, &QPushButton::clicked, this, &TagManagerDialog::onDeleteTag);
-    connect(m_saveBtn, &QPushButton::clicked, this, &TagManagerDialog::onSaveTag);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &TagManagerDialog::onCancelEdit);
-    connect(m_searchEdit, &QLineEdit::textChanged,
-            this, &TagManagerDialog::onSearchTextChanged);
+    delete ui;
 }
 
 // ===========================================================================
@@ -168,10 +49,10 @@ void TagManagerDialog::loadTags(const QString& filter)
 
 void TagManagerDialog::updateTagList()
 {
-    m_tagList->clear();
+    ui->m_tagList->clear();
 
     for (const Tag::Ptr& tag : m_tags) {
-        QListWidgetItem* item = new QListWidgetItem(m_tagList);
+        QListWidgetItem* item = new QListWidgetItem(ui->m_tagList);
 
         const QColor color = tag->effectiveColor();
         const QString displayText = QString(
@@ -189,8 +70,8 @@ void TagManagerDialog::updateTagList()
     }
 
     if (m_tags.isEmpty()) {
-        m_tagList->addItem(tr("暂无标签，点击「新建」创建"));
-        m_tagList->item(0)->setFlags(Qt::NoItemFlags);
+        ui->m_tagList->addItem(tr("暂无标签，点击「新建」创建"));
+        ui->m_tagList->item(0)->setFlags(Qt::NoItemFlags);
     }
 }
 
@@ -202,8 +83,8 @@ void TagManagerDialog::onTagSelected(QListWidgetItem* item)
 {
     if (!item || !item->data(Qt::UserRole).isValid()) {
         m_currentTag.reset();
-        m_editBtn->setEnabled(false);
-        m_deleteBtn->setEnabled(false);
+        ui->m_editBtn->setEnabled(false);
+        ui->m_deleteBtn->setEnabled(false);
         clearEditForm();
         return;
     }
@@ -212,19 +93,19 @@ void TagManagerDialog::onTagSelected(QListWidgetItem* item)
     for (const Tag::Ptr& tag : m_tags) {
         if (tag->id() == tagId) {
             m_currentTag = tag;
-            m_editBtn->setEnabled(true);
-            m_deleteBtn->setEnabled(true);
+            ui->m_editBtn->setEnabled(true);
+            ui->m_deleteBtn->setEnabled(true);
 
             // 显示详情（只读）
-            m_nameEdit->setText(tag->name());
-            m_descEdit->setPlainText(tag->description());
-            m_usageLabel->setText(tr("使用次数: %1").arg(tag->usageCount()));
+            ui->m_nameEdit->setText(tag->name());
+            ui->m_descEdit->setPlainText(tag->description());
+            ui->m_usageLabel->setText(tr("使用次数: %1").arg(tag->usageCount()));
 
             // 设置颜色
             const QString color = tag->color().isEmpty()
                 ? tag->effectiveColor().name() : tag->color();
-            const int idx = m_colorCombo->findData(color);
-            m_colorCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+            const int idx = ui->m_colorCombo->findData(color);
+            ui->m_colorCombo->setCurrentIndex(idx >= 0 ? idx : 0);
 
             setEditMode(false);
             break;
@@ -241,7 +122,7 @@ void TagManagerDialog::onNewTag()
     m_currentTag = Tag::create();
     m_currentTag->setColor(Tag::presetColors().first());
     clearEditForm();
-    m_nameEdit->setFocus();
+    ui->m_nameEdit->setFocus();
     setEditMode(true);
 }
 
@@ -249,8 +130,8 @@ void TagManagerDialog::onEditTag()
 {
     if (!m_currentTag) return;
     setEditMode(true);
-    m_nameEdit->setFocus();
-    m_nameEdit->selectAll();
+    ui->m_nameEdit->setFocus();
+    ui->m_nameEdit->selectAll();
 }
 
 void TagManagerDialog::onDeleteTag()
@@ -272,9 +153,9 @@ void TagManagerDialog::onDeleteTag()
         m_currentTag.reset();
         clearEditForm();
         setEditMode(false);
-        m_editBtn->setEnabled(false);
-        m_deleteBtn->setEnabled(false);
-        loadTags(m_searchEdit->text());
+        ui->m_editBtn->setEnabled(false);
+        ui->m_deleteBtn->setEnabled(false);
+        loadTags(ui->m_searchEdit->text());
     } else {
         QMessageBox::critical(this, tr("删除失败"), tr("删除标签时发生错误"));
     }
@@ -286,10 +167,10 @@ void TagManagerDialog::onDeleteTag()
 
 void TagManagerDialog::onSaveTag()
 {
-    const QString name = m_nameEdit->text().trimmed();
+    const QString name = ui->m_nameEdit->text().trimmed();
     if (name.isEmpty()) {
         QMessageBox::warning(this, tr("提示"), tr("标签名称不能为空"));
-        m_nameEdit->setFocus();
+        ui->m_nameEdit->setFocus();
         return;
     }
 
@@ -304,19 +185,19 @@ void TagManagerDialog::onSaveTag()
     }
 
     m_currentTag->setName(name);
-    m_currentTag->setColor(m_colorCombo->currentData().toString());
-    m_currentTag->setDescription(m_descEdit->toPlainText().trimmed());
+    m_currentTag->setColor(ui->m_colorCombo->currentData().toString());
+    m_currentTag->setDescription(ui->m_descEdit->toPlainText().trimmed());
 
     if (TagRepository::save(m_currentTag)) {
         QMessageBox::information(this, tr("保存成功"), tr("标签已保存"));
         setEditMode(false);
-        loadTags(m_searchEdit->text());
+        loadTags(ui->m_searchEdit->text());
 
         // 选中刚保存的标签
-        for (int i = 0; i < m_tagList->count(); ++i) {
-            QListWidgetItem* item = m_tagList->item(i);
+        for (int i = 0; i < ui->m_tagList->count(); ++i) {
+            QListWidgetItem* item = ui->m_tagList->item(i);
             if (item->data(Qt::UserRole).toLongLong() == m_currentTag->id()) {
-                m_tagList->setCurrentRow(i);
+                ui->m_tagList->setCurrentRow(i);
                 onTagSelected(item);
                 break;
             }
@@ -330,7 +211,7 @@ void TagManagerDialog::onCancelEdit()
 {
     if (m_currentTag && !m_currentTag->isNew()) {
         // 恢复原始数据
-        onTagSelected(m_tagList->currentItem());
+        onTagSelected(ui->m_tagList->currentItem());
     } else {
         clearEditForm();
         m_currentTag.reset();
@@ -353,23 +234,32 @@ void TagManagerDialog::onSearchTextChanged(const QString& text)
 
 void TagManagerDialog::clearEditForm()
 {
-    m_nameEdit->clear();
-    m_descEdit->clear();
-    m_colorCombo->setCurrentIndex(0);
-    m_usageLabel->setText(tr("使用次数: -"));
+    ui->m_nameEdit->clear();
+    ui->m_descEdit->clear();
+    ui->m_colorCombo->setCurrentIndex(0);
+    ui->m_usageLabel->setText(tr("使用次数: -"));
+}
+
+void TagManagerDialog::onColorSelected(int index)
+{
+    // 颜色下拉框选择变化时的处理
+    // 如果正在编辑标签，可以在此更新颜色预览
+    Q_UNUSED(index);
+    // 注意：实际颜色保存是在 onSaveTag() 中通过 currentData() 获取的
+    // 此槽函数可用于实时预览颜色效果
 }
 
 void TagManagerDialog::setEditMode(bool editing)
 {
     m_editing = editing;
-    m_nameEdit->setEnabled(editing);
-    m_colorCombo->setEnabled(editing);
-    m_descEdit->setEnabled(editing);
-    m_saveBtn->setEnabled(editing);
-    m_cancelBtn->setEnabled(editing);
-    m_newBtn->setEnabled(!editing);
-    m_editBtn->setEnabled(!editing && m_currentTag);
-    m_deleteBtn->setEnabled(!editing && m_currentTag);
+    ui->m_nameEdit->setEnabled(editing);
+    ui->m_colorCombo->setEnabled(editing);
+    ui->m_descEdit->setEnabled(editing);
+    ui->m_saveBtn->setEnabled(editing);
+    ui->m_cancelBtn->setEnabled(editing);
+    ui->m_newBtn->setEnabled(!editing);
+    ui->m_editBtn->setEnabled(!editing && m_currentTag);
+    ui->m_deleteBtn->setEnabled(!editing && m_currentTag);
 }
 
 QString TagManagerDialog::colorSwatchHtml(const QString& color, int size)

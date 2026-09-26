@@ -4,6 +4,7 @@
  */
 
 #include "AttachmentManagerDialog.h"
+#include "ui_AttachmentManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/AttachmentRepository.h"
 #include "core/utils/Logger.h"
 
@@ -12,7 +13,6 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QMenu>
-#include <QTimer>
 
 // ===========================================================================
 // 构造与析构
@@ -20,18 +20,10 @@
 
 AttachmentManagerDialog::AttachmentManagerDialog(qint64 reportId, QWidget* parent)
     : QDialog(parent)
-    , m_attachmentList(nullptr)
-    , m_uploadBtn(nullptr)
-    , m_downloadBtn(nullptr)
-    , m_openBtn(nullptr)
-    , m_deleteBtn(nullptr)
-    , m_refreshBtn(nullptr)
-    , m_closeBtn(nullptr)
-    , m_infoLabel(nullptr)
-    , m_progressBar(nullptr)
+    , ui(new Ui::AttachmentManagerDialog)
     , m_reportId(reportId)
 {
-    setupUi();
+    ui->setupUi(this);
     loadAttachments();
     setWindowTitle(tr("附件管理"));
     resize(700, 500);
@@ -39,117 +31,7 @@ AttachmentManagerDialog::AttachmentManagerDialog(qint64 reportId, QWidget* paren
 
 AttachmentManagerDialog::~AttachmentManagerDialog()
 {
-}
-
-// ===========================================================================
-// UI 初始化
-// ===========================================================================
-
-void AttachmentManagerDialog::setupUi()
-{
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
-
-    // -----------------------------------------------------------------------
-    // 工具栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* toolbar = new QHBoxLayout();
-    toolbar->setSpacing(6);
-
-    m_uploadBtn = new QPushButton(tr("📤 上传附件"), this);
-    m_uploadBtn->setStyleSheet(
-        "QPushButton { background: #4A90D9; color: white; padding: 6px 16px; "
-        "border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #357ABD; }");
-    toolbar->addWidget(m_uploadBtn);
-
-    m_downloadBtn = new QPushButton(tr("💾 下载"), this);
-    m_downloadBtn->setEnabled(false);
-    toolbar->addWidget(m_downloadBtn);
-
-    m_openBtn = new QPushButton(tr("📂 打开"), this);
-    m_openBtn->setEnabled(false);
-    toolbar->addWidget(m_openBtn);
-
-    m_deleteBtn = new QPushButton(tr("🗑️ 删除"), this);
-    m_deleteBtn->setEnabled(false);
-    m_deleteBtn->setStyleSheet("QPushButton { color: #ff4d4f; }");
-    toolbar->addWidget(m_deleteBtn);
-
-    toolbar->addStretch();
-
-    m_refreshBtn = new QPushButton(tr("🔄 刷新"), this);
-    toolbar->addWidget(m_refreshBtn);
-
-    mainLayout->addLayout(toolbar);
-
-    // -----------------------------------------------------------------------
-    // 附件列表
-    // -----------------------------------------------------------------------
-    m_attachmentList = new QListWidget(this);
-    m_attachmentList->setStyleSheet(
-        "QListWidget { border: 1px solid #ddd; border-radius: 4px; }"
-        "QListWidget::item { padding: 10px; border-bottom: 1px solid #eee; }"
-        "QListWidget::item:selected { background: #e8f0fe; }"
-        "QListWidget::item:hover { background: #f5f5f5; }");
-    m_attachmentList->setContextMenuPolicy(Qt::CustomContextMenu);
-    mainLayout->addWidget(m_attachmentList, 1);
-
-    // -----------------------------------------------------------------------
-    // 信息栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* infoLayout = new QHBoxLayout();
-    m_infoLabel = new QLabel(tr("暂无附件"), this);
-    m_infoLabel->setStyleSheet("color: #666; font-size: 12px;");
-    infoLayout->addWidget(m_infoLabel);
-    infoLayout->addStretch();
-
-    m_progressBar = new QProgressBar(this);
-    m_progressBar->setVisible(false);
-    m_progressBar->setMaximumWidth(200);
-    infoLayout->addWidget(m_progressBar);
-
-    mainLayout->addLayout(infoLayout);
-
-    // -----------------------------------------------------------------------
-    // 底部按钮
-    // -----------------------------------------------------------------------
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    buttonLayout->addStretch();
-    m_closeBtn = new QPushButton(tr("关闭"), this);
-    buttonLayout->addWidget(m_closeBtn);
-    mainLayout->addLayout(buttonLayout);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_uploadBtn, &QPushButton::clicked, this, &AttachmentManagerDialog::onUpload);
-    connect(m_downloadBtn, &QPushButton::clicked, this, &AttachmentManagerDialog::onDownload);
-    connect(m_openBtn, &QPushButton::clicked, this, &AttachmentManagerDialog::onOpen);
-    connect(m_deleteBtn, &QPushButton::clicked, this, &AttachmentManagerDialog::onDelete);
-    connect(m_refreshBtn, &QPushButton::clicked, this, &AttachmentManagerDialog::onRefresh);
-    connect(m_closeBtn, &QPushButton::clicked, this, &QDialog::accept);
-    connect(m_attachmentList, &QListWidget::itemClicked,
-            this, &AttachmentManagerDialog::onItemSelected);
-    connect(m_attachmentList, &QListWidget::itemDoubleClicked,
-            this, &AttachmentManagerDialog::onItemDoubleClicked);
-
-    // 右键菜单
-    connect(m_attachmentList, &QListWidget::customContextMenuRequested,
-            this, [this](const QPoint& pos) {
-                QListWidgetItem* item = m_attachmentList->itemAt(pos);
-                if (!item) return;
-                m_attachmentList->setCurrentItem(item);
-                onItemSelected(item);
-
-                QMenu menu(this);
-                menu.addAction(tr("打开"), this, &AttachmentManagerDialog::onOpen);
-                menu.addAction(tr("下载"), this, &AttachmentManagerDialog::onDownload);
-                menu.addSeparator();
-                menu.addAction(tr("删除"), this, &AttachmentManagerDialog::onDelete);
-                menu.exec(m_attachmentList->mapToGlobal(pos));
-            });
+    delete ui;
 }
 
 // ===========================================================================
@@ -165,16 +47,16 @@ void AttachmentManagerDialog::loadAttachments()
 
 void AttachmentManagerDialog::updateAttachmentList()
 {
-    m_attachmentList->clear();
+    ui->m_attachmentList->clear();
 
     if (m_attachments.isEmpty()) {
         QListWidgetItem* item = new QListWidgetItem(
-            tr("暂无附件\n点击「上传附件」添加文件"), m_attachmentList);
+            tr("暂无附件\n点击「上传附件」添加文件"), ui->m_attachmentList);
         item->setTextAlignment(Qt::AlignCenter);
         item->setForeground(QColor("#999"));
         item->setFlags(Qt::NoItemFlags);
         item->setSizeHint(QSize(0, 80));
-        m_infoLabel->setText(tr("暂无附件"));
+        ui->m_infoLabel->setText(tr("暂无附件"));
         return;
     }
 
@@ -182,7 +64,7 @@ void AttachmentManagerDialog::updateAttachmentList()
     for (const Attachment::Ptr& att : m_attachments) {
         totalSize += att->fileSize();
 
-        QListWidgetItem* item = new QListWidgetItem(m_attachmentList);
+        QListWidgetItem* item = new QListWidgetItem(ui->m_attachmentList);
 
         const QString displayText = QString(
             "<div style='display: flex; align-items: center;'>"
@@ -213,23 +95,23 @@ void AttachmentManagerDialog::updateAttachmentList()
         totalSizeStr = QString("%1 MB").arg(totalSize / (1024.0 * 1024), 0, 'f', 1);
     }
 
-    m_infoLabel->setText(tr("共 %1 个附件，总计 %2")
+    ui->m_infoLabel->setText(tr("共 %1 个附件，总计 %2")
         .arg(m_attachments.size()).arg(totalSizeStr));
 }
 
 void AttachmentManagerDialog::updateButtons()
 {
-    const bool hasSelection = m_attachmentList->currentItem() != nullptr
-        && m_attachmentList->currentItem()->flags() & Qt::ItemIsSelectable;
+    const bool hasSelection = ui->m_attachmentList->currentItem() != nullptr
+        && ui->m_attachmentList->currentItem()->flags() & Qt::ItemIsSelectable;
 
-    m_downloadBtn->setEnabled(hasSelection);
-    m_openBtn->setEnabled(hasSelection);
-    m_deleteBtn->setEnabled(hasSelection);
+    ui->m_downloadBtn->setEnabled(hasSelection);
+    ui->m_openBtn->setEnabled(hasSelection);
+    ui->m_deleteBtn->setEnabled(hasSelection);
 }
 
 Attachment::Ptr AttachmentManagerDialog::currentAttachment() const
 {
-    QListWidgetItem* item = m_attachmentList->currentItem();
+    QListWidgetItem* item = ui->m_attachmentList->currentItem();
     if (!item || !item->data(Qt::UserRole).isValid()) {
         return Attachment::Ptr();
     }
@@ -239,6 +121,12 @@ Attachment::Ptr AttachmentManagerDialog::currentAttachment() const
         if (att->id() == id) return att;
     }
     return Attachment::Ptr();
+}
+
+void AttachmentManagerDialog::showStatusMessage(const QString& message)
+{
+    // 对话框没有状态栏，使用 QMessageBox 显示操作结果提示
+    QMessageBox::information(this, tr("提示"), message);
 }
 
 // ===========================================================================
@@ -255,9 +143,9 @@ void AttachmentManagerDialog::onUpload()
 
     if (filePaths.isEmpty()) return;
 
-    m_progressBar->setVisible(true);
-    m_progressBar->setRange(0, filePaths.size());
-    m_progressBar->setValue(0);
+    ui->m_progressBar->setVisible(true);
+    ui->m_progressBar->setRange(0, filePaths.size());
+    ui->m_progressBar->setValue(0);
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
@@ -267,12 +155,12 @@ void AttachmentManagerDialog::onUpload()
         if (att) {
             ++successCount;
         }
-        m_progressBar->setValue(i + 1);
+        ui->m_progressBar->setValue(i + 1);
         QApplication::processEvents();
     }
 
     QApplication::restoreOverrideCursor();
-    m_progressBar->setVisible(false);
+    ui->m_progressBar->setVisible(false);
 
     loadAttachments();
 
@@ -371,10 +259,3 @@ void AttachmentManagerDialog::onRefresh()
 {
     loadAttachments();
 }
-
-void AttachmentManagerDialog::showStatusMessage(const QString &msg, int timeout)
-{
-    m_infoLabel->setText(msg);
-    QTimer::singleShot(timeout,this,[this](){m_infoLabel->clear();});
-}
-

@@ -18,10 +18,16 @@
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QList>
 #include <QDateTime>
 
 #include "core/models/Report.h"
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class VersionHistoryDialog;
+}
 /**
  * @brief 版本信息结构体
  */
@@ -75,7 +81,8 @@ private slots:
     void onCompare();
 
 private:
-    void setupUi();
+
+    Ui::VersionHistoryDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     void loadVersions();
     void displayVersion(const VersionInfo& version);
     QString formatVersionPreview(const QString& contentJson);
@@ -86,19 +93,8 @@ private:
     // UI 控件
     // -----------------------------------------------------------------------
 
-    QListWidget* m_versionList;       ///< 版本列表
-    QTextBrowser* m_previewBrowser;   ///< 版本预览
-    QSplitter* m_splitter;             ///< 分割器
 
-    QPushButton* m_restoreBtn;         ///< 恢复按钮
-    QPushButton* m_deleteBtn;          ///< 删除按钮
-    QPushButton* m_saveBtn;            ///< 保存新版本按钮
-    QPushButton* m_compareBtn;         ///< 对比按钮
-    QPushButton* m_refreshBtn;         ///< 刷新按钮
-    QPushButton* m_closeBtn;           ///< 关闭按钮
 
-    QLineEdit* m_versionNameEdit;      ///< 新版本名称输入
-    QLabel* m_statusLabel;             ///< 状态标签
 
     // -----------------------------------------------------------------------
     // 数据

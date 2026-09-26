@@ -17,6 +17,7 @@
 
 #include <QString>
 #include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QMutex>
 
 /**
@@ -122,6 +123,34 @@ public:
      * @return 错误信息字符串
      */
     QString lastError() const;
+
+    /**
+     * @brief 执行查询并统一处理错误（静态辅助方法）
+     * @param query QSqlQuery 对象（已 prepare 并 bindValue）
+     * @param operation 操作描述（用于日志和错误提示）
+     * @param logError 是否记录错误日志（默认 true）
+     * @return 执行成功返回 true
+     *
+     * 使用方式：
+     * @code
+     *   QSqlQuery query(db);
+     *   query.prepare("INSERT INTO projects (name) VALUES (:name)");
+     *   query.bindValue(":name", name);
+     *   if (!DatabaseManager::executeQuery(query, "创建项目")) {
+     *       return false;
+     *   }
+     * @endcode
+     */
+    static bool executeQuery(QSqlQuery& query, const QString& operation, bool logError = true);
+
+    /**
+     * @brief 执行查询并返回结果（静态辅助方法）
+     * @param query QSqlQuery 对象（已 prepare 并 bindValue）
+     * @param operation 操作描述（用于日志和错误提示）
+     * @param[out] ok 输出参数：执行是否成功
+     * @return QSqlQuery 引用（可用于遍历结果）
+     */
+    static QSqlQuery& executeQueryWithResult(QSqlQuery& query, const QString& operation, bool& ok);
 
 private:
     // 私有构造

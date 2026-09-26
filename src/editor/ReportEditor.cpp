@@ -4,9 +4,13 @@
  */
 
 #include "ReportEditor.h"
+#include "ui_ReportEditor.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/TextBlockEditor.h"
 #include "editor/OtherBlockEditors.h"
 #include "editor/AutoSaveManager.h"
+#include "editor/DataTableEditorDialog.h"
+#include "data/repositories/DataTableRepository.h"
+#include "core/models/DataTable.h"
 #include "core/utils/Logger.h"
 
 #include <QScrollBar>
@@ -14,6 +18,7 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QClipboard>
+#include <QInputDialog>
 
 // ===========================================================================
 // 构造与析构
@@ -21,26 +26,60 @@
 
 ReportEditor::ReportEditor(QWidget* parent)
     : QWidget(parent)
-    , m_titleEdit(nullptr)
-    , m_statusCombo(nullptr)
-    , m_dateEdit(nullptr)
-    , m_authorEdit(nullptr)
-    , m_addBlockBtn(nullptr)
-    , m_undoBtn(nullptr)
-    , m_redoBtn(nullptr)
-    , m_scrollArea(nullptr)
-    , m_blocksContainer(nullptr)
-    , m_blocksLayout(nullptr)
-    , m_wordCountLabel(nullptr)
-    , m_blockCountLabel(nullptr)
-    , m_saveStatusLabel(nullptr)
+    , ui(new Ui::ReportEditor)  // 创建 UI 界面对象
     , m_currentBlockIndex(-1)
     , m_modified(false)
     , m_readOnly(false)
     , m_loading(false)
     , m_autoSave(nullptr)
 {
-    setupUi();
+    ui->setupUi(this);  // 从 .ui 文件加载界面
+
+    // ========================================================================
+    // 关键修复：彻底简化布局结构
+    // ========================================================================
+    // 原布局：QScrollArea > scrollAreaWidgetContents > scrollLayout > m_blocksContainer > m_blocksLayout > 块编辑器
+    // 新布局：QScrollArea > scrollAreaWidgetContents > m_blocksLayout > 块编辑器
+    // 移除 m_blocksContainer 中间层，减少布局嵌套，解决高度计算问题
+
+    // 1. 从 scrollLayout 中移除 m_blocksContainer
+    ui->scrollLayout->removeWidget(ui->m_blocksContainer);
+    ui->m_blocksContainer->hide();
+
+    // 2. 将 m_emptyLabel 从 m_blocksLayout 中移除（暂时）
+    ui->m_blocksLayout->removeWidget(ui->m_emptyLabel);
+
+    // 3. 将 m_blocksLayout 重新设置为 scrollAreaWidgetContents 的布局
+    //    先移除 scrollAreaWidgetContents 的旧布局（scrollLayout）
+    delete ui->scrollAreaWidgetContents->layout();
+    //    将 m_blocksLayout 的父对象设置为 scrollAreaWidgetContents
+    ui->m_blocksLayout->setParent(ui->scrollAreaWidgetContents);
+    ui->scrollAreaWidgetContents->setLayout(ui->m_blocksLayout);
+
+    // 4. 将 m_emptyLabel 添加回 m_blocksLayout（在最前面）
+    ui->m_blocksLayout->insertWidget(0, ui->m_emptyLabel);
+
+    // 5. 布局设置
+    ui->scrollArea->setWidgetResizable(true);
+    // scrollAreaWidgetContents：高度由内容决定（Minimum）
+    ui->scrollAreaWidgetContents->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    ui->m_blocksLayout->setAlignment(Qt::AlignTop);
+    ui->m_blocksLayout->addStretch(1);
+
+    // 初始更新空提示标签显示状态
+    updateEmptyLabelVisibility();
+
+    // 设置状态下拉框的 itemData
+    ui->m_statusCombo->setItemData(0, static_cast<int>(ReportStatus::Draft));
+    ui->m_statusCombo->setItemData(1, static_cast<int>(ReportStatus::Submitted));
+    ui->m_statusCombo->setItemData(2, static_cast<int>(ReportStatus::Reviewed));
+
+    // 连接信号
+    connect(ui->m_titleEdit, &QLineEdit::textChanged, this, &ReportEditor::onTitleChanged);
+    connect(ui->m_statusCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &ReportEditor::onStatusChanged);
+    connect(ui->m_dateEdit, &QDateEdit::dateChanged, this, &ReportEditor::onDateChanged);
+    connect(ui->m_addBlockBtn, &QPushButton::clicked, this, &ReportEditor::onAddBlock);
 
     // 初始化自动保存管理器
     m_autoSave = new AutoSaveManager(this);
@@ -55,127 +94,7 @@ ReportEditor::ReportEditor(QWidget* parent)
 ReportEditor::~ReportEditor()
 {
     clearBlocks();
-}
-
-// ===========================================================================
-// UI 初始化
-// ===========================================================================
-
-void ReportEditor::setupUi()
-{
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
-
-    // -----------------------------------------------------------------------
-    // 顶部标题栏
-    // -----------------------------------------------------------------------
-    QWidget* headerWidget = new QWidget(this);
-    headerWidget->setStyleSheet("QWidget { background-color: #f8f9fa; border-bottom: 1px solid #e0e0e0; }");
-    QVBoxLayout* headerLayout = new QVBoxLayout(headerWidget);
-    headerLayout->setContentsMargins(20, 12, 20, 12);
-    headerLayout->setSpacing(8);
-
-    // 标题输入
-    m_titleEdit = new QLineEdit(headerWidget);
-    m_titleEdit->setPlaceholderText(tr("输入报告标题..."));
-    m_titleEdit->setStyleSheet(
-        "QLineEdit { font-size: 22px; font-weight: bold; border: none; "
-        "background: transparent; padding: 4px 0; }"
-        "QLineEdit:focus { border-bottom: 2px solid #4A90D9; }");
-    headerLayout->addWidget(m_titleEdit);
-
-    // 元信息行
-    QHBoxLayout* metaLayout = new QHBoxLayout();
-    metaLayout->setSpacing(12);
-
-    m_statusCombo = new QComboBox(headerWidget);
-    m_statusCombo->addItem(tr("草稿"), static_cast<int>(ReportStatus::Draft));
-    m_statusCombo->addItem(tr("已提交"), static_cast<int>(ReportStatus::Submitted));
-    m_statusCombo->addItem(tr("已审核"), static_cast<int>(ReportStatus::Reviewed));
-    m_statusCombo->setStyleSheet("QComboBox { padding: 2px 8px; }");
-    metaLayout->addWidget(new QLabel(tr("状态:"), headerWidget));
-    metaLayout->addWidget(m_statusCombo);
-
-    m_dateEdit = new QDateEdit(QDate::currentDate(), headerWidget);
-    m_dateEdit->setDisplayFormat("yyyy-MM-dd");
-    m_dateEdit->setCalendarPopup(true);
-    metaLayout->addWidget(new QLabel(tr("实验日期:"), headerWidget));
-    metaLayout->addWidget(m_dateEdit);
-
-    m_authorEdit = new QLineEdit(headerWidget);
-    m_authorEdit->setPlaceholderText(tr("作者"));
-    m_authorEdit->setMaximumWidth(150);
-    metaLayout->addWidget(new QLabel(tr("作者:"), headerWidget));
-    metaLayout->addWidget(m_authorEdit);
-
-    metaLayout->addStretch();
-
-    // 工具栏按钮
-    m_addBlockBtn = new QPushButton(tr("+ 添加块"), headerWidget);
-    m_addBlockBtn->setStyleSheet(
-        "QPushButton { padding: 4px 12px; border: 1px solid #ddd; "
-        "border-radius: 4px; background: white; }"
-        "QPushButton:hover { background: #f0f0f0; }");
-    metaLayout->addWidget(m_addBlockBtn);
-
-    headerLayout->addLayout(metaLayout);
-    mainLayout->addWidget(headerWidget);
-
-    // -----------------------------------------------------------------------
-    // 滚动区域（块编辑器容器）
-    // -----------------------------------------------------------------------
-    m_scrollArea = new QScrollArea(this);
-    m_scrollArea->setWidgetResizable(true);
-    m_scrollArea->setFrameShape(QFrame::NoFrame);
-    m_scrollArea->setStyleSheet("QScrollArea { background: white; }");
-
-    m_blocksContainer = new QWidget();
-    m_blocksContainer->setStyleSheet("QWidget { background: white; }");
-    m_blocksLayout = new QVBoxLayout(m_blocksContainer);
-    m_blocksLayout->setContentsMargins(40, 20, 40, 20);
-    m_blocksLayout->setSpacing(2);
-    m_blocksLayout->addStretch();  // 底部弹性空间
-
-    m_scrollArea->setWidget(m_blocksContainer);
-    mainLayout->addWidget(m_scrollArea, 1);
-
-    // -----------------------------------------------------------------------
-    // 底部状态栏
-    // -----------------------------------------------------------------------
-    QWidget* statusWidget = new QWidget(this);
-    statusWidget->setStyleSheet("QWidget { background-color: #f8f9fa; border-top: 1px solid #e0e0e0; }");
-    QHBoxLayout* statusLayout = new QHBoxLayout(statusWidget);
-    statusLayout->setContentsMargins(20, 6, 20, 6);
-
-    m_wordCountLabel = new QLabel(tr("字数: 0"), statusWidget);
-    m_wordCountLabel->setStyleSheet("color: #666; font-size: 12px;");
-    statusLayout->addWidget(m_wordCountLabel);
-
-    m_blockCountLabel = new QLabel(tr("块: 0"), statusWidget);
-    m_blockCountLabel->setStyleSheet("color: #666; font-size: 12px;");
-    statusLayout->addWidget(m_blockCountLabel);
-
-    statusLayout->addStretch();
-
-    m_saveStatusLabel = new QLabel(tr("已保存"), statusWidget);
-    m_saveStatusLabel->setStyleSheet("color: #67C23A; font-size: 12px;");
-    statusLayout->addWidget(m_saveStatusLabel);
-
-    mainLayout->addWidget(statusWidget);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_titleEdit, &QLineEdit::textChanged, this, &ReportEditor::onTitleChanged);
-    connect(m_statusCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &ReportEditor::onStatusChanged);
-    connect(m_dateEdit, &QDateEdit::dateChanged, this, &ReportEditor::onDateChanged);
-    connect(m_authorEdit, &QLineEdit::textChanged, this, [this](const QString&) {
-        setModified(true);
-        emit contentChanged();
-    });
-    connect(m_addBlockBtn, &QPushButton::clicked, this, &ReportEditor::onAddBlock);
+    delete ui;
 }
 
 // ===========================================================================
@@ -188,13 +107,13 @@ void ReportEditor::loadReport(const Report::Ptr& report)
     m_report = report;
 
     // 加载元信息
-    m_titleEdit->setText(report->title());
-    m_authorEdit->setText(report->author());
-    m_dateEdit->setDate(report->experimentDate());
+    ui->m_titleEdit->setText(report->title());
+    ui->m_authorEdit->setText(report->author());
+    ui->m_dateEdit->setDate(report->experimentDate());
 
     // 设置状态
-    const int statusIdx = m_statusCombo->findData(static_cast<int>(report->status()));
-    if (statusIdx >= 0) m_statusCombo->setCurrentIndex(statusIdx);
+    const int statusIdx = ui->m_statusCombo->findData(static_cast<int>(report->status()));
+    if (statusIdx >= 0) ui->m_statusCombo->setCurrentIndex(statusIdx);
 
     // 重建块编辑器
     rebuildBlocks();
@@ -207,17 +126,24 @@ void ReportEditor::loadReport(const Report::Ptr& report)
                  .arg(report->id()).arg(report->title()));
 }
 
+QString ReportEditor::reportTitle() const
+{
+    // 通过 ui 指针访问 .ui 文件中定义的标题编辑框控件
+    // 此函数不能在头文件中内联实现，因为 Ui::ReportEditor 在头文件中只有前向声明
+    return ui->m_titleEdit->text();
+}
+
 Report::Ptr ReportEditor::saveToReport()
 {
     if (!m_report) {
         m_report = Report::create();
     }
 
-    m_report->setTitle(m_titleEdit->text().trimmed());
-    m_report->setAuthor(m_authorEdit->text().trimmed());
-    m_report->setExperimentDate(m_dateEdit->date());
+    m_report->setTitle(ui->m_titleEdit->text().trimmed());
+    m_report->setAuthor(ui->m_authorEdit->text().trimmed());
+    m_report->setExperimentDate(ui->m_dateEdit->date());
     m_report->setStatus(static_cast<ReportStatus>(
-        m_statusCombo->currentData().toInt()));
+        ui->m_statusCombo->currentData().toInt()));
 
     // 收集所有块的内容
     m_report->clearBlocks();
@@ -254,11 +180,20 @@ BlockEditor* ReportEditor::insertBlock(int index, BlockType type)
 
     // 创建块编辑器
     BlockEditor* editor = BlockEditorFactory::createEditor(block, this);
+    // 空指针检查：确保块编辑器创建成功
+    if (!editor) {
+        LOG_ERROR(QString("创建块编辑器失败，类型: %1").arg(static_cast<int>(type)));
+        return nullptr;
+    }
     connectBlockEditor(editor);
 
     // 插入到布局和列表
     m_blockEditors.insert(index, editor);
-    m_blocksLayout->insertWidget(index, editor);
+    // 插入到 m_emptyLabel 之后（m_emptyLabel 在 index 0）
+    ui->m_blocksLayout->insertWidget(index + 1, editor);
+
+    // 隐藏空提示标签
+    updateEmptyLabelVisibility();
 
     // 设置焦点到新块
     m_currentBlockIndex = index;
@@ -294,7 +229,7 @@ void ReportEditor::removeBlock(int index)
     }
 
     BlockEditor* editor = m_blockEditors.takeAt(index);
-    m_blocksLayout->removeWidget(editor);
+    ui->m_blocksLayout->removeWidget(editor);
     editor->deleteLater();
 
     // 调整当前焦点索引
@@ -302,6 +237,7 @@ void ReportEditor::removeBlock(int index)
         m_currentBlockIndex = m_blockEditors.size() - 1;
     }
 
+    updateEmptyLabelVisibility();  // 更新空提示标签显示状态
     updateBlockSelection();
     updateStatusBar();
     setModified(true);
@@ -320,8 +256,8 @@ void ReportEditor::moveBlock(int from, int to)
     m_blockEditors.insert(to, editor);
 
     // 重新排列布局（移除并重新插入）
-    m_blocksLayout->removeWidget(editor);
-    m_blocksLayout->insertWidget(to, editor);
+    ui->m_blocksLayout->removeWidget(editor);
+    ui->m_blocksLayout->insertWidget(to + 1, editor);  // +1 因为 m_emptyLabel 在 index 0
 
     m_currentBlockIndex = to;
     updateBlockSelection();
@@ -351,8 +287,8 @@ void ReportEditor::convertBlock(int index, BlockType newType)
 
     // 替换
     m_blockEditors.replace(index, newEditor);
-    m_blocksLayout->removeWidget(oldEditor);
-    m_blocksLayout->insertWidget(index, newEditor);
+    ui->m_blocksLayout->removeWidget(oldEditor);
+    ui->m_blocksLayout->insertWidget(index + 1, newEditor);  // +1 因为 m_emptyLabel 在 index 0
     oldEditor->deleteLater();
 
     m_currentBlockIndex = index;
@@ -375,10 +311,11 @@ void ReportEditor::duplicateBlock(int index)
 
     const int insertIdx = index + 1;
     m_blockEditors.insert(insertIdx, newEditor);
-    m_blocksLayout->insertWidget(insertIdx, newEditor);
+    ui->m_blocksLayout->insertWidget(insertIdx + 1, newEditor);  // +1 因为 m_emptyLabel 在 index 0
 
     m_currentBlockIndex = insertIdx;
     newEditor->setFocusToEditor();
+    updateEmptyLabelVisibility();  // 更新空提示标签显示状态
     updateBlockSelection();
     updateStatusBar();
     setModified(true);
@@ -401,11 +338,11 @@ void ReportEditor::focusBlock(int index)
 void ReportEditor::setReadOnly(bool readOnly)
 {
     m_readOnly = readOnly;
-    m_titleEdit->setReadOnly(readOnly);
-    m_authorEdit->setReadOnly(readOnly);
-    m_dateEdit->setReadOnly(readOnly);
-    m_statusCombo->setEnabled(!readOnly);
-    m_addBlockBtn->setEnabled(!readOnly);
+    ui->m_titleEdit->setReadOnly(readOnly);
+    ui->m_authorEdit->setReadOnly(readOnly);
+    ui->m_dateEdit->setReadOnly(readOnly);
+    ui->m_statusCombo->setEnabled(!readOnly);
+    ui->m_addBlockBtn->setEnabled(!readOnly);
 
     for (BlockEditor* editor : m_blockEditors) {
         editor->setReadOnly(readOnly);
@@ -418,11 +355,11 @@ void ReportEditor::setModified(bool modified)
     m_modified = modified;
 
     if (modified) {
-        m_saveStatusLabel->setText(tr("未保存"));
-        m_saveStatusLabel->setStyleSheet("color: #E6A23C; font-size: 12px;");
+        ui->m_saveStatusLabel->setText(tr("未保存"));
+        ui->m_saveStatusLabel->setStyleSheet("color: #E6A23C; font-size: 12px;");
     } else {
-        m_saveStatusLabel->setText(tr("已保存"));
-        m_saveStatusLabel->setStyleSheet("color: #67C23A; font-size: 12px;");
+        ui->m_saveStatusLabel->setText(tr("已保存"));
+        ui->m_saveStatusLabel->setStyleSheet("color: #67C23A; font-size: 12px;");
     }
 
     emit saveStateChanged(!modified);
@@ -435,7 +372,7 @@ int ReportEditor::wordCount() const
         count += editor->plainText().length();
     }
     // 标题也算入
-    count += m_titleEdit->text().length();
+    count += ui->m_titleEdit->text().length();
     return count;
 }
 
@@ -570,7 +507,72 @@ void ReportEditor::onAddBlock()
         });
     }
 
-    menu.exec(m_addBlockBtn->mapToGlobal(QPoint(0, m_addBlockBtn->height())));
+    // 添加分隔线
+    menu.addSeparator();
+
+    // 添加"新建数据表"选项（不是块类型，而是创建数据表供图表引用）
+    QAction* newDataTableAction = menu.addAction(tr("📊 新建数据表..."));
+    connect(newDataTableAction, &QAction::triggered, this, [this]() {
+        createNewDataTable();
+    });
+
+    menu.exec(ui->m_addBlockBtn->mapToGlobal(QPoint(0, ui->m_addBlockBtn->height())));
+}
+
+void ReportEditor::createNewDataTable()
+{
+    if (!m_report) return;
+
+    // 弹出对话框让用户输入数据表名称
+    bool ok;
+    const QString tableName = QInputDialog::getText(
+        this, tr("新建数据表"),
+        tr("请输入数据表名称:"), QLineEdit::Normal,
+        tr("数据表 %1").arg(QDateTime::currentDateTime().toString("MMddHHmm")),
+        &ok);
+
+    if (!ok || tableName.trimmed().isEmpty()) return;
+
+    // 创建新的数据表
+    DataTable::Ptr table = DataTable::create();
+    table->setName(tableName.trimmed());
+    table->setReportId(m_report->id());
+    table->setDescription(tr("由报告编辑器创建的数据表"));
+
+    // 默认创建 3 列 3 行
+    QList<ColumnDefinition> columns;
+    for (int i = 0; i < 3; ++i) {
+        ColumnDefinition col;
+        col.name = QString("列%1").arg(i + 1);
+        col.type = ColumnType::Text;
+        columns.append(col);
+    }
+    table->setColumns(columns);
+
+    // 添加 3 行空数据
+    for (int row = 0; row < 3; ++row) {
+        QVariantList rowData;
+        for (int col = 0; col < 3; ++col) {
+            rowData.append(QString(""));
+        }
+        table->appendRow(rowData);
+    }
+
+    // 保存到数据库
+    if (DataTableRepository::insert(table)) {
+        LOG_INFO(QString("数据表创建成功: %1 (ID=%2)").arg(tableName).arg(table->id()));
+
+        // 打开数据表编辑器
+        DataTableEditorDialog dialog(table, this);
+        if (dialog.exec() == QDialog::Accepted) {
+            // 更新数据表
+            DataTableRepository::update(dialog.tableData());
+            QMessageBox::information(this, tr("提示"),
+                tr("数据表已创建！\n现在可以添加图表块并引用此数据表。"));
+        }
+    } else {
+        QMessageBox::warning(this, tr("错误"), tr("数据表创建失败！"));
+    }
 }
 
 void ReportEditor::onUndo()
@@ -599,7 +601,8 @@ void ReportEditor::rebuildBlocks()
         BlockEditor* editor = BlockEditorFactory::createEditor(block, this);
         connectBlockEditor(editor);
         m_blockEditors.append(editor);
-        m_blocksLayout->insertWidget(m_blockEditors.size() - 1, editor);
+        // 插入到 m_emptyLabel 之后（m_emptyLabel 在 index 0）
+        ui->m_blocksLayout->insertWidget(m_blockEditors.size(), editor);
     }
 
     // 如果报告没有块，添加一个空段落
@@ -608,6 +611,7 @@ void ReportEditor::rebuildBlocks()
     }
 
     m_currentBlockIndex = 0;
+    updateEmptyLabelVisibility();  // 更新空提示标签显示状态
     updateBlockSelection();
     updateChartBlockReportId();
 }
@@ -615,11 +619,12 @@ void ReportEditor::rebuildBlocks()
 void ReportEditor::clearBlocks()
 {
     for (BlockEditor* editor : m_blockEditors) {
-        m_blocksLayout->removeWidget(editor);
+        ui->m_blocksLayout->removeWidget(editor);
         editor->deleteLater();
     }
     m_blockEditors.clear();
     m_currentBlockIndex = -1;
+    updateEmptyLabelVisibility();  // 显示空提示标签
 }
 
 int ReportEditor::indexOfBlockEditor(BlockEditor* editor) const
@@ -653,8 +658,16 @@ void ReportEditor::connectBlockEditor(BlockEditor* editor)
 
 void ReportEditor::updateStatusBar()
 {
-    m_wordCountLabel->setText(tr("字数: %1").arg(wordCount()));
-    m_blockCountLabel->setText(tr("块: %1").arg(m_blockEditors.size()));
+    ui->m_wordCountLabel->setText(tr("字数: %1").arg(wordCount()));
+    ui->m_blockCountLabel->setText(tr("块: %1").arg(m_blockEditors.size()));
+}
+
+void ReportEditor::updateEmptyLabelVisibility()
+{
+    // 有块编辑器时隐藏空提示标签，无块时显示
+    if (ui->m_emptyLabel) {
+        ui->m_emptyLabel->setVisible(m_blockEditors.isEmpty());
+    }
 }
 
 void ReportEditor::updateBlockSelection()

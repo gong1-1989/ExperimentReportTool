@@ -5,6 +5,10 @@
 
 #include "PrintManager.h"
 #include "core/utils/Logger.h"
+#include "chart/ChartRenderer.h"
+#include "chart/ChartConfigDialog.h"
+#include "data/repositories/DataTableRepository.h"
+#include "core/models/DataTable.h"
 
 #include <QPrintDialog>
 #include <QPrintPreviewDialog>
@@ -15,6 +19,13 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QSettings>
+#include <QFile>
+#include <QBuffer>
+#include <QImage>
+#include <QPixmap>
+#include <QByteArray>
+#include <QJsonArray>
+#include <QJsonObject>
 
 // ===========================================================================
 // 构造与析构
@@ -184,6 +195,105 @@ void PrintManager::setupPrinter(QPrinter& printer, const PrintConfig& config)
 // 渲染文档
 // ===========================================================================
 
+/**
+ * @brief 从完整 HTML 文档中提取 body 标签内的内容
+ *
+ * TextBlockEditor 存储的是 QTextEdit::toHtml() 的完整 HTML 文档，
+ * 包含 <!DOCTYPE>、<html>、<head>、<body> 等标签。
+ * 在打印/导出时，需要提取 <body> 内的内容嵌入到主文档中，
+ * 否则会显示为 HTML 源码。
+ *
+ * @param html 完整的 HTML 文档
+ * @return body 标签内的 HTML 片段，如果不是完整文档则返回原文本
+ */
+static QString extractHtmlBody(const QString& html)
+{
+    // 如果不是完整的 HTML 文档（没有 <body 标签），直接返回原文本
+    if (!html.contains("<body", Qt::CaseInsensitive)) {
+        return html;
+    }
+
+    // 查找 <body ...> 开始标签
+    const int bodyStart = html.indexOf("<body", 0, Qt::CaseInsensitive);
+    if (bodyStart < 0) return html;
+
+    // 查找 body 开始标签的结束位置（> 符号）
+    const int bodyTagEnd = html.indexOf('>', bodyStart);
+    if (bodyTagEnd < 0) return html;
+
+    // 查找 </body> 结束标签
+    const int bodyEnd = html.indexOf("</body>", bodyTagEnd, Qt::CaseInsensitive);
+    if (bodyEnd < 0) return html;
+
+    // 提取 body 标签内的内容
+    return html.mid(bodyTagEnd + 1, bodyEnd - bodyTagEnd - 1);
+}
+
+/**
+ * @brief 根据 ID 获取数据表（支持数据库数据表和报告表格块）
+ * @param id 数据表 ID（正数=数据库数据表，负数=报告表格块）
+ * @param report 报告对象（用于查找表格块）
+ * @return 数据表对象，失败返回 nullptr
+ */
+static DataTable::Ptr getDataTableForPrint(qint64 id, const Report::Ptr& report)
+{
+    if (id > 0) {
+        // 正 ID：从数据库获取数据表
+        return DataTableRepository::findById(id);
+    } else if (id < 0 && report) {
+        // 负 ID：从报告表格块获取
+        const int targetIndex = -id - 1;
+        int tableBlockIndex = 0;
+
+        for (int i = 0; i < report->blockCount(); ++i) {
+            const ContentBlock& block = report->blockAt(i);
+            if (block.type == BlockType::Table) {
+                if (tableBlockIndex == targetIndex) {
+                    // 将表格块转换为 DataTable
+                    DataTable::Ptr table = DataTable::create();
+                    table->setId(id);
+                    table->setName(QObject::tr("表格块 #%1").arg(tableBlockIndex + 1));
+
+                    const int cols = block.data.value("cols").toInt(0);
+                    QList<ColumnDefinition> columns;
+                    if (block.data.value("headers").isArray()) {
+                        const QJsonArray headers = block.data.value("headers").toArray();
+                        for (int col = 0; col < cols; ++col) {
+                            ColumnDefinition colDef;
+                            colDef.name = col < headers.size() ? headers[col].toString() : QString("列%1").arg(col + 1);
+                            colDef.type = ColumnType::Text;
+                            columns.append(colDef);
+                        }
+                    } else {
+                        for (int col = 0; col < cols; ++col) {
+                            ColumnDefinition colDef;
+                            colDef.name = QString("列%1").arg(col + 1);
+                            colDef.type = ColumnType::Text;
+                            columns.append(colDef);
+                        }
+                    }
+                    table->setColumns(columns);
+
+                    if (block.data.value("cells").isArray()) {
+                        const QJsonArray cells = block.data.value("cells").toArray();
+                        for (int row = 0; row < cells.size(); ++row) {
+                            const QJsonArray rowData = cells[row].toArray();
+                            QVariantList variantRow;
+                            for (int col = 0; col < cols; ++col) {
+                                variantRow.append(col < rowData.size() ? rowData[col].toVariant() : QVariant());
+                            }
+                            table->appendRow(variantRow);
+                        }
+                    }
+                    return table;
+                }
+                ++tableBlockIndex;
+            }
+        }
+    }
+    return nullptr;
+}
+
 QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
                                               const PrintConfig& config)
 {
@@ -233,35 +343,29 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
     // 元信息
     if (config.includeMeta) {
         html += "<div class='meta'>";
-        html += QString("<span><strong>作者:</strong> %1  </span>").arg(report->author().toHtmlEscaped());
-        html += QString("<span><strong>实验日期:</strong> %1  </span>").arg(report->experimentDate().toString("yyyy-MM-dd"));
-        html += QString("<span><strong>创建时间:</strong> %1  </span>").arg(report->createdAt().toString("yyyy-MM-dd hh:mm"));
+        html += QString("<span><strong>作者:</strong> %1</span>").arg(report->author().toHtmlEscaped());
+        html += QString("<span><strong>实验日期:</strong> %1</span>").arg(report->experimentDate().toString("yyyy-MM-dd"));
+        html += QString("<span><strong>创建时间:</strong> %1</span>").arg(report->createdAt().toString("yyyy-MM-dd hh:mm"));
         html += "</div>";
     }
-
-    auto stripHtml = [](const QString &htmlStr) -> QString
-    {
-        QTextDocument doc;
-        doc.setHtml(htmlStr);
-        return doc.toPlainText();
-    };
 
     // 内容块
     for (int i = 0; i < report->blockCount(); ++i) {
         const ContentBlock& block = report->blockAt(i);
-
         switch (block.type) {
         case BlockType::Heading1:
-            html += QString("<h2>%1</h2>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
+            // 文本块存储的是完整 HTML 文档，需要提取 body 内容
+            html += QString("<h2>%1</h2>").arg(extractHtmlBody(block.data.value("text").toString()));
             break;
         case BlockType::Heading2:
-            html += QString("<h3>%1</h3>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());;
+            html += QString("<h3>%1</h3>").arg(extractHtmlBody(block.data.value("text").toString()));
             break;
         case BlockType::Heading3:
-            html += QString("<h3 style='font-size:12pt;'>%1</h3>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
+            html += QString("<h3 style='font-size:12pt;'>%1</h3>").arg(extractHtmlBody(block.data.value("text").toString()));
             break;
         case BlockType::Paragraph:
-            html += QString("<p>%1</p>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
+            // 段落直接使用提取后的 HTML 内容（保留格式）
+            html += extractHtmlBody(block.data.value("text").toString());
             break;
         case BlockType::BulletList:
             html += "<ul>";
@@ -282,25 +386,146 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
             html += "</ol>";
             break;
         case BlockType::Quote:
-            html += QString("<blockquote>%1</blockquote>").arg(stripHtml(block.data.value("text").toString()).toHtmlEscaped());
+            html += QString("<blockquote>%1</blockquote>").arg(extractHtmlBody(block.data.value("text").toString()));
             break;
         case BlockType::CodeBlock:
+            // 代码块使用纯文本，需要转义
             html += QString("<pre><code>%1</code></pre>").arg(block.data.value("code").toString().toHtmlEscaped());
             break;
         case BlockType::Divider:
             html += "<hr>";
             break;
         case BlockType::Image: {
-            const QString caption = "file:///"+block.data.value("path").toString();
-            html += QString("<p style='text-align:center; color:#888; font-size:10pt;'><img src=\'%1\'></p>").arg(caption);
+            const QString imagePath = block.data.value("path").toString();
+            const QString caption = block.data.value("caption").toString();
+            const int displayWidth = block.data.value("width").toInt(600);
+
+            // 尝试读取图片文件并转换为 base64 嵌入 HTML
+            if (!imagePath.isEmpty() && QFile::exists(imagePath)) {
+                QImage image(imagePath);
+                if (!image.isNull()) {
+                    // 按显示宽度缩放
+                    if (image.width() > displayWidth) {
+                        image = image.scaledToWidth(displayWidth, Qt::SmoothTransformation);
+                    }
+                    // 转换为 base64
+                    QByteArray byteArray;
+                    QBuffer buffer(&byteArray);
+                    buffer.open(QIODevice::WriteOnly);
+                    image.save(&buffer, "PNG");
+                    const QString base64 = QString::fromLatin1(byteArray.toBase64());
+                    // 嵌入图片
+                    html += QString("<div style='text-align:center; margin:10px 0;'>"
+                                    "<img src='data:image/png;base64,%1' style='max-width:100%;'/>"
+                                    "</div>").arg(base64);
+                    // 图片说明
+                    if (!caption.isEmpty()) {
+                        html += QString("<p style='text-align:center; color:#666; font-size:10pt; margin-top:5px;'>%1</p>")
+                                    .arg(caption.toHtmlEscaped());
+                    }
+                } else {
+                    html += QString("<p style='text-align:center; color:#888;'>[图片加载失败: %1]</p>")
+                                .arg(imagePath.toHtmlEscaped());
+                }
+            } else {
+                html += "<p style='text-align:center; color:#888;'>[未选择图片]</p>";
+            }
             break;
         }
-        case BlockType::Table:
-            html += "<p style='text-align:center; color:#888;'>[表格数据]</p>";
+        case BlockType::Table: {
+            // 从 JSON 数据渲染 HTML 表格
+            const int rows = block.data.value("rows").toInt(0);
+            const int cols = block.data.value("cols").toInt(0);
+
+            if (rows > 0 && cols > 0) {
+                // 使用最简单的 HTML 表格，确保 QTextDocument 兼容
+                html += "<p><table border='1' cellspacing='0' cellpadding='4' width='100%'>";
+
+                // 表头
+                if (block.data.value("headers").isArray()) {
+                    const QJsonArray headers = block.data.value("headers").toArray();
+                    html += "<tr bgcolor='#e8e8e8'>";
+                    for (int col = 0; col < cols; ++col) {
+                        const QString headerText = col < headers.size()
+                                                       ? headers[col].toString()
+                                                       : QString("列%1").arg(col + 1);
+                        html += QString("<td><b>%1</b></td>").arg(headerText.toHtmlEscaped());
+                    }
+                    html += "</tr>";
+                }
+
+                // 表格数据
+                if (block.data.value("cells").isArray()) {
+                    const QJsonArray cells = block.data.value("cells").toArray();
+                    for (int row = 0; row < rows && row < cells.size(); ++row) {
+                        html += "<tr>";
+                        const QJsonArray rowData = cells[row].toArray();
+                        for (int col = 0; col < cols; ++col) {
+                            const QString cellText = col < rowData.size()
+                                                         ? rowData[col].toString()
+                                                         : QString();
+                            html += QString("<td>%1</td>").arg(cellText.toHtmlEscaped());
+                        }
+                        html += "</tr>";
+                    }
+                }
+
+                html += "</table></p>";
+            } else {
+                html += "<p style='text-align:center; color:#888;'>[空表格]</p>";
+            }
             break;
-        case BlockType::Chart:
-            html += "<p style='text-align:center; color:#888;'>[图表]</p>";
+        }
+        case BlockType::Chart: {
+            // 从 JSON 数据解析图表配置
+            const ChartConfig config = ChartConfig::fromJson(block.data);
+
+            if (config.dataTableId != 0) {
+                // 根据 ID 获取数据表（正 ID=数据库，负 ID=表格块）
+                DataTable::Ptr table = getDataTableForPrint(config.dataTableId, report);
+
+                if (table) {
+                    // 使用 ChartRenderer 渲染图表
+                    ChartRenderer renderer;
+                    renderer.setConfig(config);
+                    renderer.setDataTable(table);
+
+                    if (renderer.render()) {
+                        // 将图表渲染为图片
+                        const int chartWidth = config.width > 0 ? config.width : 600;
+                        const int chartHeight = config.height > 0 ? config.height : 400;
+                        const QPixmap pixmap = renderer.toPixmap(chartWidth, chartHeight);
+                        if (!pixmap.isNull()) {
+                            // 转换为 base64
+                            QByteArray byteArray;
+                            QBuffer buffer(&byteArray);
+                            buffer.open(QIODevice::WriteOnly);
+                            pixmap.save(&buffer, "PNG");
+                            const QString base64 = QString::fromLatin1(byteArray.toBase64());
+                            // 嵌入图表图片（只设置宽度，高度自适应，避免拉伸）
+                            // 注意：QTextDocument 对图片尺寸支持有限，使用宽度属性确保显示正确
+                            html += QString("<p align='center'>"
+                                            "<img src='data:image/png;base64,%1' width='%2'/>"
+                                            "</p>").arg(base64).arg(chartWidth);
+                            // 图表标题
+                            if (!config.title.isEmpty()) {
+                                html += QString("<p align='center' style='color:#666; font-size:10pt;'>%1</p>")
+                                            .arg(config.title.toHtmlEscaped());
+                            }
+                        } else {
+                            html += "<p align='center' style='color:#888;'>[图表渲染失败]</p>";
+                        }
+                    } else {
+                        html += "<p align='center' style='color:#888;'>[图表渲染失败]</p>";
+                    }
+                } else {
+                    html += "<p style='text-align:center; color:#888;'>[数据源不存在]</p>";
+                }
+            } else {
+                html += "<p style='text-align:center; color:#888;'>[未配置图表，请先选择数据源]</p>";
+            }
             break;
+        }
         default:
             break;
         }

@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QStyleOption>
 #include <QApplication>
+#include <QTimer>  // 用于延迟更新高度
 
 // ===========================================================================
 // 构造与析构
@@ -33,6 +34,14 @@ BlockEditor::BlockEditor(const ContentBlock& block, QWidget* parent)
 
     // 设置最小高度，避免块太矮难以点击
     setMinimumHeight(32);
+
+    // ========================================================================
+    // 关键修复：设置尺寸策略
+    // 水平方向：Expanding（占据可用宽度）
+    // 垂直方向：Minimum（sizeHint 是最小高度，可被拉伸但不能被压缩）
+    // 这样可以确保块编辑器的高度至少是 sizeHint，不会被布局系统压缩
+    // ========================================================================
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
     // 设置对象名，方便 QSS 样式选择
     setObjectName("blockEditor");
@@ -59,10 +68,15 @@ void BlockEditor::setupEditor()
 
     // 右侧内容容器
     QWidget* contentWidget = new QWidget(this);
+    // 关键：内容容器高度由内容决定（Minimum），不被拉伸
+    contentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     m_contentLayout = new QVBoxLayout(contentWidget);
     m_contentLayout->setContentsMargins(4, 0, 4, 0);
     m_contentLayout->setSpacing(0);
     m_mainLayout->addWidget(contentWidget, 1);  // 内容区占剩余空间
+
+    // 布局创建后更新高度
+    updateHeight();
 }
 
 void BlockEditor::createHandle()
@@ -290,6 +304,61 @@ void BlockEditor::showBlockTypeMenu(const QPoint& pos)
     }
 
     menu.exec(pos);
+}
+
+// ===========================================================================
+// 尺寸提示（确保布局系统正确计算块编辑器高度）
+// ===========================================================================
+
+QSize BlockEditor::sizeHint() const
+{
+    // 如果主布局已创建，返回布局的推荐尺寸
+    // 这样布局系统就能根据子控件（如 AutoResizeTextEdit）的 sizeHint 正确计算高度
+    if (m_mainLayout) {
+        QSize hint = m_mainLayout->sizeHint();
+        // 确保高度至少是 minimumHeight
+        if (hint.height() < minimumHeight()) {
+            hint.setHeight(minimumHeight());
+        }
+        return hint;
+    }
+    return QWidget::sizeHint();
+}
+
+QSize BlockEditor::minimumSizeHint() const
+{
+    // 最小高度为布局的最小尺寸和 minimumHeight 的最大值
+    if (m_mainLayout) {
+        QSize minSize = m_mainLayout->minimumSize();
+        if (minSize.height() < minimumHeight()) {
+            minSize.setHeight(minimumHeight());
+        }
+        return minSize;
+    }
+    return QSize(0, minimumHeight());
+}
+
+void BlockEditor::updateHeight()
+{
+    // 通知布局系统重新计算尺寸
+    // 使用 QTimer::singleShot(0) 延迟到事件循环，确保布局完成
+    QTimer::singleShot(0, this, [this]() {
+        // 强制更新布局
+        if (m_mainLayout) {
+            m_mainLayout->invalidate();
+            m_mainLayout->activate();
+        }
+        // 更新自身几何信息
+        updateGeometry();
+        // 同时更新父布局
+        if (parentWidget()) {
+            parentWidget()->updateGeometry();
+            if (parentWidget()->layout()) {
+                parentWidget()->layout()->invalidate();
+                parentWidget()->layout()->activate();
+            }
+        }
+    });
 }
 
 // ===========================================================================

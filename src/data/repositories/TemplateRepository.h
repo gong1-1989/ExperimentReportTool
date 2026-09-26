@@ -6,8 +6,8 @@
 #ifndef TEMPLATE_REPOSITORY_H
 #define TEMPLATE_REPOSITORY_H
 
-#include "core/models/Template.h"
 #include <QSqlQuery>
+#include "core/models/Template.h"
 
 class TemplateRepository
 {

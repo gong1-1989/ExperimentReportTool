@@ -4,6 +4,7 @@
  */
 
 #include "FormulaEditorDialog.h"
+#include "ui_FormulaEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "core/utils/Logger.h"
 
 #include <QMessageBox>
@@ -43,20 +44,12 @@ const QStringList FormulaEditorDialog::s_templates = {
 
 FormulaEditorDialog::FormulaEditorDialog(const QString& initialLatex, QWidget* parent)
     : QDialog(parent)
-    , m_latexEdit(nullptr)
-    , m_previewBrowser(nullptr)
-    , m_splitter(nullptr)
-    , m_templateCombo(nullptr)
-    , m_inlineCombo(nullptr)
-    , m_previewBtn(nullptr)
-    , m_okBtn(nullptr)
-    , m_cancelBtn(nullptr)
-    , m_statusLabel(nullptr)
+    , ui(new Ui::FormulaEditorDialog)
 {
-    setupUi();
+    ui->setupUi(this);
 
     if (!initialLatex.isEmpty()) {
-        m_latexEdit->setPlainText(initialLatex);
+        ui->m_latexEdit->setPlainText(initialLatex);
     }
 
     setWindowTitle(tr("公式编辑器"));
@@ -68,129 +61,25 @@ FormulaEditorDialog::FormulaEditorDialog(const QString& initialLatex, QWidget* p
 
 FormulaEditorDialog::~FormulaEditorDialog()
 {
+    delete ui;
 }
 
 // ===========================================================================
-// UI 初始化
+// 公共方法
 // ===========================================================================
 
-void FormulaEditorDialog::setupUi()
+QString FormulaEditorDialog::formula() const
 {
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
+    // 通过 ui 指针访问 .ui 文件中定义的 LaTeX 编辑框
+    // 此函数不能在头文件中内联实现，因为 Ui::FormulaEditorDialog 在头文件中只有前向声明
+    return ui->m_latexEdit->toPlainText();
+}
 
-    // -----------------------------------------------------------------------
-    // 工具栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* toolbar = new QHBoxLayout();
-    toolbar->setSpacing(8);
-
-    toolbar->addWidget(new QLabel(tr("模板:"), this));
-    m_templateCombo = new QComboBox(this);
-    m_templateCombo->addItems(s_templates);
-    m_templateCombo->setMinimumWidth(200);
-    toolbar->addWidget(m_templateCombo);
-
-    toolbar->addSpacing(20);
-    toolbar->addWidget(new QLabel(tr("模式:"), this));
-    m_inlineCombo = new QComboBox(this);
-    m_inlineCombo->addItem(tr("行内公式"));
-    m_inlineCombo->addItem(tr("块级公式"));
-    toolbar->addWidget(m_inlineCombo);
-
-    toolbar->addStretch();
-
-    m_previewBtn = new QPushButton(tr("刷新预览"), this);
-    toolbar->addWidget(m_previewBtn);
-
-    mainLayout->addLayout(toolbar);
-
-    // -----------------------------------------------------------------------
-    // 编辑区 + 预览区（分割器）
-    // -----------------------------------------------------------------------
-    m_splitter = new QSplitter(Qt::Horizontal, this);
-
-    // 左侧：LaTeX 输入
-    QWidget* editContainer = new QWidget(this);
-    QVBoxLayout* editLayout = new QVBoxLayout(editContainer);
-    editLayout->setContentsMargins(0, 0, 0, 0);
-    editLayout->setSpacing(4);
-
-    QLabel* editLabel = new QLabel(tr("LaTeX 输入"), this);
-    editLabel->setStyleSheet("font-weight: bold; color: #333; padding: 4px;");
-    editLayout->addWidget(editLabel);
-
-    m_latexEdit = new QTextEdit(this);
-    m_latexEdit->setPlaceholderText(tr("在此输入 LaTeX 公式...\n\n例如: E = mc^2\n      \\frac{a}{b}"));
-    m_latexEdit->setStyleSheet(
-        "QTextEdit { border: 1px solid #ddd; border-radius: 4px; "
-        "font-family: Consolas, Monaco, monospace; font-size: 13px; padding: 8px; }");
-    editLayout->addWidget(m_latexEdit, 1);
-
-    m_splitter->addWidget(editContainer);
-
-    // 右侧：预览
-    QWidget* previewContainer = new QWidget(this);
-    QVBoxLayout* previewLayout = new QVBoxLayout(previewContainer);
-    previewLayout->setContentsMargins(0, 0, 0, 0);
-    previewLayout->setSpacing(4);
-
-    QLabel* previewLabel = new QLabel(tr("公式预览"), this);
-    previewLabel->setStyleSheet("font-weight: bold; color: #333; padding: 4px;");
-    previewLayout->addWidget(previewLabel);
-
-    m_previewBrowser = new QTextBrowser(this);
-    m_previewBrowser->setStyleSheet(
-        "QTextBrowser { border: 1px solid #ddd; border-radius: 4px; padding: 12px; "
-        "background: white; }");
-    m_previewBrowser->setOpenExternalLinks(true);
-    previewLayout->addWidget(m_previewBrowser, 1);
-
-    m_splitter->addWidget(previewContainer);
-    m_splitter->setStretchFactor(0, 1);
-    m_splitter->setStretchFactor(1, 1);
-    m_splitter->setSizes({400, 400});
-
-    mainLayout->addWidget(m_splitter, 1);
-
-    // -----------------------------------------------------------------------
-    // 状态栏
-    // -----------------------------------------------------------------------
-    m_statusLabel = new QLabel(tr("提示: 使用 MathJax 渲染公式，需要网络连接"), this);
-    m_statusLabel->setStyleSheet("color: #666; font-size: 12px; padding: 4px 0;");
-    mainLayout->addWidget(m_statusLabel);
-
-    // -----------------------------------------------------------------------
-    // 底部按钮
-    // -----------------------------------------------------------------------
-    QHBoxLayout* buttonBar = new QHBoxLayout();
-    buttonBar->setSpacing(8);
-
-    buttonBar->addStretch();
-
-    m_cancelBtn = new QPushButton(tr("取消"), this);
-    buttonBar->addWidget(m_cancelBtn);
-
-    m_okBtn = new QPushButton(tr("确定"), this);
-    m_okBtn->setStyleSheet(
-        "QPushButton { background: #4A90D9; color: white; padding: 6px 20px; "
-        "border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #357ABD; }");
-    m_okBtn->setDefault(true);
-    buttonBar->addWidget(m_okBtn);
-
-    mainLayout->addLayout(buttonBar);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_okBtn, &QPushButton::clicked, this, &QDialog::accept);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-    connect(m_previewBtn, &QPushButton::clicked, this, &FormulaEditorDialog::onPreview);
-    connect(m_templateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &FormulaEditorDialog::onInsertTemplate);
-    connect(m_latexEdit, &QTextEdit::textChanged, this, &FormulaEditorDialog::onTextChanged);
+bool FormulaEditorDialog::isInline() const
+{
+    // 通过 ui 指针访问 .ui 文件中定义的模式下拉框
+    // 索引 0 表示行内模式，索引 1 表示块级模式
+    return ui->m_inlineCombo->currentIndex() == 0;
 }
 
 // ===========================================================================
@@ -210,8 +99,8 @@ void FormulaEditorDialog::onTextChanged()
 
 void FormulaEditorDialog::updatePreview()
 {
-    const QString latex = m_latexEdit->toPlainText().trimmed();
-    m_previewBrowser->setHtml(generatePreviewHtml(latex));
+    const QString latex = ui->m_latexEdit->toPlainText().trimmed();
+    ui->m_previewBrowser->setHtml(generatePreviewHtml(latex));
 }
 
 QString FormulaEditorDialog::generatePreviewHtml(const QString& latex)
@@ -278,9 +167,9 @@ void FormulaEditorDialog::onInsertTemplate(int index)
     const int colonPos = templateText.indexOf(':');
     if (colonPos > 0) {
         const QString latex = templateText.mid(colonPos + 1).trimmed();
-        m_latexEdit->setPlainText(latex);
+        ui->m_latexEdit->setPlainText(latex);
     }
 
     // 重置选择
-    m_templateCombo->setCurrentIndex(0);
+    ui->m_templateCombo->setCurrentIndex(0);
 }

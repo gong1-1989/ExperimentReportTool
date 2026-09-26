@@ -29,6 +29,11 @@
 #include "core/models/Report.h"
 #include "editor/BlockEditor.h"
 
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class ReportEditor;
+}
+
 // 前向声明
 class AutoSaveManager;
 
@@ -68,8 +73,10 @@ public:
     /**
      * @brief 获取报告标题
      * @return 标题
+     *
+     * @note 此函数在 .cpp 中实现，因为需要访问 ui 对象的完整定义
      */
-    QString reportTitle() const { return m_titleEdit->text(); }
+    QString reportTitle() const;
 
     // -----------------------------------------------------------------------
     // 块操作
@@ -189,13 +196,13 @@ private slots:
     void onUndo();
     void onRedo();
 
+    /// 创建新数据表（供图表块引用）
+    void createNewDataTable();
+
 private:
     // -----------------------------------------------------------------------
     // 内部方法
     // -----------------------------------------------------------------------
-
-    /// 初始化 UI
-    void setupUi();
 
     /// 重建所有块编辑器（从报告内容）
     void rebuildBlocks();
@@ -218,43 +225,22 @@ private:
     /// 更新所有图表块的报告 ID（用于查找数据表）
     void updateChartBlockReportId();
 
-    // -----------------------------------------------------------------------
-    // 成员变量 - UI
-    // -----------------------------------------------------------------------
-
-    // 顶部标题栏
-    QLineEdit* m_titleEdit;        ///< 报告标题
-    QComboBox* m_statusCombo;       ///< 报告状态
-    QDateEdit* m_dateEdit;          ///< 实验日期
-    QLineEdit* m_authorEdit;        ///< 作者
-
-    // 工具栏
-    QPushButton* m_addBlockBtn;     ///< 添加块按钮
-    QPushButton* m_undoBtn;         ///< 撤销
-    QPushButton* m_redoBtn;         ///< 重做
-
-    // 滚动区域
-    QScrollArea* m_scrollArea;       ///< 滚动区域
-    QWidget* m_blocksContainer;      ///< 块容器
-    QVBoxLayout* m_blocksLayout;     ///< 块布局
-
-    // 底部状态栏
-    QLabel* m_wordCountLabel;        ///< 字数统计
-    QLabel* m_blockCountLabel;       ///< 块数量
-    QLabel* m_saveStatusLabel;       ///< 保存状态
+    /// 更新空提示标签的显示状态（有块时隐藏，无块时显示）
+    void updateEmptyLabelVisibility();
 
     // -----------------------------------------------------------------------
-    // 成员变量 - 数据
+    // 成员变量
     // -----------------------------------------------------------------------
 
-    Report::Ptr m_report;             ///< 当前编辑的报告
+    Ui::ReportEditor* ui;                ///< UI 界面对象（从 .ui 文件自动生成）
+    Report::Ptr m_report;                 ///< 当前编辑的报告
     QList<BlockEditor*> m_blockEditors;  ///< 块编辑器列表
-    int m_currentBlockIndex;          ///< 当前焦点块索引
-    bool m_modified;                   ///< 是否有未保存更改
-    bool m_readOnly;                   ///< 只读模式
-    bool m_loading;                    ///< 是否正在加载（避免循环触发）
+    int m_currentBlockIndex;              ///< 当前焦点块索引
+    bool m_modified;                      ///< 是否有未保存更改
+    bool m_readOnly;                      ///< 只读模式
+    bool m_loading;                       ///< 是否正在加载（避免循环触发）
 
-    AutoSaveManager* m_autoSave;      ///< 自动保存管理器
+    AutoSaveManager* m_autoSave;          ///< 自动保存管理器
 };
 
 #endif // REPORT_EDITOR_H

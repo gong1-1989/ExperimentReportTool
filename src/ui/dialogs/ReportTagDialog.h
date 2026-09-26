@@ -16,9 +16,15 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QList>
 
 #include "core/models/Tag.h"
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class ReportTagDialog;
+}
 /**
  * @brief 报告标签选择对话框
  */
@@ -53,23 +59,16 @@ private slots:
     void onDeselectAll();
 
 private:
-    void setupUi();
+
+    Ui::ReportTagDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     void loadTags();
     void loadSelectedTags();
-    void updateSelectedLabel();
+    void updateSelectedLabel();  ///< 更新已选标签数量显示
 
     // -----------------------------------------------------------------------
     // UI 控件
     // -----------------------------------------------------------------------
 
-    QLineEdit* m_searchEdit;           ///< 搜索框
-    QListWidget* m_tagList;             ///< 标签列表（可勾选）
-    QPushButton* m_newTagBtn;           ///< 新建标签按钮
-    QPushButton* m_selectAllBtn;        ///< 全选按钮
-    QPushButton* m_deselectAllBtn;      ///< 全不选按钮
-    QPushButton* m_okBtn;                ///< 确定按钮
-    QPushButton* m_cancelBtn;            ///< 取消按钮
-    QLabel* m_selectedLabel;             ///< 已选标签显示
 
     // -----------------------------------------------------------------------
     // 数据

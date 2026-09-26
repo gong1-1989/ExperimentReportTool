@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TemplateEditorDialog</class>
+ <widget class="QDialog" name="TemplateEditorDialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>500</width><height>400</height></rect></property>
+  <property name="windowTitle"><string>模板编辑</string></property>
+  <property name="minimumSize"><size><width>500</width><height>400</height></size></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing"><number>12</number></property>
+   <property name="leftMargin"><number>15</number></property><property name="topMargin"><number>15</number></property>
+   <property name="rightMargin"><number>15</number></property><property name="bottomMargin"><number>15</number></property>
+   <item>
+    <widget class="QGroupBox" name="basicGroup">
+     <property name="title"><string>基本信息</string></property>
+     <layout class="QFormLayout" name="formLayout">
+      <item row="0" column="0"><widget class="QLabel" name="labelName"><property name="text"><string>模板名称:</string></property></widget></item>
+      <item row="0" column="1"><widget class="QLineEdit" name="m_nameEdit"><property name="placeholderText"><string>请输入模板名称</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="labelCategory"><property name="text"><string>模板分类:</string></property></widget></item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="m_categoryCombo">
+        <item><property name="text"><string>通用</string></property></item>
+        <item><property name="text"><string>物理实验</string></property></item>
+        <item><property name="text"><string>化学实验</string></property></item>
+        <item><property name="text"><string>生物实验</string></property></item>
+        <item><property name="text"><string>其他</string></property></item>
+       </widget>
+      </item>
+      <item row="2" column="0"><widget class="QLabel" name="labelDesc"><property name="text"><string>模板描述:</string></property></widget></item>
+      <item row="2" column="1"><widget class="QTextEdit" name="m_descriptionEdit"><property name="placeholderText"><string>请输入模板描述（可选）</string></property><property name="maximumSize"><size><width>16777215</width><height>120</height></size></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="m_buttonBox">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="standardButtons"><set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

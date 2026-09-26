@@ -18,10 +18,16 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTextBrowser>
+#include <QList>
 #include <QSplitter>
 
 #include "search/SearchService.h"
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class SearchResultDialog;
+}
 /**
  * @brief 搜索结果对话框
  */
@@ -56,7 +62,8 @@ private slots:
     void onFilterChanged(int index);
 
 private:
-    void setupUi();
+
+    Ui::SearchResultDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     void performSearch();
     void displayResults(const QList<SearchResultItem>& results);
     void updateHistory();
@@ -65,17 +72,8 @@ private:
     // UI 控件
     // -----------------------------------------------------------------------
 
-    QLineEdit* m_searchEdit;           ///< 搜索框
-    QPushButton* m_searchBtn;          ///< 搜索按钮
-    QComboBox* m_projectFilter;        ///< 项目筛选
-    QComboBox* m_historyCombo;         ///< 搜索历史
-    QPushButton* m_clearHistoryBtn;    ///< 清除历史按钮
 
-    QSplitter* m_splitter;             ///< 分割器
-    QListWidget* m_resultList;         ///< 结果列表
-    QTextBrowser* m_detailBrowser;     ///< 详情预览
 
-    QLabel* m_statusLabel;             ///< 状态标签
 
     // -----------------------------------------------------------------------
     // 数据

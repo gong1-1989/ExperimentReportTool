@@ -85,18 +85,18 @@ Project::List ProjectRepository::findAll(const ProjectQuery& query)
     // 状态筛选
     if (static_cast<int>(query.status) >= 0) {
         sql += " AND status = :status";
+        // 创建临时 Project 对象，设置状态后调用 statusToString()
+        // 因为 statusToString() 是实例方法，需要通过对象调用
         Project tempProject;
         tempProject.setStatus(query.status);
         bindValues << tempProject.statusToString();
-        // 注意：这里用了一个临时 Project 对象来转换状态，
-        // 更优雅的方式是给 ProjectStatus 写一个独立的转换函数。
-        // 但为了保持简单，这里复用了 Project::statusToString。
     }
 
     // 父项目筛选
     if (query.parentId == 0) {
-        // parent_id = 0 表示仅根项目（parent_id <= 0）
-        sql += " AND parent_id <= 0";
+        // parent_id = 0 表示仅根项目（parent_id <= 0 或 NULL）
+        // 同时处理旧数据中可能存在的 NULL 值
+        sql += " AND (parent_id <= 0 OR parent_id IS NULL)";
     } else if (query.parentId > 0) {
         sql += " AND parent_id = :parentId";
         bindValues << query.parentId;
@@ -155,7 +155,7 @@ Project::List ProjectRepository::findAll(const ProjectQuery& query)
 Project::List ProjectRepository::findRootProjects()
 {
     ProjectQuery query;
-    query.parentId = -1;  // 仅根项目
+    query.parentId = 0;  // 仅根项目
     query.sortBy = "name";
     query.sortOrder = Qt::AscendingOrder;
     return findAll(query);
@@ -194,7 +194,8 @@ bool ProjectRepository::insert(Project::Ptr project)
     query.bindValue(":description", project->description());
     query.bindValue(":status", project->statusToString());
     query.bindValue(":owner", project->owner());
-    query.bindValue(":parent_id", project->parentId() > 0 ? project->parentId() : QVariant(QVariant::LongLong));
+    // 根项目的 parent_id 存储为 0（不是 NULL），确保查询时 parent_id <= 0 能匹配
+    query.bindValue(":parent_id", project->parentId() > 0 ? project->parentId() : 0);
     query.bindValue(":created_at", now);
     query.bindValue(":updated_at", now);
 
@@ -241,7 +242,8 @@ bool ProjectRepository::update(const Project::Ptr& project)
     query.bindValue(":description", project->description());
     query.bindValue(":status", project->statusToString());
     query.bindValue(":owner", project->owner());
-    query.bindValue(":parent_id", project->parentId() > 0 ? project->parentId() : QVariant(QVariant::LongLong));
+    // 根项目的 parent_id 存储为 0（不是 NULL），确保查询时 parent_id <= 0 能匹配
+    query.bindValue(":parent_id", project->parentId() > 0 ? project->parentId() : 0);
     query.bindValue(":updated_at", QDateTime::currentDateTime());
     query.bindValue(":id", project->id());
 
@@ -331,9 +333,12 @@ int ProjectRepository::countByStatus(ProjectStatus status)
     QSqlDatabase db = DatabaseManager::instance().database();
     QSqlQuery query(db);
 
-    query.prepare("SELECT COUNT(*) FROM projects WHERE status = :status;");
+    // 创建临时对象用于将枚举转换为字符串
+    // Project 类没有接受状态参数的构造函数，statusToString() 是实例方法
     Project tempProject;
     tempProject.setStatus(status);
+
+    query.prepare("SELECT COUNT(*) FROM projects WHERE status = :status;");
     query.bindValue(":status", tempProject.statusToString());
 
     if (query.exec() && query.next()) {
@@ -348,7 +353,8 @@ int ProjectRepository::countChildren(qint64 parentId)
     QSqlQuery query(db);
 
     if (parentId <= 0) {
-        query.exec("SELECT COUNT(*) FROM projects WHERE parent_id <= 0;");
+        // 同时处理旧数据中可能存在的 NULL 值
+        query.exec("SELECT COUNT(*) FROM projects WHERE (parent_id <= 0 OR parent_id IS NULL);");
     } else {
         query.prepare("SELECT COUNT(*) FROM projects WHERE parent_id = :parentId;");
         query.bindValue(":parentId", parentId);

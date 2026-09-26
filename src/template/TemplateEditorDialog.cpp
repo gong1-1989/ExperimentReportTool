@@ -1,98 +1,100 @@
 /**
  * @file TemplateEditorDialog.cpp
  * @brief 模板编辑器对话框实现文件
+ *
+ * 本文件实现 TemplateEditorDialog 类的所有功能。
+ * UI 界面通过 Qt Designer 设计的 TemplateEditorDialog.ui 文件加载，
+ * 由 CMake 的 AUTOUIC 功能自动生成 ui_TemplateEditorDialog.h 头文件。
  */
 
 #include "TemplateEditorDialog.h"
+#include "ui_TemplateEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/ReportEditor.h"
 #include "data/repositories/TemplateRepository.h"
 #include "core/utils/Logger.h"
 
 #include <QMessageBox>
 #include <QInputDialog>
-#include <QGroupBox>
-#include <QFormLayout>
+#include <QVBoxLayout>
 
 // ===========================================================================
 // 构造函数
 // ===========================================================================
 
+/**
+ * @brief 构造函数
+ *
+ * 初始化 UI 界面（从 .ui 文件加载），加载模板数据，设置窗口标题。
+ *
+ * @param parent 父窗口指针
+ * @param existingTemplate 已有的模板对象（为空则新建模板）
+ */
 TemplateEditorDialog::TemplateEditorDialog(QWidget* parent,
                                              const Template::Ptr& existingTemplate)
     : QDialog(parent)
-    , m_nameEdit(nullptr)
-    , m_categoryCombo(nullptr)
-    , m_descriptionEdit(nullptr)
-    , m_editor(nullptr)
-    , m_buttonBox(nullptr)
+    , ui(new Ui::TemplateEditorDialog)  // 创建 UI 界面对象
+    , m_editor(nullptr)                  // 报告编辑器组件（动态创建）
     , m_template(existingTemplate)
     , m_isNewTemplate(existingTemplate.isNull() || !existingTemplate->isPersisted())
 {
-    setupUi();
+    // 从 .ui 文件加载界面布局和控件
+    ui->setupUi(this);
+
+    // 动态创建 ReportEditor 组件（因为 .ui 文件中无法直接嵌入自定义组件）
+    m_editor = new ReportEditor(this);
+    // 将 ReportEditor 添加到 .ui 文件中的布局（需要在 .ui 文件中预留一个容器）
+    // 这里我们直接替换 central widget 的布局
+    QVBoxLayout* mainLayout = qobject_cast<QVBoxLayout*>(layout());
+    if (mainLayout) {
+        // 在按钮组之前插入编辑器
+        int buttonIndex = mainLayout->indexOf(ui->m_buttonBox);
+        if (buttonIndex >= 0) {
+            mainLayout->insertWidget(buttonIndex - 1, m_editor, 1);
+        } else {
+            mainLayout->addWidget(m_editor, 1);
+        }
+    }
+
+    // 设置按钮文本
+    ui->m_buttonBox->button(QDialogButtonBox::Save)->setText(tr("保存模板"));
+    ui->m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
+
+    // 连接信号槽
+    connect(ui->m_buttonBox, &QDialogButtonBox::accepted, this, &TemplateEditorDialog::onSave);
+    connect(ui->m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    // 加载模板数据
     loadTemplate();
+
+    // 设置窗口标题和大小
     setWindowTitle(m_isNewTemplate ? tr("新建模板") : tr("编辑模板"));
     resize(1000, 700);
 }
 
 // ===========================================================================
-// UI 初始化
+// 析构函数
 // ===========================================================================
 
-void TemplateEditorDialog::setupUi()
+/**
+ * @brief 析构函数
+ *
+ * 释放 UI 界面对象资源。
+ */
+TemplateEditorDialog::~TemplateEditorDialog()
 {
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
-
-    // -----------------------------------------------------------------------
-    // 模板元信息
-    // -----------------------------------------------------------------------
-    QGroupBox* metaGroup = new QGroupBox(tr("模板信息"), this);
-    QFormLayout* metaLayout = new QFormLayout(metaGroup);
-
-    m_nameEdit = new QLineEdit(metaGroup);
-    m_nameEdit->setPlaceholderText(tr("请输入模板名称"));
-    metaLayout->addRow(tr("模板名称:"), m_nameEdit);
-
-    m_categoryCombo = new QComboBox(metaGroup);
-    m_categoryCombo->setEditable(true);
-    m_categoryCombo->addItems({tr("通用"), tr("物理"), tr("化学"), tr("生物"),
-                                 tr("计算机"), tr("工程"), tr("其他")});
-    metaLayout->addRow(tr("模板分类:"), m_categoryCombo);
-
-    m_descriptionEdit = new QTextEdit(metaGroup);
-    m_descriptionEdit->setPlaceholderText(tr("请输入模板描述（可选）"));
-    m_descriptionEdit->setMaximumHeight(60);
-    metaLayout->addRow(tr("模板描述:"), m_descriptionEdit);
-
-    mainLayout->addWidget(metaGroup);
-
-    // -----------------------------------------------------------------------
-    // 模板块编辑区
-    // -----------------------------------------------------------------------
-    QLabel* hintLabel = new QLabel(tr("编辑模板结构（块内容为占位示例，创建报告时可修改）:"), this);
-    hintLabel->setStyleSheet("color: #666; font-size: 12px;");
-    mainLayout->addWidget(hintLabel);
-
-    m_editor = new ReportEditor(this);
-    mainLayout->addWidget(m_editor, 1);
-
-    // -----------------------------------------------------------------------
-    // 按钮
-    // -----------------------------------------------------------------------
-    m_buttonBox = new QDialogButtonBox(
-        QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
-    m_buttonBox->button(QDialogButtonBox::Save)->setText(tr("保存模板"));
-    m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &TemplateEditorDialog::onSave);
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    mainLayout->addWidget(m_buttonBox);
+    delete ui;
 }
 
 // ===========================================================================
 // 加载模板
 // ===========================================================================
 
+/**
+ * @brief 加载模板数据到界面控件
+ *
+ * 如果是新建模板，创建一个包含默认块结构的模板；
+ * 如果是编辑现有模板，将模板数据回填到各个输入控件。
+ */
 void TemplateEditorDialog::loadTemplate()
 {
     if (!m_template) {
@@ -117,14 +119,17 @@ void TemplateEditorDialog::loadTemplate()
 
         m_editor->loadReport(dummyReport);
     } else {
-        // 编辑现有模板
-        m_nameEdit->setText(m_template->name());
-        m_descriptionEdit->setPlainText(m_template->description());
+        // 编辑现有模板：回填数据到输入控件
+        ui->m_nameEdit->setText(m_template->name());
+        ui->m_descriptionEdit->setPlainText(m_template->description());
 
-        // 设置分类
-        const int idx = m_categoryCombo->findText(m_template->category());
-        if (idx >= 0) m_categoryCombo->setCurrentIndex(idx);
-        else m_categoryCombo->setEditText(m_template->category());
+        // 设置分类下拉框
+        const int idx = ui->m_categoryCombo->findText(m_template->category());
+        if (idx >= 0) {
+            ui->m_categoryCombo->setCurrentIndex(idx);
+        } else {
+            ui->m_categoryCombo->setEditText(m_template->category());
+        }
 
         // 加载模板块到编辑器
         Report::Ptr dummyReport = Report::create();
@@ -139,17 +144,24 @@ void TemplateEditorDialog::loadTemplate()
 // 保存
 // ===========================================================================
 
+/**
+ * @brief 保存模板按钮点击槽函数
+ *
+ * 验证用户输入，收集模板块，更新模板数据，保存到数据库。
+ * 保存成功后关闭对话框，失败则显示错误提示。
+ */
 void TemplateEditorDialog::onSave()
 {
+    // 验证输入
     if (!validateInput()) return;
 
-    // 收集模板块
+    // 收集模板块（从编辑器获取）
     const QList<ContentBlock> blocks = collectBlocks();
 
-    // 更新模板数据
-    m_template->setName(m_nameEdit->text().trimmed());
-    m_template->setCategory(m_categoryCombo->currentText().trimmed());
-    m_template->setDescription(m_descriptionEdit->toPlainText().trimmed());
+    // 从输入控件读取数据，更新模板对象
+    m_template->setName(ui->m_nameEdit->text().trimmed());
+    m_template->setCategory(ui->m_categoryCombo->currentText().trimmed());
+    m_template->setDescription(ui->m_descriptionEdit->toPlainText().trimmed());
     m_template->setBlocks(blocks);
 
     // 保存到数据库
@@ -162,17 +174,24 @@ void TemplateEditorDialog::onSave()
 
     if (success) {
         LOG_INFO(QString("模板已保存: %1").arg(m_template->name()));
-        accept();
+        accept();  // 保存成功，关闭对话框
     } else {
         QMessageBox::critical(this, tr("保存失败"), tr("保存模板时发生错误。"));
     }
 }
 
+/**
+ * @brief 验证用户输入
+ *
+ * 检查模板名称是否为空。
+ *
+ * @return bool 验证通过返回 true，否则显示错误提示并返回 false
+ */
 bool TemplateEditorDialog::validateInput()
 {
-    if (m_nameEdit->text().trimmed().isEmpty()) {
+    if (ui->m_nameEdit->text().trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("输入错误"), tr("模板名称不能为空"));
-        m_nameEdit->setFocus();
+        ui->m_nameEdit->setFocus();
         return false;
     }
     return true;
@@ -182,13 +201,24 @@ bool TemplateEditorDialog::validateInput()
 // 数据收集
 // ===========================================================================
 
+/**
+ * @brief 从编辑器收集模板块
+ *
+ * 从 ReportEditor 获取报告内容，然后提取所有内容块。
+ *
+ * @return QList<ContentBlock> 内容块列表
+ */
 QList<ContentBlock> TemplateEditorDialog::collectBlocks() const
 {
-    // 从编辑器获取报告，然后提取块
     Report::Ptr report = m_editor->saveToReport();
     return report->blocks();
 }
 
+/**
+ * @brief 获取模板数据
+ *
+ * @return Template::Ptr 模板对象智能指针
+ */
 Template::Ptr TemplateEditorDialog::templateData() const
 {
     return m_template;

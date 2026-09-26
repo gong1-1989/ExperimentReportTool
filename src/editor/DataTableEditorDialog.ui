@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DataTableEditorDialog</class>
+ <widget class="QDialog" name="DataTableEditorDialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>900</width><height>700</height></rect></property>
+  <property name="windowTitle"><string>数据表编辑器</string></property>
+  <property name="minimumSize"><size><width>900</width><height>700</height></size></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing"><number>8</number></property>
+   <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
+   <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+   <item>
+    <widget class="QGroupBox" name="columnGroup">
+     <property name="title"><string>列属性</string></property>
+     <layout class="QVBoxLayout" name="columnLayout">
+      <property name="spacing"><number>0</number></property>
+      <property name="leftMargin"><number>0</number></property>
+      <property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>0</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="tableButtonLayout">
+     <item><widget class="QPushButton" name="m_addRowBtn"><property name="text"><string>添加行</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_addColBtn"><property name="text"><string>添加列</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_insertRowBtn"><property name="text"><string>插入行</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_insertColBtn"><property name="text"><string>插入列</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_removeRowBtn"><property name="text"><string>删除行</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_removeColBtn"><property name="text"><string>删除列</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_importBtn"><property name="text"><string>导入</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_exportBtn"><property name="text"><string>导出</string></property></widget></item>
+     <item><widget class="QPushButton" name="m_validateBtn"><property name="text"><string>校验</string></property></widget></item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="m_tableWidget"/>
+   </item>
+   <item>
+    <widget class="QLabel" name="m_columnInfoLabel"><property name="text"><string>列信息: 0 列</string></property></widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="bottomLayout">
+     <item><widget class="QLabel" name="m_statusLabel"><property name="text"><string>就绪</string></property></widget></item>
+     <item><spacer name="horizontalSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+     <item><widget class="QDialogButtonBox" name="m_buttonBox">
+      <property name="orientation"><enum>Qt::Horizontal</enum></property>
+      <property name="standardButtons"><set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set></property>
+     </widget></item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

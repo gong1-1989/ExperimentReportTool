@@ -14,7 +14,7 @@
 #include <QPrinter>
 #include <QPageSize>
 #include <QPageLayout>
-#include <QTextDocument>
+#include <QTextDocument>  // 用于渲染打印文档
 
 #include "core/models/Report.h"
 #include "export/ExportManager.h"

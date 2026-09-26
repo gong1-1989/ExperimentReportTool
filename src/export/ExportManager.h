@@ -11,6 +11,7 @@
 
 #include <QString>
 #include <QWidget>
+#include <QList>
 
 #include "core/models/Report.h"
 
@@ -139,7 +140,7 @@ private:
     QString reportToHtml(const Report::Ptr& report, const ExportConfig& config);
 
     // 将内容块转换为 HTML
-    QString blockToHtml(const ContentBlock& block, int& headingCounter);
+    QString blockToHtml(const ContentBlock& block, int& headingCounter, const Report::Ptr& report);
 
     // 生成 CSS 样式
     QString generateCss(const ExportConfig& config);

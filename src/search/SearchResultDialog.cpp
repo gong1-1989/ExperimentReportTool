@@ -4,35 +4,35 @@
  */
 
 #include "SearchResultDialog.h"
+#include "ui_SearchResultDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/ProjectRepository.h"
 #include "core/utils/Logger.h"
 
 #include <QMessageBox>
 #include <QDateTime>
-#include <QApplication>
 
 // ===========================================================================
 // 构造与析构
 // ===========================================================================
 
 SearchResultDialog::SearchResultDialog(QWidget* parent, const QString& initialKeyword)
-    : QDialog(parent)
-    , m_searchEdit(nullptr)
-    , m_searchBtn(nullptr)
-    , m_projectFilter(nullptr)
-    , m_historyCombo(nullptr)
-    , m_clearHistoryBtn(nullptr)
-    , m_splitter(nullptr)
-    , m_resultList(nullptr)
-    , m_detailBrowser(nullptr)
-    , m_statusLabel(nullptr)
-    , m_searchService(nullptr)
+    : ui(new Ui::SearchResultDialog),  QDialog(parent)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 {
     m_searchService = new SearchService(this);
-    setupUi();
+    ui->setupUi(this);
 
     if (!initialKeyword.isEmpty()) {
-        m_searchEdit->setText(initialKeyword);
+        ui->m_searchEdit->setText(initialKeyword);
         performSearch();
     }
 
@@ -42,113 +42,7 @@ SearchResultDialog::SearchResultDialog(QWidget* parent, const QString& initialKe
 
 SearchResultDialog::~SearchResultDialog()
 {
-}
-
-// ===========================================================================
-// UI 初始化
-// ===========================================================================
-
-void SearchResultDialog::setupUi()
-{
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
-
-    // -----------------------------------------------------------------------
-    // 搜索栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* searchBar = new QHBoxLayout();
-    searchBar->setSpacing(8);
-
-    m_searchEdit = new QLineEdit(this);
-    m_searchEdit->setPlaceholderText(tr("输入关键词搜索报告..."));
-    m_searchEdit->setClearButtonEnabled(true);
-    searchBar->addWidget(m_searchEdit, 1);
-
-    m_searchBtn = new QPushButton(tr("搜索"), this);
-    m_searchBtn->setStyleSheet(
-        "QPushButton { background: #4A90D9; color: white; padding: 6px 20px; "
-        "border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #357ABD; }");
-    searchBar->addWidget(m_searchBtn);
-
-    mainLayout->addLayout(searchBar);
-
-    // -----------------------------------------------------------------------
-    // 筛选栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* filterBar = new QHBoxLayout();
-    filterBar->setSpacing(8);
-
-    filterBar->addWidget(new QLabel(tr("项目:"), this));
-    m_projectFilter = new QComboBox(this);
-    m_projectFilter->addItem(tr("全部项目"), -1);
-    const Project::List projects = ProjectRepository::findAll();
-    for (const Project::Ptr& p : projects) {
-        m_projectFilter->addItem(p->name(), p->id());
-    }
-    filterBar->addWidget(m_projectFilter);
-
-    filterBar->addSpacing(20);
-    filterBar->addWidget(new QLabel(tr("历史:"), this));
-    m_historyCombo = new QComboBox(this);
-    m_historyCombo->setEditable(true);
-    m_historyCombo->setMinimumWidth(200);
-    m_historyCombo->setPlaceholderText(tr("搜索历史"));
-    filterBar->addWidget(m_historyCombo, 1);
-
-    m_clearHistoryBtn = new QPushButton(tr("清除"), this);
-    m_clearHistoryBtn->setStyleSheet("QPushButton { padding: 4px 10px; font-size: 12px; }");
-    filterBar->addWidget(m_clearHistoryBtn);
-
-    mainLayout->addLayout(filterBar);
-
-    // -----------------------------------------------------------------------
-    // 结果区域（分割器：左侧列表 + 右侧详情）
-    // -----------------------------------------------------------------------
-    m_splitter = new QSplitter(Qt::Horizontal, this);
-
-    m_resultList = new QListWidget(this);
-    m_resultList->setStyleSheet(
-        "QListWidget { border: 1px solid #ddd; border-radius: 4px; }"
-        "QListWidget::item { padding: 8px; border-bottom: 1px solid #eee; }"
-        "QListWidget::item:selected { background: #e8f0fe; }"
-        "QListWidget::item:hover { background: #f5f5f5; }");
-    m_splitter->addWidget(m_resultList);
-
-    m_detailBrowser = new QTextBrowser(this);
-    m_detailBrowser->setStyleSheet(
-        "QTextBrowser { border: 1px solid #ddd; border-radius: 4px; padding: 12px; }");
-    m_detailBrowser->setOpenExternalLinks(false);
-    m_splitter->addWidget(m_detailBrowser);
-
-    m_splitter->setStretchFactor(0, 1);
-    m_splitter->setStretchFactor(1, 2);
-    m_splitter->setSizes({350, 550});
-
-    mainLayout->addWidget(m_splitter, 1);
-
-    // -----------------------------------------------------------------------
-    // 状态栏
-    // -----------------------------------------------------------------------
-    m_statusLabel = new QLabel(tr("输入关键词开始搜索"), this);
-    m_statusLabel->setStyleSheet("color: #666; font-size: 12px; padding: 4px 0;");
-    mainLayout->addWidget(m_statusLabel);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_searchBtn, &QPushButton::clicked, this, &SearchResultDialog::onSearch);
-    connect(m_searchEdit, &QLineEdit::returnPressed, this, &SearchResultDialog::onSearch);
-    connect(m_resultList, &QListWidget::itemClicked, this, &SearchResultDialog::onResultClicked);
-    connect(m_resultList, &QListWidget::itemDoubleClicked, this, &SearchResultDialog::onResultDoubleClicked);
-    connect(m_historyCombo, &QComboBox::textActivated, this, &SearchResultDialog::onHistorySelected);
-    connect(m_clearHistoryBtn, &QPushButton::clicked, this, &SearchResultDialog::onClearHistory);
-    connect(m_projectFilter, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &SearchResultDialog::onFilterChanged);
-
-    // 加载历史
-    updateHistory();
+    delete ui;
 }
 
 // ===========================================================================
@@ -162,18 +56,18 @@ void SearchResultDialog::onSearch()
 
 void SearchResultDialog::performSearch()
 {
-    const QString keyword = m_searchEdit->text().trimmed();
+    const QString keyword = ui->m_searchEdit->text().trimmed();
     if (keyword.isEmpty()) {
         QMessageBox::information(this, tr("提示"), tr("请输入搜索关键词"));
         return;
     }
 
-    m_statusLabel->setText(tr("正在搜索..."));
+    ui->m_statusLabel->setText(tr("正在搜索..."));
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
     SearchQuery query;
     query.keyword = keyword;
-    query.projectId = m_projectFilter->currentData().toLongLong();
+    query.projectId = ui->m_projectFilter->currentData().toLongLong();
     query.maxResults = 50;
 
     m_results = m_searchService->search(query);
@@ -188,12 +82,12 @@ void SearchResultDialog::performSearch()
 
 void SearchResultDialog::displayResults(const QList<SearchResultItem>& results)
 {
-    m_resultList->clear();
+    ui->m_resultList->clear();
 
     if (results.isEmpty()) {
-        m_statusLabel->setText(tr("未找到匹配的报告"));
-        m_detailBrowser->clear();
-        m_detailBrowser->setHtml(
+        ui->m_statusLabel->setText(tr("未找到匹配的报告"));
+        ui->m_detailBrowser->clear();
+        ui->m_detailBrowser->setHtml(
             "<div style='color: #999; text-align: center; margin-top: 50px;'>"
             "<p style='font-size: 48px;'>🔍</p>"
             "<p>未找到匹配的报告</p>"
@@ -202,10 +96,10 @@ void SearchResultDialog::displayResults(const QList<SearchResultItem>& results)
         return;
     }
 
-    m_statusLabel->setText(tr("找到 %1 个结果").arg(results.size()));
+    ui->m_statusLabel->setText(tr("找到 %1 个结果").arg(results.size()));
 
     for (const SearchResultItem& item : results) {
-        QListWidgetItem* listItem = new QListWidgetItem(m_resultList);
+        QListWidgetItem* listItem = new QListWidgetItem(ui->m_resultList);
 
         // 构建显示文本
         QString displayText = QString(
@@ -230,9 +124,9 @@ void SearchResultDialog::displayResults(const QList<SearchResultItem>& results)
     }
 
     // 选中第一个结果
-    if (m_resultList->count() > 0) {
-        m_resultList->setCurrentRow(0);
-        onResultClicked(m_resultList->currentItem());
+    if (ui->m_resultList->count() > 0) {
+        ui->m_resultList->setCurrentRow(0);
+        onResultClicked(ui->m_resultList->currentItem());
     }
 }
 
@@ -275,7 +169,7 @@ void SearchResultDialog::onResultClicked(QListWidgetItem* item)
              .arg(result.report->updatedAt().toString("yyyy-MM-dd hh:mm"))
              .arg(result.highlight.isEmpty() ? tr("无匹配摘要") : result.highlight);
 
-            m_detailBrowser->setHtml(html);
+            ui->m_detailBrowser->setHtml(html);
             break;
         }
     }
@@ -295,7 +189,7 @@ void SearchResultDialog::onResultDoubleClicked(QListWidgetItem* item)
 
 void SearchResultDialog::onHistorySelected(const QString& text)
 {
-    m_searchEdit->setText(text);
+    ui->m_searchEdit->setText(text);
     performSearch();
 }
 
@@ -307,12 +201,12 @@ void SearchResultDialog::onClearHistory()
 
 void SearchResultDialog::updateHistory()
 {
-    m_historyCombo->clear();
+    ui->m_historyCombo->clear();
     const QStringList history = m_searchService->searchHistory();
     for (const QString& keyword : history) {
-        m_historyCombo->addItem(keyword);
+        ui->m_historyCombo->addItem(keyword);
     }
-    m_historyCombo->setCurrentIndex(-1);
+    ui->m_historyCombo->setCurrentIndex(-1);
 }
 
 // ===========================================================================
@@ -323,7 +217,7 @@ void SearchResultDialog::onFilterChanged(int index)
 {
     Q_UNUSED(index);
     // 如果有搜索结果，重新搜索
-    if (!m_searchEdit->text().trimmed().isEmpty()) {
+    if (!ui->m_searchEdit->text().trimmed().isEmpty()) {
         performSearch();
     }
 }

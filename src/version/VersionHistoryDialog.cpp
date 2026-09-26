@@ -4,6 +4,7 @@
  */
 
 #include "VersionHistoryDialog.h"
+#include "ui_VersionHistoryDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/ReportRepository.h"
 #include "core/utils/Logger.h"
 
@@ -21,20 +22,10 @@
 
 VersionHistoryDialog::VersionHistoryDialog(qint64 reportId, QWidget* parent)
     : QDialog(parent)
-    , m_versionList(nullptr)
-    , m_previewBrowser(nullptr)
-    , m_splitter(nullptr)
-    , m_restoreBtn(nullptr)
-    , m_deleteBtn(nullptr)
-    , m_saveBtn(nullptr)
-    , m_compareBtn(nullptr)
-    , m_refreshBtn(nullptr)
-    , m_closeBtn(nullptr)
-    , m_versionNameEdit(nullptr)
-    , m_statusLabel(nullptr)
+    , ui(new Ui::VersionHistoryDialog)
     , m_reportId(reportId)
 {
-    setupUi();
+    ui->setupUi(this);
     loadVersions();
     setWindowTitle(tr("版本历史"));
     resize(900, 600);
@@ -42,136 +33,7 @@ VersionHistoryDialog::VersionHistoryDialog(qint64 reportId, QWidget* parent)
 
 VersionHistoryDialog::~VersionHistoryDialog()
 {
-}
-
-// ===========================================================================
-// UI 初始化
-// ===========================================================================
-
-void VersionHistoryDialog::setupUi()
-{
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
-
-    // -----------------------------------------------------------------------
-    // 顶部工具栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* toolbar = new QHBoxLayout();
-    toolbar->setSpacing(8);
-
-    m_versionNameEdit = new QLineEdit(this);
-    m_versionNameEdit->setPlaceholderText(tr("输入新版本名称（可选）..."));
-    toolbar->addWidget(m_versionNameEdit, 1);
-
-    m_saveBtn = new QPushButton(tr("保存当前版本"), this);
-    m_saveBtn->setStyleSheet(
-        "QPushButton { background: #4A90D9; color: white; padding: 6px 16px; "
-        "border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #357ABD; }");
-    toolbar->addWidget(m_saveBtn);
-
-    m_refreshBtn = new QPushButton(tr("刷新"), this);
-    toolbar->addWidget(m_refreshBtn);
-
-    mainLayout->addLayout(toolbar);
-
-    // -----------------------------------------------------------------------
-    // 版本列表 + 预览（分割器）
-    // -----------------------------------------------------------------------
-    m_splitter = new QSplitter(Qt::Horizontal, this);
-
-    // 左侧：版本列表
-    QWidget* listContainer = new QWidget(this);
-    QVBoxLayout* listLayout = new QVBoxLayout(listContainer);
-    listLayout->setContentsMargins(0, 0, 0, 0);
-    listLayout->setSpacing(4);
-
-    QLabel* listLabel = new QLabel(tr("版本历史"), this);
-    listLabel->setStyleSheet("font-weight: bold; color: #333; padding: 4px;");
-    listLayout->addWidget(listLabel);
-
-    m_versionList = new QListWidget(this);
-    m_versionList->setStyleSheet(
-        "QListWidget { border: 1px solid #ddd; border-radius: 4px; }"
-        "QListWidget::item { padding: 10px; border-bottom: 1px solid #eee; }"
-        "QListWidget::item:selected { background: #e8f0fe; }"
-        "QListWidget::item:hover { background: #f5f5f5; }");
-    listLayout->addWidget(m_versionList, 1);
-
-    m_splitter->addWidget(listContainer);
-
-    // 右侧：预览
-    QWidget* previewContainer = new QWidget(this);
-    QVBoxLayout* previewLayout = new QVBoxLayout(previewContainer);
-    previewLayout->setContentsMargins(0, 0, 0, 0);
-    previewLayout->setSpacing(4);
-
-    QLabel* previewLabel = new QLabel(tr("版本预览"), this);
-    previewLabel->setStyleSheet("font-weight: bold; color: #333; padding: 4px;");
-    previewLayout->addWidget(previewLabel);
-
-    m_previewBrowser = new QTextBrowser(this);
-    m_previewBrowser->setStyleSheet(
-        "QTextBrowser { border: 1px solid #ddd; border-radius: 4px; padding: 12px; }");
-    previewLayout->addWidget(m_previewBrowser, 1);
-
-    m_splitter->addWidget(previewContainer);
-    m_splitter->setStretchFactor(0, 1);
-    m_splitter->setStretchFactor(1, 2);
-    m_splitter->setSizes({300, 600});
-
-    mainLayout->addWidget(m_splitter, 1);
-
-    // -----------------------------------------------------------------------
-    // 底部按钮栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* buttonBar = new QHBoxLayout();
-    buttonBar->setSpacing(8);
-
-    m_restoreBtn = new QPushButton(tr("恢复此版本"), this);
-    m_restoreBtn->setStyleSheet(
-        "QPushButton { background: #52c41a; color: white; padding: 6px 16px; "
-        "border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #49b017; }"
-        "QPushButton:disabled { background: #ccc; }");
-    m_restoreBtn->setEnabled(false);
-    buttonBar->addWidget(m_restoreBtn);
-
-    m_compareBtn = new QPushButton(tr("对比当前"), this);
-    m_compareBtn->setEnabled(false);
-    buttonBar->addWidget(m_compareBtn);
-
-    m_deleteBtn = new QPushButton(tr("删除版本"), this);
-    m_deleteBtn->setStyleSheet(
-        "QPushButton { color: #ff4d4f; padding: 6px 16px; border-radius: 4px; }"
-        "QPushButton:hover { background: #fff1f0; }"
-        "QPushButton:disabled { color: #ccc; }");
-    m_deleteBtn->setEnabled(false);
-    buttonBar->addWidget(m_deleteBtn);
-
-    buttonBar->addStretch();
-
-    m_statusLabel = new QLabel(tr(""), this);
-    m_statusLabel->setStyleSheet("color: #666; font-size: 12px;");
-    buttonBar->addWidget(m_statusLabel);
-
-    m_closeBtn = new QPushButton(tr("关闭"), this);
-    buttonBar->addWidget(m_closeBtn);
-
-    mainLayout->addLayout(buttonBar);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_versionList, &QListWidget::itemClicked,
-            this, &VersionHistoryDialog::onVersionSelected);
-    connect(m_restoreBtn, &QPushButton::clicked, this, &VersionHistoryDialog::onRestore);
-    connect(m_deleteBtn, &QPushButton::clicked, this, &VersionHistoryDialog::onDelete);
-    connect(m_saveBtn, &QPushButton::clicked, this, &VersionHistoryDialog::onSaveNewVersion);
-    connect(m_compareBtn, &QPushButton::clicked, this, &VersionHistoryDialog::onCompare);
-    connect(m_refreshBtn, &QPushButton::clicked, this, &VersionHistoryDialog::onRefresh);
-    connect(m_closeBtn, &QPushButton::clicked, this, &QDialog::accept);
+    delete ui;
 }
 
 // ===========================================================================
@@ -180,15 +42,15 @@ void VersionHistoryDialog::setupUi()
 
 void VersionHistoryDialog::loadVersions()
 {
-    m_versionList->clear();
+    ui->m_versionList->clear();
     m_versions.clear();
 
     // 从数据库获取版本列表
     const auto versions = ReportRepository::getVersions(m_reportId);
 
     if (versions.isEmpty()) {
-        m_statusLabel->setText(tr("暂无历史版本"));
-        m_previewBrowser->setHtml(
+        ui->m_statusLabel->setText(tr("暂无历史版本"));
+        ui->m_previewBrowser->setHtml(
             "<div style='color: #999; text-align: center; margin-top: 80px;'>"
             "<p style='font-size: 48px;'>📋</p>"
             "<p>暂无历史版本</p>"
@@ -197,7 +59,7 @@ void VersionHistoryDialog::loadVersions()
         return;
     }
 
-    m_statusLabel->setText(tr("共 %1 个版本").arg(versions.size()));
+    ui->m_statusLabel->setText(tr("共 %1 个版本").arg(versions.size()));
 
     for (const auto& version : versions) {
         VersionInfo info;
@@ -215,7 +77,7 @@ void VersionHistoryDialog::loadVersions()
         m_versions.append(info);
 
         // 添加到列表
-        QListWidgetItem* item = new QListWidgetItem(m_versionList);
+        QListWidgetItem* item = new QListWidgetItem(ui->m_versionList);
         const QString name = info.snapshotName.isEmpty()
             ? tr("版本 #%1").arg(info.versionId)
             : info.snapshotName;
@@ -237,9 +99,9 @@ void VersionHistoryDialog::loadVersions()
     }
 
     // 选中第一个
-    if (m_versionList->count() > 0) {
-        m_versionList->setCurrentRow(0);
-        onVersionSelected(m_versionList->currentItem());
+    if (ui->m_versionList->count() > 0) {
+        ui->m_versionList->setCurrentRow(0);
+        onVersionSelected(ui->m_versionList->currentItem());
     }
 }
 
@@ -257,9 +119,9 @@ void VersionHistoryDialog::onVersionSelected(QListWidgetItem* item)
         if (version.versionId == versionId) {
             m_currentVersion = version;
             displayVersion(version);
-            m_restoreBtn->setEnabled(true);
-            m_deleteBtn->setEnabled(true);
-            m_compareBtn->setEnabled(true);
+            ui->m_restoreBtn->setEnabled(true);
+            ui->m_deleteBtn->setEnabled(true);
+            ui->m_compareBtn->setEnabled(true);
             break;
         }
     }
@@ -295,7 +157,7 @@ void VersionHistoryDialog::displayVersion(const VersionInfo& version)
      .arg(version.content.length())
      .arg(plainText.isEmpty() ? tr("（空内容）") : plainText.toHtmlEscaped().replace("\n", "<br>"));
 
-    m_previewBrowser->setHtml(html);
+    ui->m_previewBrowser->setHtml(html);
 }
 
 // ===========================================================================
@@ -409,7 +271,7 @@ void VersionHistoryDialog::onDelete()
 
 void VersionHistoryDialog::onSaveNewVersion()
 {
-    QString name = m_versionNameEdit->text().trimmed();
+    QString name = ui->m_versionNameEdit->text().trimmed();
     if (name.isEmpty()) {
         name = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm");
     }
@@ -421,7 +283,7 @@ void VersionHistoryDialog::onSaveNewVersion()
     if (versionId > 0) {
         QMessageBox::information(this, tr("保存成功"),
             tr("版本「%1」已保存").arg(name));
-        m_versionNameEdit->clear();
+        ui->m_versionNameEdit->clear();
         emit versionSaved(m_reportId, versionId);
         loadVersions();
     } else {
@@ -457,8 +319,8 @@ void VersionHistoryDialog::onRefresh()
 
 void VersionHistoryDialog::showStatusMessage(const QString& message)
 {
-    m_statusLabel->setText(message);
-    QTimer::singleShot(3000, this, [this]() { m_statusLabel->clear(); });
+    ui->m_statusLabel->setText(message);
+    QTimer::singleShot(3000, this, [this]() { ui->m_statusLabel->clear(); });
 }
 
 // 由于 showStatusMessage 使用了 QTimer，需要 include

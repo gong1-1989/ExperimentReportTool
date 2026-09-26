@@ -33,10 +33,16 @@
 
 #include "core/models/DataTable.h"
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class DataTableEditorDialog;
+}
 /**
  * @brief 列属性编辑面板
  *
  * 右侧面板，用于编辑选中列的属性（名称、类型、单位、校验规则等）。
+ * 动态创建控件，不使用 .ui 文件。
  */
 class ColumnPropertyPanel : public QWidget
 {
@@ -59,24 +65,28 @@ private slots:
     void onNameChanged(const QString& name);
     void onTypeChanged(int index);
     void onUnitChanged(const QString& unit);
-    void onRequiredChanged(int state);
+    void onRequiredChanged(Qt::CheckState state);  ///< Qt6 使用 checkStateChanged 信号
     void onMinChanged(double value);
     void onMaxChanged(double value);
 
 private:
+    /// 动态创建 UI 控件
     void setupUi();
+
+    /// 根据列类型更新控件可见性
     void updateVisibility();
 
-    int m_columnIndex;
-    ColumnDefinition m_column;
+    // 控件成员变量（动态创建）
+    QLineEdit* m_nameEdit;        ///< 列名称编辑框
+    QComboBox* m_typeCombo;       ///< 列类型下拉框
+    QLineEdit* m_unitEdit;        ///< 单位编辑框
+    QCheckBox* m_requiredCheck;   ///< 必填复选框
+    QDoubleSpinBox* m_minSpin;    ///< 最小值
+    QDoubleSpinBox* m_maxSpin;    ///< 最大值
+    QLabel* m_rangeLabel;         ///< 数值范围标签
 
-    QLineEdit* m_nameEdit;
-    QComboBox* m_typeCombo;
-    QLineEdit* m_unitEdit;
-    QCheckBox* m_requiredCheck;
-    QDoubleSpinBox* m_minSpin;
-    QDoubleSpinBox* m_maxSpin;
-    QLabel* m_rangeLabel;
+    int m_columnIndex;            ///< 当前编辑的列索引
+    ColumnDefinition m_column;    ///< 当前列定义
 };
 
 /**
@@ -93,6 +103,8 @@ public:
      * @param parent 父窗口
      */
     explicit DataTableEditorDialog(const DataTable::Ptr& table, QWidget* parent = nullptr);
+    /// 析构函数
+    ~DataTableEditorDialog() override;
 
     /// 获取编辑后的数据表
     DataTable::Ptr tableData() const { return m_table; }
@@ -122,21 +134,18 @@ private slots:
     // 保存
     void onAccept();
 
-    void updateStatus();
-
-    void refreshTable();
-
 private:
-    void setupUi();
     void loadTable();
     void updateHeaders();
     void updateColumnProperties();
+    void updateStatus();       ///< 更新状态栏显示
     bool validateInput();
 
     // -----------------------------------------------------------------------
     // 成员变量
     // -----------------------------------------------------------------------
 
+    Ui::DataTableEditorDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     DataTable::Ptr m_table;
 
     // 左侧：表格编辑区

@@ -6,6 +6,7 @@
 #include "ChartRenderer.h"
 #include "core/utils/Logger.h"
 
+#include <QApplication>
 #include <QPainter>
 #include <QFont>
 #include <QPen>
@@ -411,18 +412,25 @@ QVector<double> ChartRenderer::extractNumericColumn(int column) const
 
 QPixmap ChartRenderer::toPixmap(int width, int height) const
 {
-    if (!m_chartView) return QPixmap();
+    if (!m_chart) return QPixmap();
 
     const int w = width > 0 ? width : m_config.width;
     const int h = height > 0 ? height : m_config.height;
 
-    QPixmap pixmap(w, h);
-    pixmap.fill(Qt::white);
+    // 创建临时的 QChartView 用于渲染
+    QChartView* renderView = new QChartView(m_chart);
+    renderView->setRenderHint(QPainter::Antialiasing);
+    renderView->setFixedSize(w, h);
+    renderView->show();
 
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    m_chartView->render(&painter);
-    painter.end();
+    // 处理事件，确保图表布局完成
+    QApplication::processEvents();
+
+    // 使用 grab() 捕获整个 widget 的内容
+    // grab() 比 render() 更可靠，会自动处理背景和布局
+    QPixmap pixmap = renderView->grab();
+
+    delete renderView;
 
     return pixmap;
 }

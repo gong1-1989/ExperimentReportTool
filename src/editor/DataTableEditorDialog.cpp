@@ -4,6 +4,7 @@
  */
 
 #include "DataTableEditorDialog.h"
+#include "ui_DataTableEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "DataImportDialog.h"
 #include "core/utils/Logger.h"
 
@@ -21,7 +22,6 @@
 
 ColumnPropertyPanel::ColumnPropertyPanel(QWidget* parent)
     : QWidget(parent)
-    , m_columnIndex(-1)
     , m_nameEdit(nullptr)
     , m_typeCombo(nullptr)
     , m_unitEdit(nullptr)
@@ -29,6 +29,7 @@ ColumnPropertyPanel::ColumnPropertyPanel(QWidget* parent)
     , m_minSpin(nullptr)
     , m_maxSpin(nullptr)
     , m_rangeLabel(nullptr)
+    , m_columnIndex(-1)
 {
     setupUi();
 }
@@ -90,7 +91,8 @@ void ColumnPropertyPanel::setupUi()
     connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ColumnPropertyPanel::onTypeChanged);
     connect(m_unitEdit, &QLineEdit::textChanged, this, &ColumnPropertyPanel::onUnitChanged);
-    connect(m_requiredCheck, &QCheckBox::stateChanged, this, &ColumnPropertyPanel::onRequiredChanged);
+    // Qt6 中 stateChanged 已弃用，使用 checkStateChanged
+    connect(m_requiredCheck, &QCheckBox::checkStateChanged, this, &ColumnPropertyPanel::onRequiredChanged);
     connect(m_minSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, &ColumnPropertyPanel::onMinChanged);
     connect(m_maxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
@@ -148,8 +150,9 @@ void ColumnPropertyPanel::onUnitChanged(const QString& unit)
     emit columnChanged(m_columnIndex, m_column);
 }
 
-void ColumnPropertyPanel::onRequiredChanged(int state)
+void ColumnPropertyPanel::onRequiredChanged(Qt::CheckState state)
 {
+    // Qt::CheckState 是枚举类型，直接与 Qt::Checked 比较
     m_column.required = (state == Qt::Checked);
     emit columnChanged(m_columnIndex, m_column);
 }
@@ -172,139 +175,68 @@ void ColumnPropertyPanel::onMaxChanged(double value)
 
 DataTableEditorDialog::DataTableEditorDialog(const DataTable::Ptr& table, QWidget* parent)
     : QDialog(parent)
+    , ui(new Ui::DataTableEditorDialog)  // 创建 UI 界面对象
     , m_table(table)
-    , m_tableWidget(nullptr)
     , m_columnPanel(nullptr)
-    , m_columnInfoLabel(nullptr)
-    , m_buttonBox(nullptr)
-    , m_statusLabel(nullptr)
     , m_currentColumn(-1)
     , m_loading(false)
 {
-    setupUi();
+    ui->setupUi(this);  // 从 .ui 文件加载界面
+
+    // 创建列属性面板并添加到右侧布局
+    m_columnPanel = new ColumnPropertyPanel(this);
+    ui->columnLayout->addWidget(m_columnPanel);
+
+    // 连接表格操作按钮信号
+    connect(ui->m_addRowBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onAddRow);
+    connect(ui->m_addColBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onAddColumn);
+    connect(ui->m_insertRowBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onInsertRow);
+    connect(ui->m_insertColBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onInsertColumn);
+    connect(ui->m_removeRowBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onRemoveRow);
+    connect(ui->m_removeColBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onRemoveColumn);
+    connect(ui->m_importBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onImportCsv);
+    connect(ui->m_exportBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onExportCsv);
+    connect(ui->m_validateBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onValidate);
+
+    // 连接表格信号
+    connect(ui->m_tableWidget, &QTableWidget::cellChanged,
+            this, &DataTableEditorDialog::onCellChanged);
+    connect(ui->m_tableWidget, &QTableWidget::currentCellChanged,
+            this, &DataTableEditorDialog::onCurrentCellChanged);
+    connect(ui->m_tableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked,
+            this, &DataTableEditorDialog::onHeaderDoubleClicked);
+
+    // 连接列属性面板信号
+    connect(m_columnPanel, &ColumnPropertyPanel::columnChanged,
+            this, &DataTableEditorDialog::onColumnChanged);
+
+    // 连接对话框按钮
+    connect(ui->m_buttonBox, &QDialogButtonBox::accepted,
+            this, &DataTableEditorDialog::onAccept);
+    connect(ui->m_buttonBox, &QDialogButtonBox::rejected,
+            this, &QDialog::reject);
+
     loadTable();
     setWindowTitle(tr("数据表编辑器: %1").arg(m_table->name()));
     resize(1000, 600);
 }
 
-void DataTableEditorDialog::setupUi()
+// ===========================================================================
+// 析构函数
+// ===========================================================================
+
+DataTableEditorDialog::~DataTableEditorDialog()
 {
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
-
-    // -----------------------------------------------------------------------
-    // 工具栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* toolbar = new QHBoxLayout();
-    toolbar->setSpacing(6);
-
-    m_addRowBtn = new QPushButton(tr("+ 行"), this);
-    m_addColBtn = new QPushButton(tr("+ 列"), this);
-    m_insertRowBtn = new QPushButton(tr("插入行"), this);
-    m_insertColBtn = new QPushButton(tr("插入列"), this);
-    m_removeRowBtn = new QPushButton(tr("- 行"), this);
-    m_removeColBtn = new QPushButton(tr("- 列"), this);
-
-    for (QPushButton* btn : {m_addRowBtn, m_addColBtn, m_insertRowBtn, m_insertColBtn, m_removeRowBtn, m_removeColBtn}) {
-        btn->setStyleSheet("QPushButton { padding: 4px 10px; font-size: 12px; }");
-        toolbar->addWidget(btn);
-    }
-
-    QFrame* vLine = new QFrame();
-    vLine->setFrameShape(QFrame::VLine);         // 竖线
-    vLine->setFrameShadow(QFrame::Sunken);
-    vLine->setFixedWidth(2);
-    toolbar->addWidget(vLine);
-
-    m_importBtn = new QPushButton(tr("导入CSV"), this);
-    m_exportBtn = new QPushButton(tr("导出CSV"), this);
-    m_validateBtn = new QPushButton(tr("校验数据"), this);
-    for (QPushButton* btn : {m_importBtn, m_exportBtn, m_validateBtn}) {
-        btn->setStyleSheet("QPushButton { padding: 4px 10px; font-size: 12px; }");
-        toolbar->addWidget(btn);
-    }
-
-    toolbar->addStretch();
-    mainLayout->addLayout(toolbar);
-
-    // -----------------------------------------------------------------------
-    // 主区域：表格 + 列属性
-    // -----------------------------------------------------------------------
-    QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
-
-    // 表格
-    m_tableWidget = new QTableWidget(this);
-    m_tableWidget->setAlternatingRowColors(true);
-    m_tableWidget->setStyleSheet("QTableWidget { gridline-color: #ddd; }");
-    m_tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    m_tableWidget->horizontalHeader()->setStretchLastSection(true);
-    m_tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    splitter->addWidget(m_tableWidget);
-
-    // 列属性面板
-    QWidget* rightPanel = new QWidget(this);
-    rightPanel->setMaximumWidth(300);
-    rightPanel->setStyleSheet("QWidget { background: #fafafa; border-left: 1px solid #eee; }");
-    QVBoxLayout* rightLayout = new QVBoxLayout(rightPanel);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-
-    m_columnInfoLabel = new QLabel(tr("选择一列以编辑属性"), rightPanel);
-    m_columnInfoLabel->setStyleSheet("padding: 8px 12px; background: #f0f0f0; border-bottom: 1px solid #ddd; font-weight: bold;");
-    rightLayout->addWidget(m_columnInfoLabel);
-
-    m_columnPanel = new ColumnPropertyPanel(rightPanel);
-    rightLayout->addWidget(m_columnPanel);
-
-    splitter->addWidget(rightPanel);
-    splitter->setStretchFactor(0, 3);
-    splitter->setStretchFactor(1, 1);
-    mainLayout->addWidget(splitter, 1);
-
-    // -----------------------------------------------------------------------
-    // 底部
-    // -----------------------------------------------------------------------
-    m_statusLabel = new QLabel(this);
-    m_statusLabel->setStyleSheet("color: #666; font-size: 12px; padding: 4px 0;");
-    mainLayout->addWidget(m_statusLabel);
-
-    m_buttonBox = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    m_buttonBox->button(QDialogButtonBox::Ok)->setText(tr("确定"));
-    m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &DataTableEditorDialog::onAccept);
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    mainLayout->addWidget(m_buttonBox);
-
-    // -----------------------------------------------------------------------
-    // 连接信号
-    // -----------------------------------------------------------------------
-    connect(m_addRowBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onAddRow);
-    connect(m_addColBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onAddColumn);
-    connect(m_insertRowBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onInsertRow);
-    connect(m_insertColBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onInsertColumn);
-    connect(m_removeRowBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onRemoveRow);
-    connect(m_removeColBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onRemoveColumn);
-    connect(m_importBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onImportCsv);
-    connect(m_exportBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onExportCsv);
-    connect(m_validateBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onValidate);
-
-    connect(m_tableWidget, &QTableWidget::cellChanged, this, &DataTableEditorDialog::onCellChanged);
-    connect(m_tableWidget, &QTableWidget::currentCellChanged, this, &DataTableEditorDialog::onCurrentCellChanged);
-    connect(m_tableWidget->horizontalHeader(), &QHeaderView::sectionDoubleClicked,
-            this, &DataTableEditorDialog::onHeaderDoubleClicked);
-
-    connect(m_columnPanel, &ColumnPropertyPanel::columnChanged,
-            this, &DataTableEditorDialog::onColumnChanged);
+    delete ui;
 }
 
 void DataTableEditorDialog::loadTable()
 {
     m_loading = true;
 
-    m_tableWidget->clear();
-    m_tableWidget->setRowCount(m_table->rowCount());
-    m_tableWidget->setColumnCount(m_table->columnCount());
+    ui->m_tableWidget->clear();
+    ui->m_tableWidget->setRowCount(m_table->rowCount());
+    ui->m_tableWidget->setColumnCount(m_table->columnCount());
 
     // 设置表头
     for (int col = 0; col < m_table->columnCount(); ++col) {
@@ -313,7 +245,7 @@ void DataTableEditorDialog::loadTable()
         if (!colDef.unit.isEmpty()) {
             headerText += QString(" (%1)").arg(colDef.unit);
         }
-        m_tableWidget->setHorizontalHeaderItem(col, new QTableWidgetItem(headerText));
+        ui->m_tableWidget->setHorizontalHeaderItem(col, new QTableWidgetItem(headerText));
     }
 
     // 填充数据
@@ -321,7 +253,7 @@ void DataTableEditorDialog::loadTable()
         for (int col = 0; col < m_table->columnCount(); ++col) {
             const QVariant& value = m_table->cellValue(row, col);
             QTableWidgetItem* item = new QTableWidgetItem(value.isValid() ? value.toString() : "");
-            m_tableWidget->setItem(row, col, item);
+            ui->m_tableWidget->setItem(row, col, item);
         }
     }
 
@@ -337,10 +269,10 @@ void DataTableEditorDialog::updateHeaders()
         if (!colDef.unit.isEmpty()) {
             headerText += QString(" (%1)").arg(colDef.unit);
         }
-        if (m_tableWidget->horizontalHeaderItem(col)) {
-            m_tableWidget->horizontalHeaderItem(col)->setText(headerText);
+        if (ui->m_tableWidget->horizontalHeaderItem(col)) {
+            ui->m_tableWidget->horizontalHeaderItem(col)->setText(headerText);
         } else {
-            m_tableWidget->setHorizontalHeaderItem(col, new QTableWidgetItem(headerText));
+            ui->m_tableWidget->setHorizontalHeaderItem(col, new QTableWidgetItem(headerText));
         }
     }
 }
@@ -350,9 +282,9 @@ void DataTableEditorDialog::updateColumnProperties()
     if (m_currentColumn >= 0 && m_currentColumn < m_table->columnCount()) {
         const ColumnDefinition& col = m_table->columnAt(m_currentColumn);
         m_columnPanel->setColumn(col, m_currentColumn);
-        m_columnInfoLabel->setText(tr("列 %1: %2").arg(m_currentColumn + 1).arg(col.name));
+        ui->m_columnInfoLabel->setText(tr("列 %1: %2").arg(m_currentColumn + 1).arg(col.name));
     } else {
-        m_columnInfoLabel->setText(tr("选择一列以编辑属性"));
+        ui->m_columnInfoLabel->setText(tr("选择一列以编辑属性"));
     }
 }
 
@@ -363,7 +295,7 @@ void DataTableEditorDialog::updateColumnProperties()
 void DataTableEditorDialog::onAddRow()
 {
     m_table->appendRow();
-    m_tableWidget->insertRow(m_tableWidget->rowCount());
+    ui->m_tableWidget->insertRow(ui->m_tableWidget->rowCount());
     updateStatus();
 }
 
@@ -375,22 +307,22 @@ void DataTableEditorDialog::onAddColumn()
 
     ColumnDefinition col(name, ColumnType::Number);
     m_table->appendColumn(col);
-    m_tableWidget->insertColumn(m_tableWidget->columnCount());
+    ui->m_tableWidget->insertColumn(ui->m_tableWidget->columnCount());
     updateHeaders();
     updateStatus();
 }
 
 void DataTableEditorDialog::onInsertRow()
 {
-    const int row = m_tableWidget->currentRow();
+    const int row = ui->m_tableWidget->currentRow();
     m_table->insertRow(row >= 0 ? row : 0);
-    m_tableWidget->insertRow(row >= 0 ? row : 0);
+    ui->m_tableWidget->insertRow(row >= 0 ? row : 0);
     updateStatus();
 }
 
 void DataTableEditorDialog::onInsertColumn()
 {
-    const int col = m_tableWidget->currentColumn();
+    const int col = ui->m_tableWidget->currentColumn();
     const int insertPos = col >= 0 ? col : 0;
 
     bool ok = false;
@@ -399,34 +331,34 @@ void DataTableEditorDialog::onInsertColumn()
 
     ColumnDefinition newCol(name, ColumnType::Number);
     m_table->insertColumn(insertPos, newCol);
-    m_tableWidget->insertColumn(insertPos);
+    ui->m_tableWidget->insertColumn(insertPos);
     updateHeaders();
     updateStatus();
 }
 
 void DataTableEditorDialog::onRemoveRow()
 {
-    const int row = m_tableWidget->currentRow();
+    const int row = ui->m_tableWidget->currentRow();
     if (row < 0) return;
     if (m_table->rowCount() <= 1) {
         QMessageBox::information(this, tr("提示"), tr("至少保留一行"));
         return;
     }
     m_table->removeRow(row);
-    m_tableWidget->removeRow(row);
+    ui->m_tableWidget->removeRow(row);
     updateStatus();
 }
 
 void DataTableEditorDialog::onRemoveColumn()
 {
-    const int col = m_tableWidget->currentColumn();
+    const int col = ui->m_tableWidget->currentColumn();
     if (col < 0) return;
     if (m_table->columnCount() <= 1) {
         QMessageBox::information(this, tr("提示"), tr("至少保留一列"));
         return;
     }
     m_table->removeColumn(col);
-    m_tableWidget->removeColumn(col);
+    ui->m_tableWidget->removeColumn(col);
     m_currentColumn = -1;
     updateColumnProperties();
     updateStatus();
@@ -435,7 +367,7 @@ void DataTableEditorDialog::onRemoveColumn()
 void DataTableEditorDialog::onCellChanged(int row, int col)
 {
     if (m_loading) return;
-    QTableWidgetItem* item = m_tableWidget->item(row, col);
+    QTableWidgetItem* item = ui->m_tableWidget->item(row, col);
     if (item) {
         m_table->setCellValue(row, col, item->text());
     }
@@ -514,14 +446,28 @@ void DataTableEditorDialog::onImportCsv()
     if (mode == ImportMode::NewTable) {
         // 新表模式：替换当前表的所有内容
         m_table->setColumns(imported->columns());
-        m_table->setData(imported->rows());
+        // 先清空现有行
+        while (m_table->rowCount() > 0) {
+            m_table->removeRow(m_table->rowCount() - 1);
+        }
+        // 逐行添加导入的数据
+        for (int r = 0; r < imported->rowCount(); ++r) {
+            m_table->appendRow(imported->rowAt(r));
+        }
     } else if (mode == ImportMode::Replace) {
         // 替换模式：保留列定义，替换数据
         // 如果列数不匹配，使用导入的列定义
         if (imported->columnCount() != m_table->columnCount()) {
             m_table->setColumns(imported->columns());
         }
-        m_table->setData(imported->rows());
+        // 先清空现有行
+        while (m_table->rowCount() > 0) {
+            m_table->removeRow(m_table->rowCount() - 1);
+        }
+        // 逐行添加导入的数据
+        for (int r = 0; r < imported->rowCount(); ++r) {
+            m_table->appendRow(imported->rowAt(r));
+        }
     } else {
         // 追加模式：追加数据到现有表
         // 确保列数匹配
@@ -531,21 +477,18 @@ void DataTableEditorDialog::onImportCsv()
                 m_table->appendColumn(imported->columnAt(c));
             }
         }
-        // 追加数据行
-        const QList<QVariantList> existingData = m_table->rows();
-        QList<QVariantList> newData = existingData;
-        for (const QVariantList& row : imported->rows()) {
-            QVariantList paddedRow = row;
+        // 逐行追加数据
+        for (int r = 0; r < imported->rowCount(); ++r) {
+            QVariantList paddedRow = imported->rowAt(r);
             while (paddedRow.size() < m_table->columnCount()) {
                 paddedRow.append(QString());
             }
-            newData.append(paddedRow);
+            m_table->appendRow(paddedRow);
         }
-        m_table->setData(newData);
     }
 
     // 刷新表格显示
-    refreshTable();
+    loadTable();
     updateHeaders();
     updateStatus();
 
@@ -566,6 +509,7 @@ void DataTableEditorDialog::onExportCsv()
     }
 
     QTextStream out(&file);
+    // Qt6 中 QTextStream 默认使用 UTF-8 编码，无需调用 setCodec
 
     // 表头
     QStringList headers;
@@ -596,14 +540,14 @@ void DataTableEditorDialog::onValidate()
     const QStringList errors = m_table->validate();
     if (errors.isEmpty()) {
         QMessageBox::information(this, tr("校验通过"), tr("所有数据均符合要求"));
-        m_statusLabel->setText(tr("校验通过"));
-        m_statusLabel->setStyleSheet("color: #67C23A; font-size: 12px;");
+        ui->m_statusLabel->setText(tr("校验通过"));
+        ui->m_statusLabel->setStyleSheet("color: #67C23A; font-size: 12px;");
     } else {
         const QString errorText = errors.join("\n");
         QMessageBox::warning(this, tr("校验失败"),
             tr("发现 %1 个问题:\n\n%2").arg(errors.size()).arg(errorText));
-        m_statusLabel->setText(tr("校验失败: %1 个问题").arg(errors.size()));
-        m_statusLabel->setStyleSheet("color: #F56C6C; font-size: 12px;");
+        ui->m_statusLabel->setText(tr("校验失败: %1 个问题").arg(errors.size()));
+        ui->m_statusLabel->setStyleSheet("color: #F56C6C; font-size: 12px;");
     }
 }
 
@@ -619,10 +563,6 @@ void DataTableEditorDialog::onAccept()
 
 void DataTableEditorDialog::updateStatus()
 {
-    m_statusLabel->setText(tr("%1 行 × %2 列").arg(m_table->rowCount()).arg(m_table->columnCount()));
-    m_statusLabel->setStyleSheet("color: #666; font-size: 12px;");
-}
-void DataTableEditorDialog::refreshTable()
-{
-    // 这里写刷新表格逻辑，例如查询数据库、重置model、view更新
+    ui->m_statusLabel->setText(tr("%1 行 × %2 列").arg(m_table->rowCount()).arg(m_table->columnCount()));
+    ui->m_statusLabel->setStyleSheet("color: #666; font-size: 12px;");
 }

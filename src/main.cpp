@@ -10,15 +10,15 @@
  */
 
 #include <QApplication>
-#include <QDebug>
+#include <QStyleFactory>
 #include <QDir>
 #include <QStandardPaths>
-#include <QStyleFactory>
+#include <QDebug>
 
-#include "core/utils/AppConstants.h"
-#include "core/utils/Logger.h"
-#include "data/database/DatabaseManager.h"
 #include "ui/MainWindow.h"
+#include "core/utils/Logger.h"
+#include "core/utils/AppConstants.h"
+#include "data/database/DatabaseManager.h"
 
 /**
  * @brief 初始化应用程序的全局设置
@@ -38,11 +38,9 @@ static void initializeApplication()
     //   Windows: C:/Users/<user>/AppData/Local/<org>/<app>
     //   macOS:   ~/Library/Application Support/<org>/<app>
     //   Linux:   ~/.local/share/<org>/<app>
-    //const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-
-    //QCoreApplication::applicationDirPath() 在EXE文件同目录下；
-    const QString dataDir=QCoreApplication::applicationDirPath();
-    //QDir().mkpath(dataDir);
+    const QString dataDir = QStandardPaths::writableLocation(
+        QStandardPaths::AppDataLocation);
+    QDir().mkpath(dataDir);
 
     // 初始化日志系统
     Logger::instance().initialize(dataDir + "/logs");
@@ -57,11 +55,11 @@ static void initializeApplication()
 static bool initializeDatabase()
 {
     // 获取数据库文件路径
-    const QString dbPath = QCoreApplication::applicationDirPath()
-                           + "/experiment_reports.db";
+    const QString dbPath = QStandardPaths::writableLocation(
+        QStandardPaths::AppDataLocation) + "/experiment_reports.db";
 
     // 初始化数据库管理器（单例）
-    DatabaseManager &dbMgr = DatabaseManager::instance();
+    DatabaseManager& dbMgr = DatabaseManager::instance();
     if (!dbMgr.initialize(dbPath)) {
         Logger::instance().error("数据库初始化失败");
         return false;

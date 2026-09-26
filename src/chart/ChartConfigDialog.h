@@ -21,8 +21,14 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QTabWidget>
+#include <QList>
 
 #include "core/models/DataTable.h"
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class ChartConfigDialog;
+}
 
 /**
  * @brief 图表类型枚举
@@ -93,6 +99,9 @@ public:
                                 const ChartConfig& config = ChartConfig(),
                                 QWidget* parent = nullptr);
 
+    /// 析构函数
+    ~ChartConfigDialog() override;
+
     /// 获取配置
     ChartConfig config() const { return m_config; }
 
@@ -102,44 +111,17 @@ private slots:
     void onPreview();
 
 private:
-    void setupUi();
     void loadConfig();
     void updateColumnLists();
     bool validateConfig();
 
     // -----------------------------------------------------------------------
-    // UI 控件
+    // 成员变量
     // -----------------------------------------------------------------------
 
-    // 基本设置
-    QComboBox* m_typeCombo;
-    QLineEdit* m_titleEdit;
-    QLineEdit* m_xAxisTitleEdit;
-    QLineEdit* m_yAxisTitleEdit;
-
-    // 数据源
-    QComboBox* m_tableCombo;
-    QComboBox* m_xAxisCombo;
-    QListWidget* m_yAxisList;
-
-    // 样式
-    QCheckBox* m_showLegendCheck;
-    QCheckBox* m_showGridCheck;
-    QCheckBox* m_showDataPointsCheck;
-    QComboBox* m_themeCombo;
-
-    // 尺寸
-    QSpinBox* m_widthSpin;
-    QSpinBox* m_heightSpin;
-
-    QDialogButtonBox* m_buttonBox;
-
-    // -----------------------------------------------------------------------
-    // 数据
-    // -----------------------------------------------------------------------
-
-    DataTable::List m_tables;
-    ChartConfig m_config;
+    Ui::ChartConfigDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
+    DataTable::List m_tables;   ///< 可用的数据表列表
+    ChartConfig m_config;       ///< 图表配置
 };
 
 #endif // CHART_CONFIG_DIALOG_H

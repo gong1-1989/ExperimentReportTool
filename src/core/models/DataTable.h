@@ -137,8 +137,6 @@ public:
 
     /// 获取所有数据行
     const QList<QVariantList>& rows() const { return m_rows; }
-    /// 设置行定义
-    void setData(const QList<QVariantList>& rows){m_rows=rows;}
     /// 行数量
     int rowCount() const { return m_rows.size(); }
     /// 获取指定行

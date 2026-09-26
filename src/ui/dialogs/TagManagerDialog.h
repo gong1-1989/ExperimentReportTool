@@ -24,6 +24,11 @@
 
 #include "core/models/Tag.h"
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class TagManagerDialog;
+}
 /**
  * @brief 标签管理对话框
  */
@@ -43,10 +48,11 @@ private slots:
     void onSaveTag();
     void onCancelEdit();
     void onSearchTextChanged(const QString& text);
-    //void onColorSelected(int index);
+    void onColorSelected(int index);
 
 private:
-    void setupUi();
+
+    Ui::TagManagerDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     void loadTags(const QString& filter = QString());
     void updateTagList();
     void clearEditForm();
@@ -57,20 +63,8 @@ private:
     // UI 控件
     // -----------------------------------------------------------------------
 
-    QLineEdit* m_searchEdit;           ///< 搜索框
-    QListWidget* m_tagList;             ///< 标签列表
-    QPushButton* m_newBtn;              ///< 新建按钮
-    QPushButton* m_editBtn;             ///< 编辑按钮
-    QPushButton* m_deleteBtn;           ///< 删除按钮
 
     // 编辑表单
-    QGroupBox* m_editGroup;             ///< 编辑区域
-    QLineEdit* m_nameEdit;              ///< 标签名称
-    QComboBox* m_colorCombo;             ///< 颜色选择
-    QTextEdit* m_descEdit;               ///< 描述
-    QPushButton* m_saveBtn;              ///< 保存按钮
-    QPushButton* m_cancelBtn;            ///< 取消按钮
-    QLabel* m_usageLabel;                ///< 使用次数
 
     // -----------------------------------------------------------------------
     // 数据

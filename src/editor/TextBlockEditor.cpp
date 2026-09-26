@@ -8,14 +8,15 @@
 
 #include <QPainter>
 #include <QTextDocument>
-#include <QAbstractTextDocumentLayout>
 #include <QTextBlock>
 #include <QTextList>
 #include <QTextListFormat>
 #include <QMimeData>
 #include <QApplication>
+#include <QTimer>  // 用于延迟更新高度
 #include <QClipboard>
 #include <QRegularExpression>
+#include <QResizeEvent>  // 用于尺寸变化事件
 
 // ===========================================================================
 // AutoResizeTextEdit 实现
@@ -29,7 +30,7 @@ AutoResizeTextEdit::AutoResizeTextEdit(QWidget* parent)
     setFrameStyle(QFrame::NoFrame);
     setStyleSheet("QTextEdit { background: transparent; border: none; }");
 
-    // 关闭水平滚动条，垂直滚动条按需
+    // 关闭水平滚动条，垂直滚动条总是关闭（自动调整高度）
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
@@ -39,25 +40,31 @@ AutoResizeTextEdit::AutoResizeTextEdit(QWidget* parent)
     // 自动换行（由父容器宽度决定）
     setWordWrapMode(QTextOption::WordWrap);
 
-    // 连接文档大小变化信号
-    QAbstractTextDocumentLayout *layout = document()->documentLayout();
-    connect(layout, &QAbstractTextDocumentLayout::documentSizeChanged,
+    // 设置尺寸策略：水平方向扩展，垂直方向根据内容
+    // Minimum 意味着 sizeHint 是最小尺寸，布局不会压缩到比 sizeHint 更小
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+
+    // 连接文档内容变化信号（用于自动调整高度）
+    // 注意：Qt6 中没有 contentsSizeChanged 信号，使用 contentsChanged 替代
+    connect(document(), &QTextDocument::contentsChanged,
             this, &AutoResizeTextEdit::onDocumentSizeChanged);
 
-    // 设置初始高度
-    setFixedHeight(m_minHeight);
+    // 初始不设置固定高度，让 sizeHint 决定高度
 }
 
 QSize AutoResizeTextEdit::sizeHint() const
 {
     // 高度根据文档内容计算
+    // document()->size().height() 返回文档的理想高度（像素）
+    // +8 是上下内边距
     const int docHeight = qCeil(document()->size().height());
-    const int height = qMax(m_minHeight, docHeight + 8);  // +8 上下内边距
+    const int height = qMax(m_minHeight, docHeight + 8);
     return QSize(QWIDGETSIZE_MAX, height);
 }
 
 QSize AutoResizeTextEdit::minimumSizeHint() const
 {
+    // 最小高度为 m_minHeight，确保至少能显示一行
     return QSize(0, m_minHeight);
 }
 
@@ -106,14 +113,48 @@ void AutoResizeTextEdit::insertFromMimeData(const QMimeData* source)
     }
 }
 
-void AutoResizeTextEdit::onDocumentSizeChanged(const QSizeF& size)
+void AutoResizeTextEdit::resizeEvent(QResizeEvent* event)
 {
-    Q_UNUSED(size);
-    int newHeight = sizeHint().height();
-    if (newHeight != height()) {
-        setFixedHeight(newHeight);
-        emit heightChanged(newHeight);
+    QTextEdit::resizeEvent(event);
+
+    // 关键：宽度变化时，document 的文本宽度可能变化，需要重新计算高度
+    // 设置 document 的文本宽度为视口宽度，确保 document()->size().height() 正确
+    if (document()) {
+        document()->setTextWidth(viewport()->width());
     }
+
+    // 延迟更新高度，确保布局完成
+    QTimer::singleShot(0, this, [this]() {
+        updateGeometry();
+        const int newHeight = qMax(m_minHeight, qCeil(document()->size().height()) + 8);
+        emit heightChanged(newHeight);
+    });
+}
+
+void AutoResizeTextEdit::onDocumentSizeChanged()
+{
+    // contentsChanged 信号触发时，通知布局系统重新计算尺寸
+    // updateGeometry() 会触发父布局重新调用 sizeHint()
+    updateGeometry();
+
+    // 计算新高度并发出信号
+    const int newHeight = qMax(m_minHeight, qCeil(document()->size().height()) + 8);
+    emit heightChanged(newHeight);
+}
+
+/**
+ * @brief 公共方法：手动触发高度更新
+ *
+ * 在字体改变、加载内容等场景下调用，
+ * 使用 QTimer::singleShot(0) 延迟到事件循环，确保文档布局完成。
+ */
+void AutoResizeTextEdit::updateHeight()
+{
+    QTimer::singleShot(0, this, [this]() {
+        updateGeometry();
+        const int newHeight = qMax(m_minHeight, qCeil(document()->size().height()) + 8);
+        emit heightChanged(newHeight);
+    });
 }
 
 // ===========================================================================
@@ -136,6 +177,10 @@ TextBlockEditor::TextBlockEditor(const ContentBlock& block, QWidget* parent)
     connect(m_textEdit, &QTextEdit::textChanged,
             this, &TextBlockEditor::onTextChanged);
 
+    // 关键：文本编辑控件高度变化时，更新块编辑器的固定高度
+    connect(m_textEdit, &AutoResizeTextEdit::heightChanged,
+            this, &BlockEditor::updateHeight);
+
     // 根据块类型设置初始样式和内容
     updateStyleForType();
 
@@ -143,7 +188,9 @@ TextBlockEditor::TextBlockEditor(const ContentBlock& block, QWidget* parent)
     if (!block.data.isEmpty()) {
         setBlockData(block.data);
     }
-    setMinimumHeight(m_textEdit->height());
+
+    // 初始更新高度
+    updateHeight();
 }
 
 // ===========================================================================
@@ -215,6 +262,9 @@ void TextBlockEditor::setBlockData(const QJsonObject& data)
     }
 
     m_loadingData = false;
+
+    // 加载内容后更新高度
+    m_textEdit->updateHeight();
 }
 
 BlockType TextBlockEditor::blockType() const
@@ -291,11 +341,14 @@ void TextBlockEditor::applyFormat(const QString& format)
         charFormat.setFontStrikeOut(!cursor.charFormat().fontStrikeOut());
     } else if (format == "code") {
         // 行内代码：等宽字体 + 背景色
-        if (cursor.charFormat().fontFamily() == "Consolas") {
-            charFormat.setFontFamily(m_textEdit->font().family());
+        // Qt6 中 fontFamily()/setFontFamily() 已弃用，使用 fontFamilies()/setFontFamilies()
+        // fontFamilies() 返回 QVariant，需要用 toStringList() 转换
+        const QStringList families = cursor.charFormat().fontFamilies().toStringList();
+        if (families.contains("Consolas")) {
+            charFormat.setFontFamilies(QStringList{m_textEdit->font().family()});
             charFormat.setBackground(Qt::transparent);
         } else {
-            charFormat.setFontFamily("Consolas");
+            charFormat.setFontFamilies(QStringList{"Consolas"});
             charFormat.setBackground(QColor("#f0f0f0"));
         }
     }
@@ -361,7 +414,12 @@ void TextBlockEditor::updateStyleForType()
     m_textEdit->setPlaceholderText(placeholderForType());
 
     // 设置最小高度
+    m_textEdit->setMinHeight(minHeight);
     m_textEdit->setMinimumHeight(minHeight);
+
+    // 字体改变后，文档大小可能变化，需要重新计算高度
+    // updateHeight() 内部使用 QTimer::singleShot(0) 延迟更新，确保文档布局完成
+    m_textEdit->updateHeight();
 }
 
 QString TextBlockEditor::placeholderForType() const
@@ -393,7 +451,7 @@ void TextBlockEditor::onTextChanged()
     if (m_textType == BlockType::NumberedList) {
         updateListNumbering();
     }
-    setMinimumHeight(m_textEdit->height());
+
     notifyContentChanged();
 }
 

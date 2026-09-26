@@ -23,9 +23,15 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QSettings>
+#include <QList>
 
 #include "core/models/Project.h"
 #include "core/models/Report.h"
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class MainWindow;
+}
 
 // 前向声明
 class ProjectTreeWidget;
@@ -122,7 +128,6 @@ private:
     // -----------------------------------------------------------------------
     // 初始化方法
     // -----------------------------------------------------------------------
-    void setupUi();
     void createActions();
     void createMenus();
     void createToolBar();
@@ -133,37 +138,46 @@ private:
     void saveSettings();
     void updateWindowTitle();
     void updateActionsState();
-    void updateStatusBar();
+
+    // -----------------------------------------------------------------------
+    // 内部方法
+    // -----------------------------------------------------------------------
+
+    /// 初始化 UI（动态创建复杂控件）
+    void setupUi();
+
+    /// 更新 UI 状态
+    void updateReportList();
+    void updateProjectTree();
 
     // -----------------------------------------------------------------------
     // 辅助方法
     // -----------------------------------------------------------------------
     void showStatusMessage(const QString& message, int timeout = 3000);
+    void updateStatusBar();  ///< 更新状态栏显示
     void refreshAll();
     qint64 currentProjectId() const;
     qint64 currentReportId() const;
 
-    // -----------------------------------------------------------------------
-    // 成员变量 - UI 组件
-    // -----------------------------------------------------------------------
+    Ui::MainWindow* ui;                  ///< UI 界面对象（从 .ui 文件自动生成）
 
-    // 中央区域分割器
-    QSplitter* m_mainSplitter;       ///< 主分割器（左-中-右）
-    QSplitter* m_centerSplitter;     ///< 中间分割器（报告列表 - 编辑器占位）
+    // 中央区域分割器（动态创建）
+    QSplitter* m_mainSplitter;           ///< 主分割器（左-中-右）
+    QSplitter* m_centerSplitter;         ///< 中间分割器（报告列表 - 编辑器占位）
 
     // 核心组件
-    ProjectTreeWidget* m_projectTree;   ///< 左侧项目树
-    ReportListWidget* m_reportList;     ///< 中间报告列表
-    QWidget* m_propertyPanel;           ///< 右侧属性面板（占位）
-    QStackedWidget* m_editorStack;      ///< 编辑器区域（占位）
+    ProjectTreeWidget* m_projectTree;    ///< 左侧项目树
+    ReportListWidget* m_reportList;      ///< 中间报告列表
+    QWidget* m_propertyPanel;            ///< 右侧属性面板（占位）
+    QStackedWidget* m_editorStack;       ///< 编辑器区域（占位）
 
-    // 全局搜索
-    QLineEdit* m_globalSearchEdit;   ///< 工具栏全局搜索框
+    // 工具栏控件（动态创建）
+    QLineEdit* m_globalSearchEdit;       ///< 工具栏全局搜索框
 
-    // 状态栏标签
-    QLabel* m_statusProjectLabel;    ///< 当前项目
-    QLabel* m_statusReportLabel;     ///< 当前报告
-    QLabel* m_statusCountLabel;      ///< 统计信息
+    // 状态栏控件（动态创建）
+    QLabel* m_statusProjectLabel;        ///< 当前项目
+    QLabel* m_statusReportLabel;         ///< 当前报告
+    QLabel* m_statusCountLabel;          ///< 统计信息
 
     // -----------------------------------------------------------------------
     // 成员变量 - 动作

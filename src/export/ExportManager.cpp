@@ -5,6 +5,10 @@
 
 #include "ExportManager.h"
 #include "core/utils/Logger.h"
+#include "chart/ChartRenderer.h"
+#include "chart/ChartConfigDialog.h"
+#include "data/repositories/DataTableRepository.h"
+#include "core/models/DataTable.h"
 
 #include <QTextDocument>
 #include <QTextCursor>
@@ -25,6 +29,8 @@
 #include <QXmlStreamWriter>
 #include <QMimeDatabase>
 #include <QMimeType>
+#include <QJsonArray>
+#include <QJsonObject>
 
 // ===========================================================================
 // 构造与析构
@@ -152,6 +158,7 @@ bool ExportManager::exportToHtml(const Report::Ptr& report,
     }
 
     QTextStream stream(&file);
+    // Qt6 中 QTextStream 默认使用 UTF-8 编码，无需调用 setCodec
     stream << html;
     file.close();
 
@@ -190,6 +197,7 @@ bool ExportManager::exportToWord(const Report::Ptr& report,
     }
 
     QTextStream stream(&file);
+    // Qt6 中 QTextStream 默认使用 UTF-8 编码，无需调用 setCodec
     stream << wordHtml;
     file.close();
 
@@ -282,6 +290,7 @@ bool ExportManager::exportToText(const Report::Ptr& report,
     }
 
     QTextStream stream(&file);
+    // Qt6 中 QTextStream 默认使用 UTF-8 编码，无需调用 setCodec
     stream << text;
     file.close();
 
@@ -291,6 +300,46 @@ bool ExportManager::exportToText(const Report::Ptr& report,
 // ===========================================================================
 // 报告转 HTML
 // ===========================================================================
+
+/**
+ * @brief 从完整 HTML 文档中提取 body 标签内的内容
+ *
+ * TextBlockEditor 存储的是 QTextEdit::toHtml() 的完整 HTML 文档，
+ * 包含 <!DOCTYPE>、<html>、<head>、<body> 等标签。
+ * 在导出时，需要提取 <body> 内的内容嵌入到主文档中，
+ * 否则会显示为 HTML 源码。
+ *
+ * @param html 完整的 HTML 文档
+ * @return body 标签内的 HTML 片段，如果不是完整文档则返回原文本
+ */
+static QString extractHtmlBody(const QString& html)
+{
+    if (!html.contains("<body", Qt::CaseInsensitive)) {
+        return html;
+    }
+    const int bodyStart = html.indexOf("<body", 0, Qt::CaseInsensitive);
+    if (bodyStart < 0) return html;
+    const int bodyTagEnd = html.indexOf('>', bodyStart);
+    if (bodyTagEnd < 0) return html;
+    const int bodyEnd = html.indexOf("</body>", bodyTagEnd, Qt::CaseInsensitive);
+    if (bodyEnd < 0) return html;
+    return html.mid(bodyTagEnd + 1, bodyEnd - bodyTagEnd - 1);
+}
+
+/**
+ * @brief 从 HTML 文档中提取纯文本（用于目录等需要纯文本的场景）
+ *
+ * 使用 QTextDocument 解析 HTML 并提取纯文本内容。
+ *
+ * @param html HTML 文档或片段
+ * @return 纯文本内容
+ */
+static QString htmlToPlainText(const QString& html)
+{
+    QTextDocument doc;
+    doc.setHtml(html);
+    return doc.toPlainText().trimmed();
+}
 
 QString ExportManager::reportToHtml(const Report::Ptr& report, const ExportConfig& config)
 {
@@ -327,7 +376,8 @@ QString ExportManager::reportToHtml(const Report::Ptr& report, const ExportConfi
         for (int i = 0; i < report->blockCount(); ++i) {
             const ContentBlock& block = report->blockAt(i);
             if (block.type == BlockType::Heading1 || block.type == BlockType::Heading2) {
-                const QString text = block.data.value("text").toString();
+                // 目录需要纯文本标题，从 HTML 中提取纯文本
+                const QString text = htmlToPlainText(block.data.value("text").toString());
                 const QString indent = block.type == BlockType::Heading2 ? "  " : "";
                 html += QString("%1<li><a href=\"#heading-%2\">%3</a></li>\n")
                             .arg(indent).arg(tocIndex).arg(text.toHtmlEscaped());
@@ -341,7 +391,7 @@ QString ExportManager::reportToHtml(const Report::Ptr& report, const ExportConfi
     html += "<div class=\"report-content\">\n";
     int headingCounter = 0;
     for (int i = 0; i < report->blockCount(); ++i) {
-        html += blockToHtml(report->blockAt(i), headingCounter);
+        html += blockToHtml(report->blockAt(i), headingCounter, report);
     }
     html += "</div>\n";
 
@@ -358,28 +408,28 @@ QString ExportManager::reportToHtml(const Report::Ptr& report, const ExportConfi
 // 内容块转 HTML
 // ===========================================================================
 
-QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounter)
+QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounter, const Report::Ptr& report)
 {
     switch (block.type) {
     case BlockType::Heading1: {
         ++headingCounter;
         return QString("<h1 id=\"heading-%1\">%2</h1>\n")
             .arg(headingCounter)
-            .arg(block.data.value("text").toString().toHtmlEscaped());
+            .arg(extractHtmlBody(block.data.value("text").toString()));
     }
     case BlockType::Heading2: {
         ++headingCounter;
         return QString("<h2 id=\"heading-%1\">%2</h2>\n")
             .arg(headingCounter)
-            .arg(block.data.value("text").toString().toHtmlEscaped());
+            .arg(extractHtmlBody(block.data.value("text").toString()));
     }
     case BlockType::Heading3:
         return QString("<h3>%1</h3>\n")
-            .arg(block.data.value("text").toString().toHtmlEscaped());
+            .arg(extractHtmlBody(block.data.value("text").toString()));
 
     case BlockType::Paragraph:
-        return QString("<p>%1</p>\n")
-            .arg(block.data.value("text").toString().toHtmlEscaped());
+        // 段落直接使用提取后的 HTML 内容（保留格式）
+        return extractHtmlBody(block.data.value("text").toString()) + "\n";
 
     case BlockType::BulletList: {
         QString html = "<ul>\n";
@@ -405,7 +455,7 @@ QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounte
 
     case BlockType::Quote:
         return QString("<blockquote>%1</blockquote>\n")
-            .arg(block.data.value("text").toString().toHtmlEscaped());
+            .arg(extractHtmlBody(block.data.value("text").toString()));
 
     case BlockType::CodeBlock: {
         const QString code = block.data.value("code").toString().toHtmlEscaped();
@@ -443,13 +493,148 @@ QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounte
         return html;
     }
 
-    case BlockType::Table:
-        // 表格块引用 data_tables 表，导出时需要查询数据库
-        // 简化处理：显示占位
-        return "<div class=\"table-block\">[表格数据]</div>\n";
+    case BlockType::Table: {
+        // 从 JSON 数据渲染 HTML 表格
+        const int rows = block.data.value("rows").toInt(0);
+        const int cols = block.data.value("cols").toInt(0);
 
-    case BlockType::Chart:
-        return "<div class=\"chart-block\">[图表]</div>\n";
+        if (rows > 0 && cols > 0) {
+            QString html = "<div class=\"table-block\">\n";
+            html += "<table>\n";
+
+            // 表头
+            if (block.data.value("headers").isArray()) {
+                const QJsonArray headers = block.data.value("headers").toArray();
+                html += "<thead><tr>\n";
+                for (int col = 0; col < cols; ++col) {
+                    const QString headerText = col < headers.size()
+                                                   ? headers[col].toString()
+                                                   : QString("列%1").arg(col + 1);
+                    html += QString("<th>%1</th>\n").arg(headerText.toHtmlEscaped());
+                }
+                html += "</tr></thead>\n";
+            }
+
+            // 表格数据
+            if (block.data.value("cells").isArray()) {
+                const QJsonArray cells = block.data.value("cells").toArray();
+                html += "<tbody>\n";
+                for (int row = 0; row < rows && row < cells.size(); ++row) {
+                    html += "<tr>\n";
+                    const QJsonArray rowData = cells[row].toArray();
+                    for (int col = 0; col < cols; ++col) {
+                        const QString cellText = col < rowData.size()
+                                                     ? rowData[col].toString()
+                                                     : QString();
+                        html += QString("<td>%1</td>\n").arg(cellText.toHtmlEscaped());
+                    }
+                    html += "</tr>\n";
+                }
+                html += "</tbody>\n";
+            }
+
+            html += "</table>\n";
+            html += "</div>\n";
+            return html;
+        }
+        return "<div class=\"table-block\">[空表格]</div>\n";
+    }
+
+    case BlockType::Chart: {
+        // 从 JSON 数据解析图表配置
+        const ChartConfig config = ChartConfig::fromJson(block.data);
+
+        if (config.dataTableId != 0) {
+            DataTable::Ptr table;
+
+            if (config.dataTableId > 0) {
+                // 正 ID：从数据库获取数据表
+                table = DataTableRepository::findById(config.dataTableId);
+            } else if (report) {
+                // 负 ID：从报告表格块获取
+                const int targetIndex = -config.dataTableId - 1;
+                int tableBlockIndex = 0;
+
+                for (int i = 0; i < report->blockCount(); ++i) {
+                    const ContentBlock& tableBlock = report->blockAt(i);
+                    if (tableBlock.type == BlockType::Table) {
+                        if (tableBlockIndex == targetIndex) {
+                            // 将表格块转换为 DataTable
+                            table = DataTable::create();
+                            table->setId(config.dataTableId);
+                            table->setName(QString("表格块 #%1").arg(tableBlockIndex + 1));
+
+                            const int cols = tableBlock.data.value("cols").toInt(0);
+                            QList<ColumnDefinition> columns;
+                            if (tableBlock.data.value("headers").isArray()) {
+                                const QJsonArray headers = tableBlock.data.value("headers").toArray();
+                                for (int col = 0; col < cols; ++col) {
+                                    ColumnDefinition colDef;
+                                    colDef.name = col < headers.size() ? headers[col].toString() : QString("列%1").arg(col + 1);
+                                    colDef.type = ColumnType::Text;
+                                    columns.append(colDef);
+                                }
+                            } else {
+                                for (int col = 0; col < cols; ++col) {
+                                    ColumnDefinition colDef;
+                                    colDef.name = QString("列%1").arg(col + 1);
+                                    colDef.type = ColumnType::Text;
+                                    columns.append(colDef);
+                                }
+                            }
+                            table->setColumns(columns);
+
+                            if (tableBlock.data.value("cells").isArray()) {
+                                const QJsonArray cells = tableBlock.data.value("cells").toArray();
+                                for (int row = 0; row < cells.size(); ++row) {
+                                    const QJsonArray rowData = cells[row].toArray();
+                                    QVariantList variantRow;
+                                    for (int col = 0; col < cols; ++col) {
+                                        variantRow.append(col < rowData.size() ? rowData[col].toVariant() : QVariant());
+                                    }
+                                    table->appendRow(variantRow);
+                                }
+                            }
+                            break;
+                        }
+                        ++tableBlockIndex;
+                    }
+                }
+            }
+
+            if (table) {
+                // 使用 ChartRenderer 渲染图表
+                ChartRenderer renderer;
+                renderer.setConfig(config);
+                renderer.setDataTable(table);
+
+                if (renderer.render()) {
+                    // 将图表渲染为图片
+                    const QPixmap pixmap = renderer.toPixmap(config.width, config.height);
+                    if (!pixmap.isNull()) {
+                        // 转换为 base64
+                        QByteArray byteArray;
+                        QBuffer buffer(&byteArray);
+                        buffer.open(QIODevice::WriteOnly);
+                        pixmap.save(&buffer, "PNG");
+                        const QString base64 = QString::fromLatin1(byteArray.toBase64());
+                        QString html = "<div class=\"chart-block\">\n";
+                        html += QString("<img src=\"data:image/png;base64,%1\" alt=\"%2\">\n")
+                                    .arg(base64, config.title.toHtmlEscaped());
+                        if (!config.title.isEmpty()) {
+                            html += QString("<p class=\"chart-caption\">%1</p>\n")
+                                        .arg(config.title.toHtmlEscaped());
+                        }
+                        html += "</div>\n";
+                        return html;
+                    }
+                }
+                return "<div class=\"chart-block\">[图表渲染失败]</div>\n";
+            }
+            return "<div class=\"chart-block\">[数据源不存在]</div>\n";
+        }
+        return "<div class=\"chart-block\">[未配置图表]</div>\n";
+    }
 
     case BlockType::Formula:
         return QString("<div class=\"formula\">%1</div>\n")
@@ -573,14 +758,36 @@ QString ExportManager::generateCss(const ExportConfig& config)
             color: #888;
             margin-top: 8px;
         }
-        .table-block, .chart-block {
-            background: #f8f9fa;
-            border: 1px dashed #ddd;
-            padding: 24px;
-            text-align: center;
-            color: #999;
-            border-radius: 6px;
+        .table-block {
             margin: 16px 0;
+        }
+        .table-block table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 14px;
+        }
+        .table-block th {
+            border: 1px solid #333;
+            padding: 8px 12px;
+            background-color: #f0f0f0;
+            font-weight: bold;
+            text-align: left;
+        }
+        .table-block td {
+            border: 1px solid #333;
+            padding: 8px 12px;
+        }
+        .chart-block {
+            text-align: center;
+            margin: 16px 0;
+        }
+        .chart-block img {
+            max-width: 100%;
+        }
+        .chart-caption, .image-caption {
+            color: #666;
+            font-size: 12px;
+            margin-top: 8px;
         }
         .report-footer {
             margin-top: 48px;

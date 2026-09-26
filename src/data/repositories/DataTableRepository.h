@@ -6,8 +6,8 @@
 #ifndef DATA_TABLE_REPOSITORY_H
 #define DATA_TABLE_REPOSITORY_H
 
-#include "core/models/DataTable.h"
 #include <QSqlQuery>
+#include "core/models/DataTable.h"
 
 class DataTableRepository
 {

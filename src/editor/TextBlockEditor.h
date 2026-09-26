@@ -48,6 +48,12 @@ public:
     void setPlaceholderText(const QString& text);
     QString placeholderText() const { return m_placeholder; }
 
+    /// 手动触发高度更新（字体改变、加载内容后调用）
+    void updateHeight();
+
+    /// 设置最小高度
+    void setMinHeight(int height) { m_minHeight = height; }
+
 signals:
     /// 高度变化信号
     void heightChanged(int height);
@@ -59,10 +65,13 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     /// 粘贴事件
     void insertFromMimeData(const QMimeData* source) override;
+    /// 尺寸变化事件（宽度变化时重新计算高度）
+    void resizeEvent(QResizeEvent* event) override;
 
 private slots:
     /// 文档内容变化时更新高度
-    void onDocumentSizeChanged(const QSizeF& size);
+    /// @note 无参数版本，适配 QTextDocument::contentsChanged 信号（Qt6无参数）
+    void onDocumentSizeChanged();
 
 private:
     QString m_placeholder;  ///< 占位符文字

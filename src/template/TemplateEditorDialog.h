@@ -19,10 +19,16 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QList>
 
 #include "core/models/Template.h"
 #include "core/models/Report.h"
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class TemplateEditorDialog;
+}
 // 前向声明
 class ReportEditor;
 
@@ -41,6 +47,8 @@ public:
      */
     explicit TemplateEditorDialog(QWidget* parent = nullptr,
                                     const Template::Ptr& existingTemplate = nullptr);
+    /// 析构函数
+    ~TemplateEditorDialog() override;
 
     /**
      * @brief 获取编辑后的模板
@@ -55,8 +63,9 @@ private slots:
     bool validateInput();
 
 private:
+
+    Ui::TemplateEditorDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     /// 初始化 UI
-    void setupUi();
     /// 加载模板到编辑器
     void loadTemplate();
     /// 从编辑器收集模板块
@@ -66,11 +75,7 @@ private:
     // UI 控件
     // -----------------------------------------------------------------------
 
-    QLineEdit* m_nameEdit;         ///< 模板名称
-    QComboBox* m_categoryCombo;    ///< 模板分类
-    QTextEdit* m_descriptionEdit;  ///< 模板描述
     ReportEditor* m_editor;        ///< 模板块编辑器（复用 ReportEditor）
-    QDialogButtonBox* m_buttonBox; ///< 按钮组
 
     // -----------------------------------------------------------------------
     // 数据

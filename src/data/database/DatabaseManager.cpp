@@ -10,9 +10,9 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QSqlRecord>
-#include <QDir>
-#include <QFileInfo>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QTextStream>
 #include <QDateTime>
 #include <QJsonObject>
@@ -80,18 +80,19 @@ bool DatabaseManager::initialize(const QString& dbPath)
 
     // WAL 模式：允许并发读写，大幅提升写入性能
     // 注意：WAL 模式在网络文件系统上可能有问题，但本地文件没问题
-    db.exec("PRAGMA journal_mode = WAL;");
+    QSqlQuery pragmaQuery(db);
+    pragmaQuery.exec("PRAGMA journal_mode = WAL;");
 
     // 启用外键约束（SQLite 默认关闭）
-    db.exec("PRAGMA foreign_keys = ON;");
+    pragmaQuery.exec("PRAGMA foreign_keys = ON;");
 
     // 同步模式：NORMAL 在 WAL 模式下足够安全，且性能更好
     // FULL 更安全但慢，NORMAL 是推荐值
-    db.exec("PRAGMA synchronous = NORMAL;");
+    pragmaQuery.exec("PRAGMA synchronous = NORMAL;");
 
     // 缓存大小：设置为 64MB（单位是页，默认页大小 4096 字节）
     // 64 * 1024 * 1024 / 4096 = 16384 页
-    db.exec("PRAGMA cache_size = -16384;");
+    pragmaQuery.exec("PRAGMA cache_size = -16384;");
 
     // -----------------------------------------------------------------------
     // 创建表结构
@@ -303,6 +304,8 @@ bool DatabaseManager::createTables()
     };
 
     for (const QString& sql : statements) {
+        // QSqlDatabase::exec() 返回 QSqlQuery 对象，不能直接用 ! 取反
+        // 需要通过 QSqlQuery::isActive() 或 lastError() 判断执行结果
         QSqlQuery query(db);
         if (!query.exec(sql)) {
             LOG_ERROR(QString("建表失败: %1\nSQL: %2")
@@ -339,6 +342,7 @@ bool DatabaseManager::createIndexes()
     };
 
     for (const QString& sql : indexes) {
+        // 使用 QSqlQuery 对象执行 SQL，正确检查执行结果
         QSqlQuery query(db);
         if (!query.exec(sql)) {
             LOG_ERROR(QString("创建索引失败: %1").arg(query.lastError().text()));
@@ -370,10 +374,11 @@ bool DatabaseManager::createFtsTables()
         );
     )";
 
-    QSqlQuery query(db);
-    if (!query.exec(createFts)) {
+    // 使用 QSqlQuery 对象执行 SQL，正确检查执行结果
+    QSqlQuery ftsQuery(db);
+    if (!ftsQuery.exec(createFts)) {
         // FTS5 可能不可用（某些 Qt 编译版本未启用），记录警告但不失败
-        LOG_WARNING(QString("FTS5 全文索引不可用: %1").arg(query.lastError().text()));
+        LOG_WARNING(QString("FTS5 全文索引不可用: %1").arg(ftsQuery.lastError().text()));
         LOG_WARNING("将使用 LIKE 模糊查询作为降级方案");
         return true;
     }
@@ -425,6 +430,7 @@ bool DatabaseManager::createTriggers()
     };
 
     for (const QString& sql : triggers) {
+        // 使用 QSqlQuery 对象执行 SQL，正确检查执行结果
         QSqlQuery query(db);
         if (!query.exec(sql)) {
             LOG_WARNING(QString("创建触发器失败: %1").arg(query.lastError().text()));
@@ -557,7 +563,8 @@ void DatabaseManager::close()
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         if (db.isOpen()) {
             // 确保所有数据写入磁盘
-            db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+            QSqlQuery pragmaQuery(db);
+            pragmaQuery.exec("PRAGMA wal_checkpoint(TRUNCATE);");
             db.close();
         }
         QSqlDatabase::removeDatabase(m_connectionName);
@@ -625,4 +632,37 @@ bool DatabaseManager::rollback()
 QString DatabaseManager::lastError() const
 {
     return database().lastError().text();
+}
+
+// ===========================================================================
+// 统一错误处理辅助方法
+// ===========================================================================
+
+bool DatabaseManager::executeQuery(QSqlQuery& query, const QString& operation, bool logError)
+{
+    // 执行查询
+    if (!query.exec()) {
+        if (logError) {
+            // 记录详细的错误日志，包括操作描述、SQL语句和错误信息
+            LOG_ERROR(QString("数据库操作失败 [%1]: %2\nSQL: %3")
+                         .arg(operation,
+                              query.lastError().text(),
+                              query.lastQuery()));
+        }
+        return false;
+    }
+
+    // 执行成功
+    LOG_DEBUG(QString("数据库操作成功 [%1], 影响行数: %2")
+                  .arg(operation)
+                  .arg(query.numRowsAffected()));
+
+    return true;
+}
+
+QSqlQuery& DatabaseManager::executeQueryWithResult(QSqlQuery& query, const QString& operation, bool& ok)
+{
+    // 执行查询
+    ok = executeQuery(query, operation);
+    return query;
 }

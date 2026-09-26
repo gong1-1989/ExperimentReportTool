@@ -26,6 +26,11 @@
 #include "core/models/DataTable.h"
 #include "utils/CsvParser.h"
 
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class DataImportDialog;
+}
+
 /**
  * @brief 导入模式
  */
@@ -70,45 +75,21 @@ private slots:
     void onImport();
 
 private:
-    void setupUi();
     bool loadAndPreview();
     void updatePreviewTable();
     void updateColumnMapping();
     void applyImport();
 
     // -----------------------------------------------------------------------
-    // UI 控件
+    // 成员变量
     // -----------------------------------------------------------------------
 
-    QLineEdit* m_filePathEdit;         ///< 文件路径
-    QPushButton* m_browseBtn;           ///< 浏览按钮
-    QPushButton* m_previewBtn;          ///< 预览按钮
-
-    QComboBox* m_delimiterCombo;        ///< 分隔符选择
-    QCheckBox* m_hasHeaderCheck;        ///< 第一行是表头
-    QComboBox* m_encodingCombo;         ///< 编码选择
-
-    QTableWidget* m_previewTable;       ///< 预览表格
-    QLabel* m_infoLabel;                 ///< 信息标签
-
-    // 导入模式
-    QRadioButton* m_appendRadio;         ///< 追加模式
-    QRadioButton* m_replaceRadio;        ///< 替换模式
-    QRadioButton* m_newTableRadio;       ///< 新表模式
-    QButtonGroup* m_modeGroup;           ///< 模式按钮组
-
-    QPushButton* m_importBtn;            ///< 导入按钮
-    QPushButton* m_cancelBtn;            ///< 取消按钮
-
-    // -----------------------------------------------------------------------
-    // 数据
-    // -----------------------------------------------------------------------
-
-    DataTable::Ptr m_targetTable;        ///< 目标数据表
-    DataTable::Ptr m_importedTable;      ///< 导入后的数据表
-    CsvParseResult m_parseResult;        ///< 解析结果
-    ImportMode m_importMode;              ///< 导入模式
-    QString m_currentFilePath;            ///< 当前文件路径
+    Ui::DataImportDialog* ui;     ///< UI 界面对象（从 .ui 文件自动生成）
+    DataTable::Ptr m_targetTable; ///< 目标数据表
+    DataTable::Ptr m_importedTable; ///< 导入后的数据表
+    CsvParseResult m_parseResult; ///< 解析结果
+    ImportMode m_importMode;       ///< 导入模式
+    QString m_currentFilePath;     ///< 当前文件路径
 };
 
 #endif // DATA_IMPORT_DIALOG_H

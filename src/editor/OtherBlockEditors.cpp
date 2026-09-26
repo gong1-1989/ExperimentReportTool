@@ -8,8 +8,9 @@
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
 #include "data/repositories/DataTableRepository.h"
+#include "data/repositories/ReportRepository.h"
 #include "editor/DataTableEditorDialog.h"
-#include "editor/TextBlockEditor.h"
+#include "editor/TextBlockEditor.h"  // 文本块编辑器（工厂中使用）
 #include "formula/FormulaBlockEditor.h"
 
 #include <QHeaderView>
@@ -18,7 +19,7 @@
 #include <QClipboard>
 #include <QMessageBox>
 #include <QJsonArray>
-#include <QTimer>
+#include <QTimer>  // 用于复制按钮的延迟恢复
 
 // ===========================================================================
 // 表格块编辑器
@@ -57,7 +58,14 @@ TableBlockEditor::TableBlockEditor(const ContentBlock& block, QWidget* parent)
     m_table->setHorizontalHeaderLabels({tr("列1"), tr("列2"), tr("列3")});
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_table->verticalHeader()->setVisible(true);
+    // 设置默认行高，确保数据行可见
+    m_table->verticalHeader()->setDefaultSectionSize(32);
+    m_table->verticalHeader()->setMinimumSectionSize(32);
     m_table->setStyleSheet("QTableWidget { border: 1px solid #ddd; gridline-color: #ddd; }");
+    // 表格尺寸策略：固定高度，宽度扩展
+    m_table->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    // 设置最小高度，确保表格至少显示表头和几行数据
+    m_table->setMinimumHeight(150);
     layout->addWidget(m_table);
 
     // 连接信号
@@ -71,7 +79,9 @@ TableBlockEditor::TableBlockEditor(const ContentBlock& block, QWidget* parent)
     if (!block.data.isEmpty()) {
         setBlockData(block.data);
     }
-    setupTable();
+
+    // 初始更新表格高度
+    updateTableHeight();
 }
 
 QJsonObject TableBlockEditor::blockData() const
@@ -130,6 +140,9 @@ void TableBlockEditor::setBlockData(const QJsonObject& data)
             }
         }
     }
+
+    // 加载数据后更新表格高度
+    updateTableHeight();
 }
 
 QString TableBlockEditor::plainText() const
@@ -149,7 +162,7 @@ QString TableBlockEditor::plainText() const
 void TableBlockEditor::onAddRow()
 {
     m_table->insertRow(m_table->rowCount());
-    setupTable();
+    updateTableHeight();
     notifyContentChanged();
 }
 
@@ -165,7 +178,7 @@ void TableBlockEditor::onRemoveRow()
 {
     if (m_table->rowCount() > 1) {
         m_table->removeRow(m_table->currentRow() >= 0 ? m_table->currentRow() : m_table->rowCount() - 1);
-        setupTable();
+        updateTableHeight();
         notifyContentChanged();
     }
 }
@@ -174,7 +187,6 @@ void TableBlockEditor::onRemoveColumn()
 {
     if (m_table->columnCount() > 1) {
         m_table->removeColumn(m_table->currentColumn() >= 0 ? m_table->currentColumn() : m_table->columnCount() - 1);
-        m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         notifyContentChanged();
     }
 }
@@ -183,12 +195,27 @@ void TableBlockEditor::onCellChanged(int row, int col)
 {
     Q_UNUSED(row);
     Q_UNUSED(col);
-    //setupTable();
     notifyContentChanged();
 }
 
-void TableBlockEditor::setupTable(){
-    setMinimumHeight((m_table->rowCount()+1)*33);
+void TableBlockEditor::updateTableHeight()
+{
+    // 确保所有行都有正确的高度
+    for (int row = 0; row < m_table->rowCount(); ++row) {
+        m_table->setRowHeight(row, 32);
+    }
+
+    // 根据行数动态计算表格高度
+    // 表头高度约30px，每行32px，底部留一些边距
+    const int headerHeight = m_table->horizontalHeader()->height();
+    const int rowHeight = 32;
+    const int margins = 10;
+    const int height = headerHeight + m_table->rowCount() * rowHeight + margins;
+    // 使用固定高度，确保表格完整显示
+    m_table->setFixedHeight(qMax(150, height));
+
+    // 表格高度变化后，更新块编辑器的高度
+    updateHeight();
 }
 
 // ===========================================================================
@@ -209,7 +236,9 @@ ImageBlockEditor::ImageBlockEditor(const ContentBlock& block, QWidget* parent)
     // 图片显示区域
     m_imageLabel = new QLabel(this);
     m_imageLabel->setAlignment(Qt::AlignCenter);
-    m_imageLabel->setMinimumHeight(100);
+    // 设置固定高度，确保图片区域可见
+    m_imageLabel->setFixedHeight(200);
+    m_imageLabel->setMinimumHeight(200);
     m_imageLabel->setStyleSheet("QLabel { border: 2px dashed #ccc; border-radius: 4px; "
                                   "background-color: #fafafa; color: #999; }");
     m_imageLabel->setText(tr("点击下方按钮选择图片"));
@@ -228,9 +257,11 @@ ImageBlockEditor::ImageBlockEditor(const ContentBlock& block, QWidget* parent)
     connect(m_captionEdit, &QLineEdit::textChanged, this, &ImageBlockEditor::onCaptionChanged);
 
     if (!block.data.isEmpty()) {
-        setBlockData(block.data);        
+        setBlockData(block.data);
     }
-    setMinimumSize(m_displayWidth,m_imageLabel->height()+m_selectBtn->height());
+
+    // 初始更新高度
+    updateHeight();
 }
 
 QJsonObject ImageBlockEditor::blockData() const
@@ -283,14 +314,15 @@ void ImageBlockEditor::updateImageDisplay()
     }
 
     // 按宽度缩放
-    //const int maxWidth = qMin(m_displayWidth, width() - 40);
-    if (pixmap.width() > m_displayWidth) {
-        pixmap = pixmap.scaledToWidth(m_displayWidth, Qt::SmoothTransformation);
+    const int maxWidth = qMin(m_displayWidth, width() - 40);
+    if (pixmap.width() > maxWidth) {
+        pixmap = pixmap.scaledToWidth(maxWidth, Qt::SmoothTransformation);
     }
-    //m_displayWidth=pixmap.width();
-    m_imageLabel->setMinimumHeight(pixmap.height());
     m_imageLabel->setPixmap(pixmap);
-    m_imageLabel->setStyleSheet("QLabel { border: none; background: transparent; }");    
+    m_imageLabel->setStyleSheet("QLabel { border: none; background: transparent; }");
+
+    // 图片加载后更新块编辑器高度
+    updateHeight();
 }
 
 // ===========================================================================
@@ -330,21 +362,24 @@ CodeBlockEditor::CodeBlockEditor(const ContentBlock& block, QWidget* parent)
         "border: 1px solid #333; border-radius: 4px; padding: 8px; "
         "selection-background-color: #264f78; }");
     m_codeEdit->setPlaceholderText(tr("在此输入代码..."));
-    m_codeEdit->setMinimumHeight(100);
+    // 设置最小高度和最大高度，确保代码编辑区可见
+    m_codeEdit->setMinimumHeight(120);
+    m_codeEdit->setMaximumHeight(400);
     layout->addWidget(m_codeEdit);
 
     connect(m_copyBtn, &QPushButton::clicked, this, &CodeBlockEditor::onCopyCode);
     connect(m_languageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &CodeBlockEditor::onLanguageChanged);
     connect(m_codeEdit, &QPlainTextEdit::textChanged, this, [this]() {
-        setMinimumHeight(m_codeEdit->height()+m_languageCombo->height());
         notifyContentChanged();
     });
 
     if (!block.data.isEmpty()) {
         setBlockData(block.data);
     }
-    setMinimumHeight(m_codeEdit->height()+m_languageCombo->height());
+
+    // 初始更新高度
+    updateHeight();
 }
 
 QJsonObject CodeBlockEditor::blockData() const
@@ -427,6 +462,9 @@ ChartBlockEditor::ChartBlockEditor(const ContentBlock& block, QWidget* parent)
     if (!block.data.isEmpty()) {
         setBlockData(block.data);
     }
+
+    // 初始更新高度
+    updateHeight();
 }
 
 ChartBlockEditor::~ChartBlockEditor()
@@ -436,12 +474,23 @@ ChartBlockEditor::~ChartBlockEditor()
     }
 }
 
+void ChartBlockEditor::setReportId(qint64 reportId)
+{
+    m_reportId = reportId;
+    // 设置 reportId 后重新渲染图表
+    // 因为引用表格块（负 ID）的图表需要 reportId 才能找到对应的表格块
+    if (m_config.dataTableId != 0) {
+        renderChart();
+    }
+}
+
 void ChartBlockEditor::setupChartArea()
 {
     // 图表容器
     m_chartContainer = new QWidget(this);
-    m_chartContainer->setMinimumHeight(300);
-    setMinimumHeight(350);
+    // 设置固定高度，确保图表区域可见
+    m_chartContainer->setFixedHeight(350);
+    m_chartContainer->setMinimumHeight(350);
     m_chartContainer->setStyleSheet("QWidget { background: white; border: 1px solid #e0e0e0; border-radius: 6px; }");
     QVBoxLayout* containerLayout = new QVBoxLayout(m_chartContainer);
     containerLayout->setContentsMargins(8, 8, 8, 8);
@@ -479,17 +528,95 @@ void ChartBlockEditor::setupChartArea()
     connect(m_editDataBtn, &QPushButton::clicked, this, &ChartBlockEditor::onEditData);
 }
 
+DataTable::Ptr ChartBlockEditor::tableBlockToDataTable(const ContentBlock& block, int index) const
+{
+    // 创建临时 DataTable 对象
+    DataTable::Ptr table = DataTable::create();
+    // 使用负 ID 标识这是从表格块转换来的（-index-1，确保为负数）
+    table->setId(-index - 1);
+    table->setName(tr("表格块 #%1").arg(index + 1));
+    table->setReportId(m_reportId);
+
+    // 从表格块 JSON 中提取列定义
+    const int cols = block.data.value("cols").toInt(0);
+    QList<ColumnDefinition> columns;
+    if (block.data.value("headers").isArray()) {
+        const QJsonArray headers = block.data.value("headers").toArray();
+        for (int col = 0; col < cols; ++col) {
+            ColumnDefinition colDef;
+            colDef.name = col < headers.size() ? headers[col].toString() : QString("列%1").arg(col + 1);
+            colDef.type = ColumnType::Text;
+            columns.append(colDef);
+        }
+    } else {
+        for (int col = 0; col < cols; ++col) {
+            ColumnDefinition colDef;
+            colDef.name = QString("列%1").arg(col + 1);
+            colDef.type = ColumnType::Text;
+            columns.append(colDef);
+        }
+    }
+    table->setColumns(columns);
+
+    // 从表格块 JSON 中提取数据行
+    if (block.data.value("cells").isArray()) {
+        const QJsonArray cells = block.data.value("cells").toArray();
+        for (int row = 0; row < cells.size(); ++row) {
+            const QJsonArray rowData = cells[row].toArray();
+            QVariantList variantRow;
+            for (int col = 0; col < cols; ++col) {
+                variantRow.append(col < rowData.size() ? rowData[col].toVariant() : QVariant());
+            }
+            table->appendRow(variantRow);
+        }
+    }
+
+    return table;
+}
+
+DataTable::Ptr ChartBlockEditor::getDataTableById(qint64 id) const
+{
+    if (id > 0) {
+        // 正 ID：从数据库获取数据表
+        return DataTableRepository::findById(id);
+    } else if (id < 0) {
+        // 负 ID：从报告表格块获取
+        if (m_reportId <= 0) return nullptr;
+
+        Report::Ptr report = ReportRepository::findById(m_reportId);
+        if (!report) return nullptr;
+
+        // 计算表格块索引（id = -index-1，所以 index = -id-1）
+        const int targetIndex = -id - 1;
+        int tableBlockIndex = 0;
+
+        for (const ContentBlock& block : report->blocks()) {
+            if (block.type == BlockType::Table) {
+                if (tableBlockIndex == targetIndex) {
+                    return tableBlockToDataTable(block, targetIndex);
+                }
+                ++tableBlockIndex;
+            }
+        }
+        return nullptr;
+    }
+}
+
 void ChartBlockEditor::renderChart()
 {
-    if (m_config.dataTableId <= 0) {
+    if (m_config.dataTableId == 0) {
         m_placeholderLabel->show();
         return;
     }
 
-    // 查找数据表
-    DataTable::Ptr table = DataTableRepository::findById(m_config.dataTableId);
+    // 根据 ID 获取数据表（正 ID=数据库，负 ID=表格块）
+    DataTable::Ptr table = getDataTableById(m_config.dataTableId);
     if (!table) {
-        m_placeholderLabel->setText(tr("⚠ 数据表不存在 (ID: %1)").arg(m_config.dataTableId));
+        if (m_config.dataTableId > 0) {
+            m_placeholderLabel->setText(tr("⚠ 数据表不存在 (ID: %1)").arg(m_config.dataTableId));
+        } else {
+            m_placeholderLabel->setText(tr("⚠ 表格块不存在"));
+        }
         m_placeholderLabel->show();
         return;
     }
@@ -525,19 +652,37 @@ void ChartBlockEditor::renderChart()
 
 void ChartBlockEditor::onConfigureChart()
 {
-    // 获取该报告下的所有数据表
-    DataTable::List tables;
+    // 收集所有可用的数据源（数据表 + 报告中的表格块）
+    DataTable::List allDataSources;
+
+    // 1. 从数据库获取该报告下的数据表
     if (m_reportId > 0) {
-        tables = DataTableRepository::findByReport(m_reportId);
+        DataTable::List dbTables = DataTableRepository::findByReport(m_reportId);
+        allDataSources.append(dbTables);
     }
 
-    if (tables.isEmpty()) {
+    // 2. 从报告中获取表格块，转换为临时 DataTable
+    if (m_reportId > 0) {
+        Report::Ptr report = ReportRepository::findById(m_reportId);
+        if (report) {
+            int tableBlockIndex = 0;
+            for (const ContentBlock& block : report->blocks()) {
+                if (block.type == BlockType::Table) {
+                    DataTable::Ptr table = tableBlockToDataTable(block, tableBlockIndex);
+                    allDataSources.append(table);
+                    ++tableBlockIndex;
+                }
+            }
+        }
+    }
+
+    if (allDataSources.isEmpty()) {
         QMessageBox::information(this, tr("提示"),
-            tr("当前报告还没有数据表。\n请先在报告中添加数据表块。"));
+            tr("当前报告还没有可用的数据源。\n请先在报告中添加表格块，或创建数据表。"));
         return;
     }
 
-    ChartConfigDialog dialog(tables, m_config, this);
+    ChartConfigDialog dialog(allDataSources, m_config, this);
     if (dialog.exec() == QDialog::Accepted) {
         m_config = dialog.config();
         renderChart();
@@ -547,24 +692,31 @@ void ChartBlockEditor::onConfigureChart()
 
 void ChartBlockEditor::onEditData()
 {
-    if (m_config.dataTableId <= 0) {
-        QMessageBox::information(this, tr("提示"), tr("请先配置图表，选择数据表"));
+    if (m_config.dataTableId == 0) {
+        QMessageBox::information(this, tr("提示"), tr("请先配置图表，选择数据源"));
         return;
     }
 
-    DataTable::Ptr table = DataTableRepository::findById(m_config.dataTableId);
-    if (!table) {
-        QMessageBox::warning(this, tr("错误"), tr("数据表不存在"));
-        return;
-    }
+    if (m_config.dataTableId > 0) {
+        // 正 ID：数据库数据表，打开数据表编辑器
+        DataTable::Ptr table = DataTableRepository::findById(m_config.dataTableId);
+        if (!table) {
+            QMessageBox::warning(this, tr("错误"), tr("数据表不存在"));
+            return;
+        }
 
-    DataTableEditorDialog dialog(table, this);
-    if (dialog.exec() == QDialog::Accepted) {
-        // 保存数据表
-        DataTableRepository::update(table);
-        // 重新渲染图表
-        renderChart();
-        notifyContentChanged();
+        DataTableEditorDialog dialog(table, this);
+        if (dialog.exec() == QDialog::Accepted) {
+            // 保存数据表
+            DataTableRepository::update(table);
+            // 重新渲染图表
+            renderChart();
+            notifyContentChanged();
+        }
+    } else {
+        // 负 ID：表格块，提示用户直接在报告中编辑
+        QMessageBox::information(this, tr("提示"),
+            tr("当前图表引用的是报告中的表格块。\n请直接在报告中编辑对应的表格块，图表会自动更新。"));
     }
 }
 

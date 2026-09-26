@@ -21,6 +21,11 @@
 #include <QHBoxLayout>
 #include <QStringList>
 
+
+// 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
+namespace Ui {
+class FormulaEditorDialog;
+}
 /**
  * @brief 公式编辑器对话框
  *
@@ -48,13 +53,17 @@ public:
 
     /**
      * @brief 获取编辑后的 LaTeX 公式
+     *
+     * @note 此函数在 .cpp 中实现，因为需要访问 ui 对象的完整定义
      */
-    QString formula() const { return m_latexEdit->toPlainText(); }
+    QString formula() const;
 
     /**
      * @brief 获取公式显示模式（行内/块级）
+     *
+     * @note 此函数在 .cpp 中实现，因为需要访问 ui 对象的完整定义
      */
-    bool isInline() const { return m_inlineCombo->currentIndex() == 0; }
+    bool isInline() const;
 
 private slots:
     void onPreview();
@@ -62,7 +71,8 @@ private slots:
     void onTextChanged();
 
 private:
-    void setupUi();
+
+    Ui::FormulaEditorDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     void updatePreview();
     QString generatePreviewHtml(const QString& latex);
 
@@ -70,17 +80,8 @@ private:
     // UI 控件
     // -----------------------------------------------------------------------
 
-    QTextEdit* m_latexEdit;           ///< LaTeX 输入框
-    QTextBrowser* m_previewBrowser;   ///< 预览浏览器
-    QSplitter* m_splitter;             ///< 分割器
 
-    QComboBox* m_templateCombo;       ///< 公式模板选择
-    QComboBox* m_inlineCombo;         ///< 行内/块级选择
-    QPushButton* m_previewBtn;         ///< 预览按钮
-    QPushButton* m_okBtn;              ///< 确定按钮
-    QPushButton* m_cancelBtn;          ///< 取消按钮
 
-    QLabel* m_statusLabel;             ///< 状态标签
 
     // -----------------------------------------------------------------------
     // 常用公式模板
