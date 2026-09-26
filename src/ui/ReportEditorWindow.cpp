@@ -274,6 +274,9 @@ void ReportEditorWindow::onSave()
     if (saveReport()) {
         m_statusSaveLabel->setText(tr("已保存"));
         m_statusSaveLabel->setStyleSheet("color: #67C23A; padding: 0 8px;");
+        // 保存成功弹出提示框
+        QMessageBox::information(this, tr("保存成功"),
+            tr("报告「%1」已成功保存。").arg(m_report->title().isEmpty() ? tr("未命名报告") : m_report->title()));
     }
 }
 
@@ -638,7 +641,8 @@ void ReportEditorWindow::updateWindowTitle()
 
 void ReportEditorWindow::updateActionsState()
 {
-    m_actionSave->setEnabled(m_editor->isModified());
+    // 保存按钮：新报告始终可保存，已有报告在修改后可保存
+    m_actionSave->setEnabled(m_isNewReport || m_editor->isModified());
 }
 
 Report::Ptr ReportEditorWindow::currentReport() const

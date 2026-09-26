@@ -23,6 +23,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QSettings>
+#include <QPointer>
 #include <QList>
 
 #include "core/models/Project.h"
@@ -60,7 +61,6 @@ private slots:
     void onNewProject();
     void onNewReport();
     void onOpenReport();
-    void onSaveReport();
     void onExportReport();
     void onExit();
 
@@ -155,6 +155,7 @@ private:
     // -----------------------------------------------------------------------
     void showStatusMessage(const QString& message, int timeout = 3000);
     void updateStatusBar();  ///< 更新状态栏显示
+    void updatePropertyPanel();  ///< 更新属性面板显示
     void refreshAll();
     qint64 currentProjectId() const;
     qint64 currentReportId() const;
@@ -163,13 +164,12 @@ private:
 
     // 中央区域分割器（动态创建）
     QSplitter* m_mainSplitter;           ///< 主分割器（左-中-右）
-    QSplitter* m_centerSplitter;         ///< 中间分割器（报告列表 - 编辑器占位）
 
     // 核心组件
     ProjectTreeWidget* m_projectTree;    ///< 左侧项目树
     ReportListWidget* m_reportList;      ///< 中间报告列表
-    QWidget* m_propertyPanel;            ///< 右侧属性面板（占位）
-    QStackedWidget* m_editorStack;       ///< 编辑器区域（占位）
+    QWidget* m_propertyPanel;            ///< 右侧属性面板
+    QLabel* m_propertyContentLabel;      ///< 属性面板内容标签
 
     // 工具栏控件（动态创建）
     QLineEdit* m_globalSearchEdit;       ///< 工具栏全局搜索框
@@ -187,7 +187,6 @@ private:
     QAction* m_actionNewProject;
     QAction* m_actionNewReport;
     QAction* m_actionOpenReport;
-    QAction* m_actionSaveReport;
     QAction* m_actionExportReport;
     QAction* m_actionExit;
 
@@ -224,8 +223,8 @@ private:
     qint64 m_currentReportId;   ///< 当前打开的报告 ID
     double m_zoomFactor;        ///< 缩放因子
 
-    /// 打开的报告编辑器窗口列表（用于管理和刷新）
-    QList<ReportEditorWindow*> m_editorWindows;
+    /// 打开的报告编辑器窗口列表（使用 QPointer 安全管理，自动检测对象是否已删除）
+    QList<QPointer<ReportEditorWindow>> m_editorWindows;
 };
 
 #endif // MAIN_WINDOW_H

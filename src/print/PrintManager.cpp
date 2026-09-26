@@ -23,6 +23,8 @@
 #include <QBuffer>
 #include <QImage>
 #include <QPixmap>
+#include <QDir>
+#include <QDateTime>
 #include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -332,7 +334,7 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
     html += "hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }";
     html += ".meta { background: #f8f9fa; padding: 10px 14px; border-radius: 4px; margin-bottom: 20px; font-size: 10pt; color: #666; }";
     html += ".meta span { margin-right: 16px; }";
-    html += "img { max-width: 100%; }";
+    // 注意：不设置 img { max-width: 100%; }，让 QTextDocument 自动处理图片缩放
     html += "</style></head><body>";
 
     // 标题
@@ -398,37 +400,19 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
         case BlockType::Image: {
             const QString imagePath = block.data.value("path").toString();
             const QString caption = block.data.value("caption").toString();
-            const int displayWidth = block.data.value("width").toInt(600);
 
-            // 尝试读取图片文件并转换为 base64 嵌入 HTML
+            // 直接使用本地文件路径引用图片
             if (!imagePath.isEmpty() && QFile::exists(imagePath)) {
-                QImage image(imagePath);
-                if (!image.isNull()) {
-                    // 按显示宽度缩放
-                    if (image.width() > displayWidth) {
-                        image = image.scaledToWidth(displayWidth, Qt::SmoothTransformation);
-                    }
-                    // 转换为 base64
-                    QByteArray byteArray;
-                    QBuffer buffer(&byteArray);
-                    buffer.open(QIODevice::WriteOnly);
-                    image.save(&buffer, "PNG");
-                    const QString base64 = QString::fromLatin1(byteArray.toBase64());
-                    // 嵌入图片
-                    html += QString("<div style='text-align:center; margin:10px 0;'>"
-                                    "<img src='data:image/png;base64,%1' style='max-width:100%;'/>"
-                                    "</div>").arg(base64);
-                    // 图片说明
-                    if (!caption.isEmpty()) {
-                        html += QString("<p style='text-align:center; color:#666; font-size:10pt; margin-top:5px;'>%1</p>")
-                                    .arg(caption.toHtmlEscaped());
-                    }
-                } else {
-                    html += QString("<p style='text-align:center; color:#888;'>[图片加载失败: %1]</p>")
-                                .arg(imagePath.toHtmlEscaped());
+                // 使用 QUrl::fromLocalFile 生成正确的 file:/// 路径
+                const QString fileUrl = QUrl::fromLocalFile(imagePath).toString();
+                html += QString("<p align='center'><img src='%1'/></p>").arg(fileUrl);
+                // 图片说明
+                if (!caption.isEmpty()) {
+                    html += QString("<p align='center' style='color:#666; font-size:10pt;'>%1</p>")
+                                .arg(caption.toHtmlEscaped());
                 }
             } else {
-                html += "<p style='text-align:center; color:#888;'>[未选择图片]</p>";
+                html += "<p align='center' style='color:#888;'>[未选择图片]</p>";
             }
             break;
         }
@@ -496,17 +480,18 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
                         const int chartHeight = config.height > 0 ? config.height : 400;
                         const QPixmap pixmap = renderer.toPixmap(chartWidth, chartHeight);
                         if (!pixmap.isNull()) {
-                            // 转换为 base64
-                            QByteArray byteArray;
-                            QBuffer buffer(&byteArray);
-                            buffer.open(QIODevice::WriteOnly);
-                            pixmap.save(&buffer, "PNG");
-                            const QString base64 = QString::fromLatin1(byteArray.toBase64());
-                            // 嵌入图表图片（只设置宽度，高度自适应，避免拉伸）
-                            // 注意：QTextDocument 对图片尺寸支持有限，使用宽度属性确保显示正确
+                            // 保存为临时文件
+                            const QString tempFile = QString("%1/chart_%2_%3.png")
+                                                         .arg(QDir::tempPath())
+                                                         .arg(report->id())
+                                                         .arg(QDateTime::currentMSecsSinceEpoch());
+                            pixmap.save(tempFile, "PNG");
+
+                            // 使用 QUrl::fromLocalFile 生成正确的 file:/// 路径
+                            const QString fileUrl = QUrl::fromLocalFile(tempFile).toString();
                             html += QString("<p align='center'>"
-                                            "<img src='data:image/png;base64,%1' width='%2'/>"
-                                            "</p>").arg(base64).arg(chartWidth);
+                                            "<img src='%1'/>"
+                                            "</p>").arg(fileUrl);
                             // 图表标题
                             if (!config.title.isEmpty()) {
                                 html += QString("<p align='center' style='color:#666; font-size:10pt;'>%1</p>")
@@ -533,6 +518,10 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
 
     html += "</body></html>";
     doc->setHtml(html);
+
+    // 设置默认页面大小（A4），确保图片和表格能正确布局
+    // 注意：实际打印时会使用 QPrinter 的页面设置
+    doc->setPageSize(QSizeF(794, 1123));  // A4 尺寸（像素，96 DPI）
 
     return doc;
 }

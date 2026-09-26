@@ -71,7 +71,7 @@ public:
     QChart* chart() const { return m_chart; }
 
     /// 将图表渲染为图片（用于导出）
-    QPixmap toPixmap(int width = 0, int height = 0) const;
+    QPixmap toPixmap(int width = 0, int height = 0);
 
 private:
     /// 创建折线图

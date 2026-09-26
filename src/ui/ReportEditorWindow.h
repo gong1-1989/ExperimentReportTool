@@ -47,6 +47,9 @@ public:
     /// 是否有未保存的更改
     bool isModified() const;
 
+    /// 保存报告（公共方法，供主窗口调用）
+    bool saveReport();
+
 signals:
     /// 报告已保存
     void reportSaved(qint64 reportId);
@@ -108,9 +111,6 @@ private:
     void createToolBar();
     void createStatusBar();
     void connectSignals();
-
-    /// 保存报告
-    bool saveReport();
 
     /// 更新窗口标题
     void updateWindowTitle();

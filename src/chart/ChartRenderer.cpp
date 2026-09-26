@@ -13,6 +13,8 @@
 #include <QBrush>
 #include <QColor>
 #include <QLinearGradient>
+#include <QTimer>
+#include <QEventLoop>
 
 // 预定义颜色方案
 static const QList<QColor> CHART_COLORS = {
@@ -39,7 +41,11 @@ ChartRenderer::ChartRenderer(QObject* parent)
 
 ChartRenderer::~ChartRenderer()
 {
-    // QChartView 会自动删除 QChart
+    // 直接删除 chartView，会自动删除 chart
+    // 不要调用 hide() 或 disconnect()，可能在析构时导致问题
+    delete m_chartView;
+    m_chartView = nullptr;
+    m_chart = nullptr;
 }
 
 // ===========================================================================
@@ -106,21 +112,10 @@ bool ChartRenderer::render()
 
 bool ChartRenderer::createLineChart()
 {
-    QValueAxis* axisX = new QValueAxis();
-    QValueAxis* axisY = new QValueAxis();
-
-    axisX->setTitleText(m_config.xAxisTitle);
-    axisY->setTitleText(m_config.yAxisTitle);
-
-    if (m_config.showGrid) {
-        axisX->setGridLineVisible(true);
-        axisY->setGridLineVisible(true);
-    }
-
-    m_chart->addAxis(axisX, Qt::AlignBottom);
-    m_chart->addAxis(axisY, Qt::AlignLeft);
-
     int colorIndex = 0;
+    double minX = 0, maxX = 0, minY = 0, maxY = 0;
+    bool hasData = false;
+
     for (int yCol : m_config.yAxisColumns) {
         if (yCol < 0 || yCol >= m_table->columnCount()) continue;
 
@@ -128,27 +123,60 @@ bool ChartRenderer::createLineChart()
         const ColumnDefinition& colDef = m_table->columnAt(yCol);
         series->setName(colDef.name);
 
-        // 设置线条样式
         QPen pen(CHART_COLORS[colorIndex % CHART_COLORS.size()]);
-        pen.setWidth(2);
+        pen.setWidth(3);  // 加粗线条，确保可见
         series->setPen(pen);
 
         if (m_config.showDataPoints) {
             series->setPointsVisible(true);
-            series->setMarkerSize(8);
+            series->setMarkerSize(10);
         }
 
-        // 添加数据点
-        const QVector<QPointF> points = extractSeriesData(yCol);
+        QVector<QPointF> points = extractSeriesData(yCol);
+
         for (const QPointF& point : points) {
             series->append(point);
+            if (!hasData) {
+                minX = maxX = point.x();
+                minY = maxY = point.y();
+                hasData = true;
+            } else {
+                minX = qMin(minX, point.x());
+                maxX = qMax(maxX, point.x());
+                minY = qMin(minY, point.y());
+                maxY = qMax(maxY, point.y());
+            }
         }
 
         m_chart->addSeries(series);
-        series->attachAxis(axisX);
-        series->attachAxis(axisY);
-
         ++colorIndex;
+    }
+
+    // 使用 createDefaultAxes 自动创建坐标轴
+    m_chart->createDefaultAxes();
+
+    // 手动设置范围，确保折线可见
+    if (hasData) {
+        QList<QAbstractAxis*> axesX = m_chart->axes(Qt::Horizontal);
+        QList<QAbstractAxis*> axesY = m_chart->axes(Qt::Vertical);
+        if (!axesX.isEmpty()) {
+            QValueAxis* ax = qobject_cast<QValueAxis*>(axesX.first());
+            if (ax) {
+                const double margin = (maxX - minX) * 0.1 + 0.5;
+                ax->setRange(minX - margin, maxX + margin);
+                ax->setTitleText(m_config.xAxisTitle);
+                if (m_config.showGrid) ax->setGridLineVisible(true);
+            }
+        }
+        if (!axesY.isEmpty()) {
+            QValueAxis* ay = qobject_cast<QValueAxis*>(axesY.first());
+            if (ay) {
+                const double margin = (maxY - minY) * 0.1 + 0.5;
+                ay->setRange(minY - margin, maxY + margin);
+                ay->setTitleText(m_config.yAxisTitle);
+                if (m_config.showGrid) ay->setGridLineVisible(true);
+            }
+        }
     }
 
     return colorIndex > 0;
@@ -410,27 +438,32 @@ QVector<double> ChartRenderer::extractNumericColumn(int column) const
 // 导出为图片
 // ===========================================================================
 
-QPixmap ChartRenderer::toPixmap(int width, int height) const
+QPixmap ChartRenderer::toPixmap(int width, int height)
 {
-    if (!m_chart) return QPixmap();
+    if (!m_chartView || !m_chart) return QPixmap();
 
     const int w = width > 0 ? width : m_config.width;
     const int h = height > 0 ? height : m_config.height;
 
-    // 创建临时的 QChartView 用于渲染
-    QChartView* renderView = new QChartView(m_chart);
-    renderView->setRenderHint(QPainter::Antialiasing);
-    renderView->setFixedSize(w, h);
-    renderView->show();
+    // 设置 chartView 大小
+    m_chartView->setFixedSize(w, h);
+    m_chartView->resize(w, h);
 
-    // 处理事件，确保图表布局完成
-    QApplication::processEvents();
+    // 移到屏幕外避免闪烁
+    m_chartView->move(-10000, -10000);
+    m_chartView->show();
+
+    // 等待图表绘制（500ms，确保折线完全渲染）
+    QEventLoop loop;
+    QTimer::singleShot(500, &loop, &QEventLoop::quit);
+    loop.exec();
 
     // 使用 grab() 捕获整个 widget 的内容
-    // grab() 比 render() 更可靠，会自动处理背景和布局
-    QPixmap pixmap = renderView->grab();
+    QPixmap pixmap = m_chartView->grab();
 
-    delete renderView;
+    // 隐藏并处理任何待处理的事件
+    m_chartView->hide();
+    QApplication::processEvents();
 
     return pixmap;
 }

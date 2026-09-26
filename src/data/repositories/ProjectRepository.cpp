@@ -194,8 +194,15 @@ bool ProjectRepository::insert(Project::Ptr project)
     query.bindValue(":description", project->description());
     query.bindValue(":status", project->statusToString());
     query.bindValue(":owner", project->owner());
-    // 根项目的 parent_id 存储为 0（不是 NULL），确保查询时 parent_id <= 0 能匹配
-    query.bindValue(":parent_id", project->parentId() > 0 ? project->parentId() : 0);
+    // 根项目的 parent_id 存储为 NULL（不是 0）
+    // 因为有外键约束 FOREIGN KEY (parent_id) REFERENCES projects(id)
+    // 存储 0 会导致外键约束失败（id=0 的项目不存在）
+    // 查询时使用 (parent_id <= 0 OR parent_id IS NULL) 来匹配根项目
+    if (project->parentId() > 0) {
+        query.bindValue(":parent_id", project->parentId());
+    } else {
+        query.bindValue(":parent_id", QVariant());  // NULL
+    }
     query.bindValue(":created_at", now);
     query.bindValue(":updated_at", now);
 
@@ -242,8 +249,13 @@ bool ProjectRepository::update(const Project::Ptr& project)
     query.bindValue(":description", project->description());
     query.bindValue(":status", project->statusToString());
     query.bindValue(":owner", project->owner());
-    // 根项目的 parent_id 存储为 0（不是 NULL），确保查询时 parent_id <= 0 能匹配
-    query.bindValue(":parent_id", project->parentId() > 0 ? project->parentId() : 0);
+    // 根项目的 parent_id 存储为 NULL（不是 0）
+    // 因为有外键约束 FOREIGN KEY (parent_id) REFERENCES projects(id)
+    if (project->parentId() > 0) {
+        query.bindValue(":parent_id", project->parentId());
+    } else {
+        query.bindValue(":parent_id", QVariant());  // NULL
+    }
     query.bindValue(":updated_at", QDateTime::currentDateTime());
     query.bindValue(":id", project->id());
 

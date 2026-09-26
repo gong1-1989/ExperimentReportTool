@@ -84,6 +84,12 @@ signals:
      */
     void reportListChanged();
 
+    /**
+     * @brief 选中报告变化信号
+     * @param reportId 选中的报告 ID，未选中时为 0
+     */
+    void reportSelected(qint64 reportId);
+
 private slots:
     /// 搜索框文本变化
     void onSearchTextChanged(const QString& text);
@@ -93,6 +99,8 @@ private slots:
     void onTableDoubleClicked(int row, int column);
     /// 表格右键菜单
     void onTableCustomContextMenu(const QPoint& pos);
+    /// 选中变化
+    void onSelectionChanged();
     /// 新建报告
     void onNewReport();
     /// 编辑报告

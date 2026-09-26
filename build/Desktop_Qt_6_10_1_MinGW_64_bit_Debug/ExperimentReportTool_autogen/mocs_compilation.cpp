@@ -19,6 +19,7 @@
 #include "IYECXEJARV/moc_AttachmentManagerDialog.cpp"
 #include "IYECXEJARV/moc_ProjectDialog.cpp"
 #include "IYECXEJARV/moc_ReportTagDialog.cpp"
+#include "IYECXEJARV/moc_SettingsDialog.cpp"
 #include "IYECXEJARV/moc_TagManagerDialog.cpp"
 #include "JCA2YNWUYB/moc_ProjectTreeWidget.cpp"
 #include "JCA2YNWUYB/moc_ReportListWidget.cpp"

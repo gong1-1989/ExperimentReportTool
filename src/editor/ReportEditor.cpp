@@ -35,31 +35,7 @@ ReportEditor::ReportEditor(QWidget* parent)
 {
     ui->setupUi(this);  // 从 .ui 文件加载界面
 
-    // ========================================================================
-    // 关键修复：彻底简化布局结构
-    // ========================================================================
-    // 原布局：QScrollArea > scrollAreaWidgetContents > scrollLayout > m_blocksContainer > m_blocksLayout > 块编辑器
-    // 新布局：QScrollArea > scrollAreaWidgetContents > m_blocksLayout > 块编辑器
-    // 移除 m_blocksContainer 中间层，减少布局嵌套，解决高度计算问题
-
-    // 1. 从 scrollLayout 中移除 m_blocksContainer
-    ui->scrollLayout->removeWidget(ui->m_blocksContainer);
-    ui->m_blocksContainer->hide();
-
-    // 2. 将 m_emptyLabel 从 m_blocksLayout 中移除（暂时）
-    ui->m_blocksLayout->removeWidget(ui->m_emptyLabel);
-
-    // 3. 将 m_blocksLayout 重新设置为 scrollAreaWidgetContents 的布局
-    //    先移除 scrollAreaWidgetContents 的旧布局（scrollLayout）
-    delete ui->scrollAreaWidgetContents->layout();
-    //    将 m_blocksLayout 的父对象设置为 scrollAreaWidgetContents
-    ui->m_blocksLayout->setParent(ui->scrollAreaWidgetContents);
-    ui->scrollAreaWidgetContents->setLayout(ui->m_blocksLayout);
-
-    // 4. 将 m_emptyLabel 添加回 m_blocksLayout（在最前面）
-    ui->m_blocksLayout->insertWidget(0, ui->m_emptyLabel);
-
-    // 5. 布局设置
+    // 布局设置（.ui 文件中已经是正确的结构：scrollArea > scrollAreaWidgetContents > m_blocksLayout）
     ui->scrollArea->setWidgetResizable(true);
     // scrollAreaWidgetContents：高度由内容决定（Minimum）
     ui->scrollAreaWidgetContents->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
@@ -93,7 +69,8 @@ ReportEditor::ReportEditor(QWidget* parent)
 
 ReportEditor::~ReportEditor()
 {
-    clearBlocks();
+    // 块编辑器是 ui 的子对象，delete ui 时会自动删除
+    m_blockEditors.clear();
     delete ui;
 }
 

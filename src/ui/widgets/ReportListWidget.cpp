@@ -111,6 +111,8 @@ void ReportListWidget::setupUi()
             this, &ReportListWidget::onTableDoubleClicked);
     connect(m_tableWidget, &QTableWidget::customContextMenuRequested,
             this, &ReportListWidget::onTableCustomContextMenu);
+    connect(m_tableWidget, &QTableWidget::itemSelectionChanged,
+            this, &ReportListWidget::onSelectionChanged);
 
     m_stackWidget->addWidget(m_tableWidget);
 
@@ -207,6 +209,11 @@ void ReportListWidget::onTableCustomContextMenu(const QPoint& pos)
     } else if (selected == actionDelete) {
         emit reportDeleteRequested(reportId);
     }
+}
+
+void ReportListWidget::onSelectionChanged()
+{
+    emit reportSelected(currentReportId());
 }
 
 void ReportListWidget::onNewReport()
