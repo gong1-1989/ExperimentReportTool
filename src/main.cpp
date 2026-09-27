@@ -19,10 +19,12 @@
 #include "ui/dialogs/LoginDialog.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
+#include "core/utils/AppConfig.h"
 #include "data/database/DatabaseManager.h"
 #include "core/plugin/CoreServiceImpl.h"
 #include "core/plugin/PluginManager.h"
 #include "editor/OtherBlockEditors.h"  // BlockEditorFactory
+#include "export/ExportManager.h"
 
 /**
  * @brief 初始化应用程序的全局设置
@@ -55,9 +57,13 @@ static void initializeApplication()
  */
 static bool initializeDatabase()
 {
-    // 获取数据库文件路径（程序目录下的 data 子目录）
-    const QString dbPath = QCoreApplication::applicationDirPath()
-        + "/data/experiment_reports.db";
+    // 从配置文件读取数据库路径，支持共享文件夹
+    // 配置为空时使用默认路径（程序目录下的 data 子目录）
+    QString dbPath = AppConfig::instance().databasePath();
+    if (dbPath.isEmpty()) {
+        dbPath = QCoreApplication::applicationDirPath()
+            + "/data/experiment_reports.db";
+    }
 
     // 初始化数据库管理器（单例）
     DatabaseManager& dbMgr = DatabaseManager::instance();
@@ -66,7 +72,7 @@ static bool initializeDatabase()
         return false;
     }
 
-    Logger::instance().info("数据库初始化成功");
+    Logger::instance().info(QString("数据库初始化成功: %1").arg(dbPath));
     return true;
 }
 
@@ -100,6 +106,16 @@ int main(int argc, char *argv[])
         Logger::instance().info("全局样式表已加载");
     } else {
         Logger::instance().warning("全局样式表加载失败");
+    }
+
+    // 从配置读取全局字体和字号（覆盖 qss 中的默认值）
+    {
+        QFont appFont;
+        appFont.setFamily(AppConfig::instance().fontFamily());
+        appFont.setPixelSize(AppConfig::instance().baseFontSize());
+        app.setFont(appFont);
+        Logger::instance().info(QString("全局字体已设置: %1, %2px")
+            .arg(appFont.family()).arg(appFont.pixelSize()));
     }
 
     // 初始化全局设置
@@ -136,6 +152,9 @@ int main(int argc, char *argv[])
 
     // 设置块编辑器工厂的插件管理器，使编辑器能通过插件创建块编辑器
     BlockEditorFactory::setPluginManager(&pluginManager);
+
+    // 设置导出管理器的插件管理器，使导出能优先使用插件渲染
+    ExportManager::setPluginManager(&pluginManager);
 
     // -----------------------------------------------------------------------
     // 用户登录验证

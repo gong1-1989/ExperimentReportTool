@@ -59,6 +59,8 @@ public:
 private slots:
     /// 保存模板
     void on_m_buttonBox_accepted();
+    /// 取消
+    void on_m_buttonBox_rejected();
     /// 验证输入
     bool validateInput();
 

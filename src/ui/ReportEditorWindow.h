@@ -114,7 +114,7 @@ private:
     void createActions();
     void createMenus();
     void createToolBar();
-    void createStatusBar();
+    void initStatusBar();
     void connectSignals();
 
     /// 更新窗口标题
@@ -139,9 +139,10 @@ private:
     class PrintManager* m_printManager;  ///< 打印管理器
     PluginManager* m_pluginManager;      ///< 插件管理器
 
-    // 状态栏控件（动态创建）
+    // 状态栏控件
     QLabel* m_statusSaveLabel;           ///< 保存状态
     QLabel* m_statusWordLabel;           ///< 字数
+    QLabel* m_statusBlockLabel;          ///< 块数
     QLabel* m_statusPositionLabel;       ///< 光标位置
 
     // 动作

@@ -263,6 +263,25 @@
           <item row="0" column="1">
            <layout class="QHBoxLayout" name="primaryColorLayout">
             <item>
+             <widget class="QLabel" name="primaryColorPreview">
+              <property name="minimumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid #999; border-radius: 3px;</string>
+              </property>
+             </widget>
+            </item>
+            <item>
              <widget class="QLineEdit" name="primaryColorEdit">
               <property name="maximumSize">
                <size>
@@ -303,6 +322,25 @@
           </item>
           <item row="1" column="1">
            <layout class="QHBoxLayout" name="successColorLayout">
+            <item>
+             <widget class="QLabel" name="successColorPreview">
+              <property name="minimumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid #999; border-radius: 3px;</string>
+              </property>
+             </widget>
+            </item>
             <item>
              <widget class="QLineEdit" name="successColorEdit">
               <property name="maximumSize">
@@ -345,6 +383,25 @@
           <item row="2" column="1">
            <layout class="QHBoxLayout" name="warningColorLayout">
             <item>
+             <widget class="QLabel" name="warningColorPreview">
+              <property name="minimumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid #999; border-radius: 3px;</string>
+              </property>
+             </widget>
+            </item>
+            <item>
              <widget class="QLineEdit" name="warningColorEdit">
               <property name="maximumSize">
                <size>
@@ -385,6 +442,25 @@
           </item>
           <item row="3" column="1">
            <layout class="QHBoxLayout" name="dangerColorLayout">
+            <item>
+             <widget class="QLabel" name="dangerColorPreview">
+              <property name="minimumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>24</width>
+                <height>24</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid #999; border-radius: 3px;</string>
+              </property>
+             </widget>
+            </item>
             <item>
              <widget class="QLineEdit" name="dangerColorEdit">
               <property name="maximumSize">
@@ -767,24 +843,32 @@
           <item>
            <widget class="QLabel" name="dbPathLabel">
             <property name="text">
-             <string>数据库文件路径：</string>
+             <string>数据库文件路径（选择共享文件夹后自动创建）：</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QLineEdit" name="dbPathEdit">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">background-color: #f5f5f5; color: #666;</string>
-            </property>
-           </widget>
+           <layout class="QHBoxLayout" name="dbPathLayout">
+            <item>
+             <widget class="QLineEdit" name="dbPathEdit">
+              <property name="placeholderText">
+               <string>留空使用默认路径，支持共享文件夹路径</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="dbPathBrowseBtn">
+              <property name="text">
+               <string>浏览...</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </item>
           <item>
            <widget class="QLabel" name="dbHintLabel">
             <property name="text">
-             <string>&lt;div style='color: #999; font-size: 12px; margin-top: 8px;'&gt;数据库文件包含所有项目、报告、标签和附件信息。&lt;br&gt;建议定期备份数据库文件以防止数据丢失。&lt;/div&gt;</string>
+             <string>&lt;div style='color: #999; font-size: 12px; margin-top: 8px;'&gt;多用户使用：选择共享文件夹，程序自动在该文件夹下创建 experiment_reports.db。&lt;br&gt;所有用户配置相同的路径即可共享数据。修改后需重启程序生效。&lt;/div&gt;</string>
             </property>
             <property name="wordWrap">
              <bool>true</bool>

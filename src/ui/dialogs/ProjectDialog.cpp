@@ -10,6 +10,7 @@
 #include "ProjectDialog.h"
 #include "ui_ProjectDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/ProjectRepository.h"
+#include "core/utils/UserSession.h"
 
 #include <QMessageBox>
 #include <QPushButton>
@@ -46,6 +47,13 @@ ProjectDialog::ProjectDialog(QWidget* parent)
     // 设置按钮文本为中文
     ui->m_buttonBox->button(QDialogButtonBox::Ok)->setText(tr("确定"));
     ui->m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
+
+    // 负责人自动为当前用户显示名称，不允许修改
+    const QString currentUserName = UserSession::instance().displayName();
+    if (!currentUserName.isEmpty()) {
+        ui->m_ownerEdit->setText(currentUserName);
+    }
+    ui->m_ownerEdit->setReadOnly(true);
 
     // 槽函数通过 uic 自动连接（on_m_buttonBox_accepted）
 
@@ -87,8 +95,10 @@ Project::Ptr ProjectDialog::projectData() const
     // 从输入控件读取数据并设置到项目对象
     project->setName(ui->m_nameEdit->text().trimmed());           // 项目名称（去除首尾空格）
     project->setType(ui->m_typeEdit->text().trimmed());           // 项目类型
-    project->setOwner(ui->m_ownerEdit->text().trimmed());         // 负责人
+    project->setOwner(UserSession::instance().displayName());      // 负责人固定为当前用户
     project->setDescription(ui->m_descriptionEdit->toPlainText().trimmed());  // 项目描述
+    // 创建者为当前登录用户
+    project->setCreatedBy(UserSession::instance().userId());
 
     // 从下拉框读取状态（itemData 存储了 ProjectStatus 枚举的整数值）
     project->setStatus(static_cast<ProjectStatus>(ui->m_statusCombo->currentData().toInt()));
@@ -125,7 +135,9 @@ void ProjectDialog::setProjectData(const Project::Ptr& project)
     // 将项目数据回填到各个输入控件
     ui->m_nameEdit->setText(project->name());                    // 项目名称
     ui->m_typeEdit->setText(project->type());                    // 项目类型
-    ui->m_ownerEdit->setText(project->owner());                  // 负责人
+    // 负责人固定为当前用户，不允许修改
+    ui->m_ownerEdit->setText(UserSession::instance().displayName());
+    ui->m_ownerEdit->setReadOnly(true);
     ui->m_descriptionEdit->setPlainText(project->description()); // 项目描述
 
     // 设置状态下拉框的当前选中项

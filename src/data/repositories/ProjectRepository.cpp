@@ -26,6 +26,7 @@ Project::Ptr ProjectRepository::mapToProject(const QSqlQuery& query)
     project->setDescription(query.value("description").toString());
     project->setStatus(Project::statusFromString(query.value("status").toString()));
     project->setOwner(query.value("owner").toString());
+    project->setCreatedBy(query.value("created_by").toLongLong());
     project->setParentId(query.value("parent_id").toLongLong());
     project->setCreatedAt(query.value("created_at").toDateTime());
     project->setUpdatedAt(query.value("updated_at").toDateTime());
@@ -184,8 +185,8 @@ bool ProjectRepository::insert(Project::Ptr project)
     QSqlQuery query(db);
 
     query.prepare(R"(
-        INSERT INTO projects (name, type, description, status, owner, parent_id, created_at, updated_at)
-        VALUES (:name, :type, :description, :status, :owner, :parent_id, :created_at, :updated_at);
+        INSERT INTO projects (name, type, description, status, owner, created_by, parent_id, created_at, updated_at)
+        VALUES (:name, :type, :description, :status, :owner, :created_by, :parent_id, :created_at, :updated_at);
     )");
 
     const QDateTime now = QDateTime::currentDateTime();
@@ -194,6 +195,7 @@ bool ProjectRepository::insert(Project::Ptr project)
     query.bindValue(":description", project->description());
     query.bindValue(":status", project->statusToString());
     query.bindValue(":owner", project->owner());
+    query.bindValue(":created_by", project->createdBy() > 0 ? project->createdBy() : QVariant());
     // 根项目的 parent_id 存储为 NULL（不是 0）
     // 因为有外键约束 FOREIGN KEY (parent_id) REFERENCES projects(id)
     // 存储 0 会导致外键约束失败（id=0 的项目不存在）

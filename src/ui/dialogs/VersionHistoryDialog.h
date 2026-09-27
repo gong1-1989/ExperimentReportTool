@@ -80,6 +80,7 @@ private slots:
     void on_m_saveBtn_clicked();
     void on_m_refreshBtn_clicked();
     void on_m_compareBtn_clicked();
+    void on_m_closeBtn_clicked();
 
 private:
 

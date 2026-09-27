@@ -12,7 +12,10 @@
 #include "ui/dialogs/SettingsDialog.h"
 #include "ui/dialogs/SearchResultDialog.h"
 #include "ui/dialogs/TemplateEditorDialog.h"
+#include "ui/dialogs/TagManagerDialog.h"
+#include "ui/dialogs/ChangePasswordDialog.h"
 #include "ui/dialogs/PluginManagerDialog.h"
+#include "ui/dialogs/UserManagerDialog.h"
 #include "core/plugin/PluginManager.h"
 #include "core/plugin/ImportPluginInterface.h"
 #include "data/repositories/ProjectRepository.h"
@@ -28,6 +31,8 @@
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/AppConfig.h"
+#include "core/utils/UserSession.h"
+#include "data/repositories/UserRepository.h"
 
 #include <QMenuBar>
 #include <QToolBar>
@@ -87,6 +92,9 @@ MainWindow::MainWindow(QWidget* parent)
     loadSettings();
     updateWindowTitle();
     updateActionsState();
+
+    // 根据用户角色显示/隐藏用户管理菜单
+    m_actionUserManager->setVisible(UserSession::instance().isAdmin());
 
     LOG_INFO("主窗口初始化完成");
 }
@@ -279,6 +287,12 @@ void MainWindow::createActions()
     m_actionTemplateManager = new QAction(tr("模板管理器(&T)..."), this);
     m_actionTemplateManager->setStatusTip(tr("管理报告模板"));
 
+    m_actionTagManager = new QAction(tr("标签管理(&G)..."), this);
+    m_actionTagManager->setStatusTip(tr("管理报告标签"));
+
+    m_actionChangePassword = new QAction(tr("修改密码(&P)..."), this);
+    m_actionChangePassword->setStatusTip(tr("修改当前用户密码"));
+
     m_actionBackup = new QAction(tr("数据备份(&B)..."), this);
     m_actionBackup->setStatusTip(tr("备份所有数据到文件"));
 
@@ -303,6 +317,9 @@ void MainWindow::createActions()
 
     m_actionPluginManager = new QAction(tr("插件管理..."), this);
     m_actionPluginManager->setStatusTip(tr("查看和管理已加载的插件"));
+
+    m_actionUserManager = new QAction(tr("用户管理..."), this);
+    m_actionUserManager->setStatusTip(tr("管理系统用户（仅管理员）"));
 }
 
 void MainWindow::createMenus()
@@ -343,10 +360,14 @@ void MainWindow::createMenus()
     // 工具菜单
     QMenu* toolsMenu = menuBar->addMenu(tr("工具(&T)"));
     toolsMenu->addAction(m_actionTemplateManager);
+    toolsMenu->addAction(m_actionTagManager);
+    toolsMenu->addSeparator();
+    toolsMenu->addAction(m_actionChangePassword);
     toolsMenu->addSeparator();
     toolsMenu->addAction(m_actionBackup);
     toolsMenu->addAction(m_actionRestore);
     toolsMenu->addSeparator();
+    toolsMenu->addAction(m_actionUserManager);
     toolsMenu->addAction(m_actionSettings);
 
     // 帮助菜单
@@ -446,6 +467,8 @@ void MainWindow::connectSignals()
 
     // 工具菜单
     connect(m_actionTemplateManager, &QAction::triggered, this, &MainWindow::onTemplateManager);
+    connect(m_actionTagManager, &QAction::triggered, this, &MainWindow::onTagManager);
+    connect(m_actionChangePassword, &QAction::triggered, this, &MainWindow::onChangePassword);
     connect(m_actionBackup, &QAction::triggered, this, &MainWindow::onDataBackup);
     connect(m_actionRestore, &QAction::triggered, this, &MainWindow::onDataRestore);
     connect(m_actionSettings, &QAction::triggered, this, &MainWindow::onSettings);
@@ -455,6 +478,7 @@ void MainWindow::connectSignals()
     connect(m_actionAboutQt, &QAction::triggered, this, &MainWindow::onAboutQt);
     connect(m_actionCheckUpdate, &QAction::triggered, this, &MainWindow::onCheckUpdate);
     connect(m_actionPluginManager, &QAction::triggered, this, &MainWindow::onPluginManager);
+    connect(m_actionUserManager, &QAction::triggered, this, &MainWindow::onUserManager);
 
     // 项目树
     connect(m_projectTree, &ProjectTreeWidget::projectSelected,
@@ -557,6 +581,9 @@ void MainWindow::onNewReport()
     report->setTemplateId(selectedTemplate->id());
     report->setTitle(title.trimmed());
     report->setExperimentDate(QDate::currentDate());
+    // 新建报告时自动设置创建者为当前用户
+    report->setCreatedBy(UserSession::instance().userId());
+    report->setAuthor(UserSession::instance().displayName());
 
     // 从模板复制内容块
     for (const ContentBlock& block : selectedTemplate->blocks()) {
@@ -850,6 +877,12 @@ void MainWindow::onDeleteProject()
     const qint64 projectId = currentProjectId();
     if (projectId <= 0) return;
 
+    // 权限检查
+    if (!canModifyProject(projectId)) {
+        showPermissionDenied();
+        return;
+    }
+
     Project::Ptr project = ProjectRepository::findById(projectId);
     if (!project) return;
 
@@ -874,6 +907,12 @@ void MainWindow::onDeleteReport()
 {
     const qint64 reportId = currentReportId();
     if (reportId <= 0) return;
+
+    // 权限检查
+    if (!canModifyReport(reportId)) {
+        showPermissionDenied();
+        return;
+    }
 
     Report::Ptr report = ReportRepository::findById(reportId);
     if (!report) return;
@@ -1010,6 +1049,36 @@ void MainWindow::onTemplateManager()
     }
 }
 
+void MainWindow::onTagManager()
+{
+    TagManagerDialog dialog(this);
+    dialog.exec();
+    // 标签可能被修改，刷新报告列表和属性面板
+    m_reportList->refreshList();
+    updatePropertyPanel();
+}
+
+void MainWindow::onChangePassword()
+{
+    ChangePasswordDialog dialog(false, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    // 验证原密码
+    const QString username = UserSession::instance().username();
+    User::Ptr user = UserRepository::authenticate(username, dialog.oldPassword());
+    if (!user) {
+        QMessageBox::warning(this, tr("修改失败"), tr("原密码不正确"));
+        return;
+    }
+
+    // 修改密码
+    if (UserRepository::changePassword(user->id(), dialog.newPassword())) {
+        QMessageBox::information(this, tr("修改成功"), tr("密码已修改成功，下次登录请使用新密码"));
+    } else {
+        QMessageBox::critical(this, tr("修改失败"), tr("修改密码时发生错误"));
+    }
+}
+
 void MainWindow::onDataBackup()
 {
     const QString filePath = QFileDialog::getSaveFileName(
@@ -1096,6 +1165,18 @@ void MainWindow::onPluginManager()
     }
 
     PluginManagerDialog dialog(m_pluginManager, this);
+    dialog.exec();
+}
+
+void MainWindow::onUserManager()
+{
+    // 仅管理员可访问
+    if (!UserSession::instance().isAdmin()) {
+        QMessageBox::warning(this, tr("权限不足"), tr("只有管理员可以管理用户"));
+        return;
+    }
+
+    UserManagerDialog dialog(this);
     dialog.exec();
 }
 
@@ -1237,6 +1318,42 @@ void MainWindow::onGlobalSearchTextChanged(const QString& text)
 // 辅助方法
 // ===========================================================================
 
+bool MainWindow::canModifyReport(qint64 reportId) const
+{
+    // 管理员可以修改所有
+    if (UserSession::instance().isAdmin()) return true;
+
+    Report::Ptr report = ReportRepository::findById(reportId);
+    if (!report) return false;
+
+    // 未分配创建者的旧数据，所有人都可以修改（兼容旧数据）
+    if (report->createdBy() <= 0) return true;
+
+    // 只有创建者可以修改
+    return report->createdBy() == UserSession::instance().userId();
+}
+
+bool MainWindow::canModifyProject(qint64 projectId) const
+{
+    // 管理员可以修改所有
+    if (UserSession::instance().isAdmin()) return true;
+
+    Project::Ptr project = ProjectRepository::findById(projectId);
+    if (!project) return false;
+
+    // 未分配创建者的旧数据，所有人都可以修改（兼容旧数据）
+    if (project->createdBy() <= 0) return true;
+
+    // 只有创建者可以修改
+    return project->createdBy() == UserSession::instance().userId();
+}
+
+void MainWindow::showPermissionDenied() const
+{
+    QMessageBox::warning(nullptr, tr("权限不足"),
+        tr("您没有权限修改此数据。\n只有创建者或管理员可以修改。"));
+}
+
 void MainWindow::showStatusMessage(const QString& message, int timeout)
 {
     // 如果未指定超时时间，使用配置中的默认值
@@ -1350,13 +1467,21 @@ void MainWindow::updatePropertyPanel()
                 }
             }
 
+            // 创建者
+            QString creatorName = tr("未分配");
+            if (report->createdBy() > 0) {
+                User::Ptr creator = UserRepository::findById(report->createdBy());
+                if (creator) creatorName = creator->displayNameOrUsername();
+                else creatorName = tr("未知用户");
+            }
+
             const QString html = QString(
                 "<div style='font-size: %1px; line-height: 1.8;'>"
                 "<p><b style='color: %2;'>报告属性</b></p>"
                 "<p><b>标题：</b>%3</p>"
                 "<p><b>状态：</b>%4</p>"
                 "<p><b>项目：</b>%5</p>"
-                "<p><b>作者：</b>%6</p>"
+                "<p><b>创建者：</b>%6</p>"
                 "<p><b>实验日期：</b>%7</p>"
                 "<p><b>更新时间：</b>%8</p>"
                 "<p><b>字数：</b>%9 字</p>"
@@ -1369,7 +1494,7 @@ void MainWindow::updatePropertyPanel()
              .arg(report->title().isEmpty() ? tr("未命名") : report->title().toHtmlEscaped())
              .arg(statusStr)
              .arg(projectName.toHtmlEscaped())
-             .arg(report->author().isEmpty() ? tr("未设置") : report->author().toHtmlEscaped())
+             .arg(creatorName.toHtmlEscaped())
              .arg(report->experimentDate().isValid() ? report->experimentDate().toString("yyyy-MM-dd") : tr("未设置"))
              .arg(report->updatedAt().isValid() ? report->updatedAt().toString("yyyy-MM-dd HH:mm") : tr("未知"))
              .arg(QString::number(report->wordCount()))

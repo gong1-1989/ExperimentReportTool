@@ -36,7 +36,7 @@ public:
     ContentBlock createDefaultBlock() const override;
     BlockEditor* createEditor(const ContentBlock& block, QWidget* parent) override;
 
-    QString renderToHtml(const ContentBlock& block) const override;
+    QString renderToHtml(const ContentBlock& block, const Report* report = nullptr) const override;
     QString plainText(const ContentBlock& block) const override;
 
 private:

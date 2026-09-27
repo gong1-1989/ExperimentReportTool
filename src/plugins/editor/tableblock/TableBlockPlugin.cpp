@@ -33,17 +33,20 @@ void TableBlockPlugin::shutdown()
 ContentBlock TableBlockPlugin::createDefaultBlock() const
 {
     ContentBlock block(BlockType::Table);
-    // 创建一个 3x3 的默认表格
-    QJsonArray rows;
-    for (int r = 0; r < 3; ++r) {
-        QJsonArray cols;
-        for (int c = 0; c < 3; ++c) {
-            cols.append("");
-        }
-        rows.append(cols);
-    }
-    block.data["rows"] = rows;
+    // 使用与框架一致的字段格式：rows/cols/headers/cells
+    block.data["rows"] = 3;
+    block.data["cols"] = 3;
     block.data["headers"] = QJsonArray({"列1", "列2", "列3"});
+
+    QJsonArray cells;
+    for (int r = 0; r < 3; ++r) {
+        QJsonArray row;
+        for (int c = 0; c < 3; ++c) {
+            row.append("");
+        }
+        cells.append(row);
+    }
+    block.data["cells"] = cells;
     return block;
 }
 
@@ -52,48 +55,71 @@ BlockEditor* TableBlockPlugin::createEditor(const ContentBlock& block, QWidget* 
     return new TableBlockEditor(block, parent);
 }
 
-QString TableBlockPlugin::renderToHtml(const ContentBlock& block) const
+QString TableBlockPlugin::renderToHtml(const ContentBlock& block, const Report* report) const
 {
-    // 简单的 HTML 表格渲染
-    QString html = "<table border='1' cellpadding='4' style='border-collapse:collapse;'>";
+    Q_UNUSED(report);
+
+    // 使用与框架一致的字段格式：rows/cols/headers/cells
+    const int rows = block.data.value("rows").toInt(0);
+    const int cols = block.data.value("cols").toInt(0);
+
+    if (rows <= 0 || cols <= 0) {
+        return "<p>[空表格]</p>";
+    }
+
+    // 用最简单的表格标签，确保 QTextDocument 能正确渲染
+    QString html = "<table border=\"1\" width=\"100%\" cellpadding=\"4\" cellspacing=\"0\">\n";
 
     // 表头
-    const QJsonArray headers = block.data.value("headers").toArray();
-    if (!headers.isEmpty()) {
-        html += "<thead><tr>";
-        for (const QJsonValue& h : headers) {
-            html += QString("<th style='background:#f0f0f0;'>%1</th>").arg(h.toString().toHtmlEscaped());
+    if (block.data.value("headers").isArray()) {
+        const QJsonArray headers = block.data.value("headers").toArray();
+        html += "<tr>\n";
+        for (int col = 0; col < cols; ++col) {
+            const QString headerText = col < headers.size()
+                                           ? headers[col].toString()
+                                           : QString("列%1").arg(col + 1);
+            html += QString("<th bgcolor=\"#f0f0f0\"><b>%1</b></th>\n")
+                       .arg(headerText.toHtmlEscaped());
         }
-        html += "</tr></thead>";
+        html += "</tr>\n";
     }
 
-    // 表体
-    const QJsonArray rows = block.data.value("rows").toArray();
-    html += "<tbody>";
-    for (const QJsonValue& rowVal : rows) {
-        html += "<tr>";
-        const QJsonArray cols = rowVal.toArray();
-        for (const QJsonValue& col : cols) {
-            html += QString("<td>%1</td>").arg(col.toString().toHtmlEscaped());
+    // 表格数据
+    if (block.data.value("cells").isArray()) {
+        const QJsonArray cells = block.data.value("cells").toArray();
+        for (int row = 0; row < rows && row < cells.size(); ++row) {
+            html += "<tr>\n";
+            const QJsonArray rowData = cells[row].toArray();
+            for (int col = 0; col < cols; ++col) {
+                const QString cellText = col < rowData.size()
+                                             ? rowData[col].toString()
+                                             : QString();
+                html += QString("<td>%1</td>\n").arg(cellText.toHtmlEscaped());
+            }
+            html += "</tr>\n";
         }
-        html += "</tr>";
     }
-    html += "</tbody></table>";
 
+    html += "</table>\n<br>\n";
     return html;
 }
 
 QString TableBlockPlugin::plainText(const ContentBlock& block) const
 {
     QString text;
-    const QJsonArray rows = block.data.value("rows").toArray();
-    for (const QJsonValue& rowVal : rows) {
-        const QJsonArray cols = rowVal.toArray();
-        QStringList rowTexts;
-        for (const QJsonValue& col : cols) {
-            rowTexts.append(col.toString());
+    const int rows = block.data.value("rows").toInt(0);
+    const int cols = block.data.value("cols").toInt(0);
+
+    if (block.data.value("cells").isArray()) {
+        const QJsonArray cells = block.data.value("cells").toArray();
+        for (int row = 0; row < rows && row < cells.size(); ++row) {
+            const QJsonArray rowData = cells[row].toArray();
+            QStringList rowTexts;
+            for (int col = 0; col < cols; ++col) {
+                rowTexts.append(col < rowData.size() ? rowData[col].toString() : "");
+            }
+            text += rowTexts.join(" | ") + "\n";
         }
-        text += rowTexts.join("\t") + "\n";
     }
     return text;
 }

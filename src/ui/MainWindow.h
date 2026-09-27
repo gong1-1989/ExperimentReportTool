@@ -94,6 +94,8 @@ private slots:
     // 工具菜单
     // -----------------------------------------------------------------------
     void onTemplateManager();
+    void onTagManager();
+    void onChangePassword();
     void onDataBackup();
     void onDataRestore();
     void onSettings();
@@ -105,6 +107,7 @@ private slots:
     void onAboutQt();
     void onCheckUpdate();
     void onPluginManager();
+    void onUserManager();
 
     // -----------------------------------------------------------------------
     // 项目树信号
@@ -169,6 +172,19 @@ private:
     qint64 currentProjectId() const;
     qint64 currentReportId() const;
 
+    // -----------------------------------------------------------------------
+    // 权限检查
+    // -----------------------------------------------------------------------
+
+    /// 检查当前用户是否有权限修改指定报告（管理员或创建者）
+    bool canModifyReport(qint64 reportId) const;
+
+    /// 检查当前用户是否有权限修改指定项目（管理员或创建者）
+    bool canModifyProject(qint64 projectId) const;
+
+    /// 显示无权限提示
+    void showPermissionDenied() const;
+
     Ui::MainWindow* ui;                  ///< UI 界面对象（从 .ui 文件自动生成）
 
     // 中央区域分割器（动态创建）
@@ -216,6 +232,8 @@ private:
 
     // 工具菜单
     QAction* m_actionTemplateManager;
+    QAction* m_actionTagManager;       ///< 标签管理
+    QAction* m_actionChangePassword;   ///< 修改密码
     QAction* m_actionBackup;
     QAction* m_actionRestore;
     QAction* m_actionSettings;
@@ -225,6 +243,7 @@ private:
     QAction* m_actionAboutQt;
     QAction* m_actionCheckUpdate;
     QAction* m_actionPluginManager;
+    QAction* m_actionUserManager;  ///< 用户管理（仅管理员可见）
 
     // -----------------------------------------------------------------------
     // 成员变量 - 数据

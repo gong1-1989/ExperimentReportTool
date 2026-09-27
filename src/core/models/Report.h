@@ -159,6 +159,12 @@ public:
     QString author() const { return m_author; }
     void setAuthor(const QString& author) { m_author = author; }
 
+    qint64 createdBy() const { return m_createdBy; }
+    void setCreatedBy(qint64 userId) { m_createdBy = userId; }
+
+    int version() const { return m_version; }
+    void setVersion(int version) { m_version = version; }
+
     QDate experimentDate() const { return m_experimentDate; }
     void setExperimentDate(const QDate& date) { m_experimentDate = date; }
 
@@ -255,10 +261,19 @@ public:
     QString toPlainText() const;
 
     /**
-     * @brief 统计报告字数（中文字符 + 英文单词）
+     * @brief 获取报告字数
+     *
+     * 优先返回保存时统计的字数值；如果未设置（旧数据），则从内容实时计算。
+     *
      * @return 字数
      */
     int wordCount() const;
+
+    /**
+     * @brief 设置报告字数（保存时由编辑器统计后写入）
+     * @param count 字数
+     */
+    void setWordCount(int count) { m_wordCount = count; }
 
     // -----------------------------------------------------------------------
     // 状态转换与工具方法
@@ -294,6 +309,9 @@ private:
     QString             m_title;           ///< 报告标题
     ReportStatus        m_status;          ///< 报告状态
     QString             m_author;          ///< 作者
+    qint64              m_createdBy = -1;  ///< 创建者用户 ID
+    int                 m_version = 1;     ///< 版本号（乐观锁）
+    int                 m_wordCount = -1;  ///< 字数（保存时统计，-1表示未设置需实时计算）
     QDate               m_experimentDate;  ///< 实验日期
     QDateTime           m_createdAt;       ///< 创建时间
     QDateTime           m_updatedAt;       ///< 最后更新时间

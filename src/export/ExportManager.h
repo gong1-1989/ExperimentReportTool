@@ -15,6 +15,10 @@
 
 #include "core/models/Report.h"
 
+// 前向声明
+class PluginManager;
+class EditorBlockPluginInterface;
+
 /**
  * @brief 导出格式枚举
  */
@@ -129,6 +133,23 @@ public:
     static QPair<QString, ExportFormat> getSaveFilePath(QWidget* parent,
                                                            const QString& defaultName);
 
+    // ========================================================================
+    // 插件渲染支持
+    // ========================================================================
+
+    /**
+     * @brief 设置插件管理器（程序启动时调用一次）
+     * @param manager 插件管理器指针
+     */
+    static void setPluginManager(PluginManager* manager);
+
+    /**
+     * @brief 查找块类型对应的编辑器插件
+     * @param type 块类型
+     * @return 插件指针，未找到返回 nullptr
+     */
+    static EditorBlockPluginInterface* findBlockPlugin(BlockType type);
+
 private:
     // 各格式导出方法
     bool exportToPdf(const Report::Ptr& report, const ExportConfig& config, QWidget* parent);
@@ -144,6 +165,9 @@ private:
 
     // 生成 CSS 样式
     QString generateCss(const ExportConfig& config);
+
+    // 插件管理器（静态，程序启动时设置）
+    static PluginManager* s_pluginManager;
 };
 
 #endif // EXPORT_MANAGER_H

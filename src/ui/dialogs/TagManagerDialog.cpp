@@ -6,6 +6,7 @@
 #include "TagManagerDialog.h"
 #include "ui_TagManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/TagRepository.h"
+#include "core/models/Tag.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/AppTheme.h"
@@ -15,6 +16,8 @@
 #include <QColor>
 #include <QBrush>
 #include <QLabel>
+#include <QPixmap>
+#include <QIcon>
 
 // ===========================================================================
 // 构造与析构
@@ -26,6 +29,25 @@ TagManagerDialog::TagManagerDialog(QWidget* parent)
     , m_editing(false)
 {
     ui->setupUi(this);
+
+    // 初始化颜色下拉框（用预设颜色填充，text为颜色名，data为颜色值）
+    ui->m_colorCombo->clear();
+    const QStringList colors = Tag::presetColors();
+    const QStringList colorNames = {
+        tr("蓝色"), tr("绿色"), tr("黄色"), tr("红色"),
+        tr("紫色"), tr("青色"), tr("粉色"), tr("橙色"),
+        tr("深蓝"), tr("黄绿"), tr("灰色"), tr("黑色")
+    };
+    for (int i = 0; i < colors.size(); ++i) {
+        const QString& color = colors[i];
+        const QString name = i < colorNames.size() ? colorNames[i] : color;
+        ui->m_colorCombo->addItem(name, color);
+        // 设置选项图标为颜色方块
+        QPixmap pixmap(16, 16);
+        pixmap.fill(QColor(color));
+        ui->m_colorCombo->setItemIcon(i, QIcon(pixmap));
+    }
+
     // 槽函数命名符合 on_<objectName>_<signalName> 约定，uic 自动连接，无需手动 connect
     loadTags();
     setWindowTitle(tr("标签管理"));
@@ -127,8 +149,12 @@ void TagManagerDialog::on_m_tagList_itemClicked(QListWidgetItem* item)
 void TagManagerDialog::on_m_newBtn_clicked()
 {
     m_currentTag = Tag::create();
-    m_currentTag->setColor(Tag::presetColors().first());
+    const QString defaultColor = Tag::presetColors().first();
+    m_currentTag->setColor(defaultColor);
     clearEditForm();
+    // 设置颜色组合框为默认颜色
+    const int idx = ui->m_colorCombo->findData(defaultColor);
+    ui->m_colorCombo->setCurrentIndex(idx >= 0 ? idx : 0);
     ui->m_nameEdit->setFocus();
     setEditMode(true);
 }

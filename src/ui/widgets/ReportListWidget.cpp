@@ -7,7 +7,9 @@
 #include "data/repositories/ReportRepository.h"
 #include "data/repositories/ProjectRepository.h"
 #include "data/repositories/TagRepository.h"
+#include "data/repositories/UserRepository.h"
 #include "core/models/Tag.h"
+#include "core/models/User.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
@@ -106,7 +108,7 @@ void ReportListWidget::setupUi()
     m_tableWidget = new QTableWidget(this);
     m_tableWidget->setColumnCount(7);
     m_tableWidget->setHorizontalHeaderLabels({
-        tr("标题"), tr("状态"), tr("作者"),
+        tr("标题"), tr("状态"), tr("创建者"),
         tr("实验日期"), tr("更新时间"), tr("字数"), tr("标签")
     });
     m_tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -155,6 +157,12 @@ void ReportListWidget::setProjectId(qint64 projectId)
 
 void ReportListWidget::refreshList()
 {
+    if (m_currentProjectId <= 0) {
+        loadReportsToTable(Report::List());
+        m_countLabel->setText(tr("请在左侧选择一个项目"));
+        return;
+    }
+
     const Report::List reports = getFilteredReports();
     loadReportsToTable(reports);
     m_countLabel->setText(tr("共 %1 份报告").arg(reports.size()));
@@ -270,6 +278,11 @@ void ReportListWidget::onToggleView()
 
 Report::List ReportListWidget::getFilteredReports()
 {
+    // 未选择项目时不显示任何报告
+    if (m_currentProjectId <= 0) {
+        return Report::List();
+    }
+
     ReportQuery query;
     query.projectId = m_currentProjectId;
     query.sortBy = "updated_at";
@@ -302,6 +315,9 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
     m_tableWidget->setSortingEnabled(false);
     m_tableWidget->setRowCount(reports.size());
 
+    // 用户信息缓存（避免重复查询）
+    QMap<qint64, QString> userNameCache;
+
     for (int row = 0; row < reports.size(); ++row) {
         const Report::Ptr& report = reports.at(row);
 
@@ -313,12 +329,25 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
 
         // 状态列
         QTableWidgetItem* statusItem = new QTableWidgetItem(statusDisplayName(report->status()));
-        // 根据状态设置颜色（使用 AppTheme 统一管理）
         statusItem->setForeground(AppTheme::statusColor(report->status()));
         m_tableWidget->setItem(row, 1, statusItem);
 
-        // 作者列
-        m_tableWidget->setItem(row, 2, new QTableWidgetItem(report->author()));
+        // 创建者列
+        QString creatorName = tr("未分配");
+        if (report->createdBy() > 0) {
+            if (userNameCache.contains(report->createdBy())) {
+                creatorName = userNameCache.value(report->createdBy());
+            } else {
+                User::Ptr user = UserRepository::findById(report->createdBy());
+                if (user) {
+                    creatorName = user->displayNameOrUsername();
+                    userNameCache.insert(report->createdBy(), creatorName);
+                } else {
+                    creatorName = tr("未知用户");
+                }
+            }
+        }
+        m_tableWidget->setItem(row, 2, new QTableWidgetItem(creatorName));
 
         // 实验日期列
         const QString dateStr = report->experimentDate().isValid()
@@ -339,12 +368,10 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
         if (!tags.isEmpty()) {
             QString tagText;
             for (int i = 0; i < tags.size(); ++i) {
-                const QColor color = tags[i]->effectiveColor();
                 if (i > 0) tagText += " ";
                 tagText += QString("■ %1").arg(tags[i]->name());
             }
             QTableWidgetItem* tagItem = new QTableWidgetItem(tagText);
-            // 用第一个标签的颜色作为文字颜色
             tagItem->setForeground(tags.first()->effectiveColor());
             tagItem->setToolTip(tagText);
             m_tableWidget->setItem(row, 6, tagItem);

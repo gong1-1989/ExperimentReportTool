@@ -11,7 +11,7 @@
 
 #include <QSettings>
 #include <QDir>
-#include <QStandardPaths>
+#include <QCoreApplication>
 
 // ============================================================================
 // 构造与析构

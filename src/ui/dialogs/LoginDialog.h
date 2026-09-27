@@ -75,30 +75,10 @@ private:
     // ========================================================================
 
     /**
-     * @brief 验证用户名和密码
-     * @param username 用户名
-     * @param password 密码
-     * @return 验证成功返回 true，否则返回 false
-     */
-    bool verifyCredentials(const QString& username, const QString& password);
-
-    /**
      * @brief 显示错误信息
      * @param message 错误信息
      */
     void showError(const QString& message);
-
-    /**
-     * @brief 确保默认用户存在（首次运行时创建 admin 账号）
-     */
-    void ensureDefaultUser();
-
-    /**
-     * @brief 对密码进行哈希处理
-     * @param password 明文密码
-     * @return 哈希后的密码字符串
-     */
-    static QString hashPassword(const QString& password);
 };
 
 #endif // LOGIN_DIALOG_H

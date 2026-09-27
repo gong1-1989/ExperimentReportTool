@@ -6,7 +6,9 @@
 #include "ProjectTreeWidget.h"
 #include "data/repositories/ProjectRepository.h"
 #include "data/repositories/ReportRepository.h"
+#include "data/repositories/UserRepository.h"
 #include "core/utils/Logger.h"
+#include "core/utils/UserSession.h"
 #include "ui/dialogs/ProjectDialog.h"
 
 #include <QHeaderView>
@@ -81,22 +83,40 @@ ProjectTreeWidget::ProjectTreeWidget(QWidget* parent)
 void ProjectTreeWidget::refreshTree()
 {
     clear();
+    m_userNodeCache.clear();
 
-    // 添加"全部项目"虚拟根节点（显示所有报告）
-    QTreeWidgetItem* allItem = new QTreeWidgetItem(this);
-    allItem->setText(0, tr("全部项目"));
-    allItem->setData(0, Qt::UserRole, -1);  // -1 表示全部
-    allItem->setIcon(0, style()->standardIcon(QStyle::SP_DirHomeIcon));
-    addTopLevelItem(allItem);
+    // 获取所有根项目，按创建者分组
+    Project::List rootProjects = ProjectRepository::findChildren(-1);
 
-    // 递归构建项目树
-    buildTree(nullptr, -1);
+    // 按 created_by 分组
+    QMap<qint64, Project::List> grouped;
+    for (const Project::Ptr& project : rootProjects) {
+        grouped[project->createdBy()].append(project);
+    }
+
+    // 按用户名排序显示
+    QList<qint64> userIds = grouped.keys();
+    // 排序：已分配用户在前，未分配(-1)在后
+    std::sort(userIds.begin(), userIds.end(), [](qint64 a, qint64 b) {
+        if (a == -1) return false;
+        if (b == -1) return true;
+        return a < b;
+    });
+
+    for (qint64 userId : userIds) {
+        QTreeWidgetItem* userNode = createUserNode(userId);
+        if (!userNode) continue;
+
+        for (const Project::Ptr& project : grouped[userId]) {
+            QTreeWidgetItem* item = createProjectItem(project);
+            userNode->addChild(item);
+            // 递归构建子项目
+            buildTree(item, project->id());
+        }
+    }
 
     // 默认展开第一层
     expandToDepth(0);
-
-    // 默认选中"全部项目"
-    setCurrentItem(allItem);
 }
 
 qint64 ProjectTreeWidget::currentProjectId() const
@@ -130,7 +150,10 @@ void ProjectTreeWidget::onItemClicked(QTreeWidgetItem* item, int column)
     if (!item) return;
 
     const qint64 projectId = item->data(0, Qt::UserRole).toLongLong();
-    emit projectSelected(projectId);
+    // 用户分组节点（-2）不发出项目选中信号
+    if (projectId != -2) {
+        emit projectSelected(projectId);
+    }
 }
 
 void ProjectTreeWidget::onCustomContextMenu(const QPoint& pos)
@@ -165,6 +188,8 @@ void ProjectTreeWidget::onNewProject()
 
     if (dialog.exec() == QDialog::Accepted) {
         Project::Ptr project = dialog.projectData();
+        // 自动设置创建者为当前登录用户
+        project->setCreatedBy(UserSession::instance().userId());
         if (ProjectRepository::insert(project)) {
             refreshTree();
             selectProject(project->id());
@@ -186,6 +211,8 @@ void ProjectTreeWidget::onNewSubProject()
     if (dialog.exec() == QDialog::Accepted) {
         Project::Ptr project = dialog.projectData();
         project->setParentId(m_contextProjectId);
+        // 自动设置创建者为当前登录用户
+        project->setCreatedBy(UserSession::instance().userId());
         if (ProjectRepository::insert(project)) {
             refreshTree();
             selectProject(project->id());
@@ -273,16 +300,37 @@ void ProjectTreeWidget::buildTree(QTreeWidgetItem* parentItem, qint64 parentId)
 
     for (const Project::Ptr& project : children) {
         QTreeWidgetItem* item = createProjectItem(project);
-
-        if (parentItem) {
-            parentItem->addChild(item);
-        } else {
-            addTopLevelItem(item);
-        }
-
+        parentItem->addChild(item);
         // 递归构建子项目
         buildTree(item, project->id());
     }
+}
+
+QTreeWidgetItem* ProjectTreeWidget::createUserNode(qint64 userId)
+{
+    QTreeWidgetItem* node = new QTreeWidgetItem();
+    node->setData(0, Qt::UserRole, -2);  // -2 表示用户分组节点，不是项目
+
+    if (userId <= 0) {
+        // 未分配（旧数据）
+        node->setText(0, tr("未分配"));
+        node->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
+        node->setToolTip(0, tr("未分配创建者的项目（旧数据）"));
+    } else {
+        User::Ptr user = UserRepository::findById(userId);
+        if (user) {
+            node->setText(0, user->displayNameOrUsername());
+            node->setToolTip(0, QString(tr("用户名: %1\n角色: %2"))
+                .arg(user->username())
+                .arg(user->roleName()));
+        } else {
+            node->setText(0, tr("未知用户(%1)").arg(userId));
+        }
+        node->setIcon(0, style()->standardIcon(QStyle::SP_DirHomeIcon));
+    }
+
+    addTopLevelItem(node);
+    return node;
 }
 
 QTreeWidgetItem* ProjectTreeWidget::createProjectItem(const Project::Ptr& project)

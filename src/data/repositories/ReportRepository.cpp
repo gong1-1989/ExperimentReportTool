@@ -66,6 +66,9 @@ Report::Ptr ReportRepository::mapToReport(const QSqlQuery& query)
     report->setTitle(query.value("title").toString());                // 报告标题
     report->setStatus(Report::statusFromString(query.value("status").toString())); // 报告状态
     report->setAuthor(query.value("author").toString());              // 作者/实验者
+    report->setCreatedBy(query.value("created_by").toLongLong());      // 创建者用户 ID
+    report->setVersion(query.value("version").toInt());                // 版本号（乐观锁）
+    report->setWordCount(query.value("word_count").toInt());           // 字数统计缓存
     report->setExperimentDate(query.value("experiment_date").toDate()); // 实验日期
     report->setCreatedAt(query.value("created_at").toDateTime());     // 创建时间
     report->setUpdatedAt(query.value("updated_at").toDateTime());     // 最后更新时间
@@ -323,8 +326,8 @@ bool ReportRepository::insert(Report::Ptr report)
 
     // 准备插入语句，使用 R"(...)" 原始字符串字面量避免转义
     query.prepare(R"(
-        INSERT INTO reports (project_id, template_id, title, content, status, author, experiment_date, created_at, updated_at)
-        VALUES (:project_id, :template_id, :title, :content, :status, :author, :experiment_date, :created_at, :updated_at);
+        INSERT INTO reports (project_id, template_id, title, content, status, author, created_by, version, word_count, experiment_date, created_at, updated_at)
+        VALUES (:project_id, :template_id, :title, :content, :status, :author, :created_by, :version, :word_count, :experiment_date, :created_at, :updated_at);
     )");
 
     // 绑定参数值
@@ -336,6 +339,9 @@ bool ReportRepository::insert(Report::Ptr report)
     query.bindValue(":content", report->contentToJson());  // 报告内容序列化为 JSON
     query.bindValue(":status", report->statusToString());
     query.bindValue(":author", report->author());
+    query.bindValue(":created_by", report->createdBy() > 0 ? report->createdBy() : QVariant());
+    query.bindValue(":version", 1);
+    query.bindValue(":word_count", report->wordCount());
     query.bindValue(":experiment_date", report->experimentDate());
     query.bindValue(":created_at", now);
     query.bindValue(":updated_at", now);
@@ -389,6 +395,8 @@ bool ReportRepository::update(const Report::Ptr& report)
             content = :content,
             status = :status,
             author = :author,
+            version = version + 1,
+            word_count = :word_count,
             experiment_date = :experiment_date,
             updated_at = :updated_at
         WHERE id = :id;
@@ -401,6 +409,7 @@ bool ReportRepository::update(const Report::Ptr& report)
     query.bindValue(":content", report->contentToJson());
     query.bindValue(":status", report->statusToString());
     query.bindValue(":author", report->author());
+    query.bindValue(":word_count", report->wordCount());
     query.bindValue(":experiment_date", report->experimentDate());
     query.bindValue(":updated_at", QDateTime::currentDateTime());
     query.bindValue(":id", report->id());

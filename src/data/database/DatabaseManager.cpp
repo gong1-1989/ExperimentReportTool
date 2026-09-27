@@ -6,6 +6,7 @@
 #include "DatabaseManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
+#include "data/repositories/UserRepository.h"
 
 #include <QSqlQuery>
 #include <QSqlError>
@@ -144,6 +145,9 @@ bool DatabaseManager::initialize(const QString& dbPath)
         LOG_WARNING("初始化内置模板失败（不影响核心功能）");
     }
 
+    // 初始化默认用户（admin 和 test）
+    UserRepository::initializeDefaultUsers();
+
     m_initialized = true;
     LOG_INFO(QString("数据库初始化完成，版本: %1").arg(m_currentVersion));
     return true;
@@ -187,6 +191,9 @@ bool DatabaseManager::createTables()
             content         TEXT DEFAULT '[]',
             status          TEXT DEFAULT 'draft',
             author          TEXT DEFAULT '',
+            created_by      INTEGER DEFAULT -1,
+            version         INTEGER DEFAULT 1,
+            word_count      INTEGER DEFAULT 0,
             experiment_date DATE,
             created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -283,6 +290,22 @@ bool DatabaseManager::createTables()
     )";
 
     // -----------------------------------------------------------------------
+    // 用户表（多用户支持）
+    // -----------------------------------------------------------------------
+    const QString createUsers = R"(
+        CREATE TABLE IF NOT EXISTS users (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            username             TEXT NOT NULL UNIQUE,
+            password_hash        TEXT NOT NULL,
+            display_name         TEXT DEFAULT '',
+            role                 TEXT DEFAULT 'user',
+            must_change_password INTEGER DEFAULT 0,
+            created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login_at        DATETIME
+        );
+    )";
+
+    // -----------------------------------------------------------------------
     // 应用设置表（存储数据库版本等元信息）
     // -----------------------------------------------------------------------
     const QString createAppMeta = R"(
@@ -302,6 +325,7 @@ bool DatabaseManager::createTables()
         createTags,
         createReportTags,
         createAttachments,
+        createUsers,
         createAppMeta
     };
 
@@ -452,6 +476,16 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
     QSqlDatabase db = database();
     QSqlQuery query(db);
 
+    // 辅助函数：检查表中是否存在某列
+    auto hasColumn = [&](const QString& table, const QString& column) -> bool {
+        QSqlQuery colQuery(db);
+        colQuery.exec(QString("PRAGMA table_info(%1);").arg(table));
+        while (colQuery.next()) {
+            if (colQuery.value(1).toString() == column) return true;
+        }
+        return false;
+    };
+
     // v1 -> v2: tags 表添加 description 和 created_at 字段
     if (fromVersion < 2) {
         LOG_INFO("执行 v1 -> v2 数据库迁移: tags 表添加字段");
@@ -481,6 +515,66 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         }
 
         LOG_INFO("v1 -> v2 迁移完成");
+    }
+
+    // v2 -> v3: 添加 users 表，projects/reports 表加 created_by 和 version 字段
+    if (fromVersion < 3) {
+        LOG_INFO("执行 v2 -> v3 数据库迁移: 多用户支持");
+
+        // 1. 创建 users 表
+        const QString createUsers = R"(
+            CREATE TABLE IF NOT EXISTS users (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                username             TEXT NOT NULL UNIQUE,
+                password_hash        TEXT NOT NULL,
+                display_name         TEXT DEFAULT '',
+                role                 TEXT DEFAULT 'user',
+                must_change_password INTEGER DEFAULT 0,
+                created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_login_at        DATETIME
+            );
+        )";
+        if (!query.exec(createUsers)) {
+            LOG_ERROR(QString("迁移失败: 创建 users 表 - %1").arg(query.lastError().text()));
+            return false;
+        }
+
+        // 2. projects 表加 created_by 字段
+        if (!hasColumn("projects", "created_by")) {
+            if (!query.exec("ALTER TABLE projects ADD COLUMN created_by INTEGER DEFAULT -1;")) {
+                LOG_ERROR(QString("迁移失败: projects 添加 created_by - %1").arg(query.lastError().text()));
+                return false;
+            }
+        }
+
+        // 4. reports 表加 created_by 字段
+        if (!hasColumn("reports", "created_by")) {
+            if (!query.exec("ALTER TABLE reports ADD COLUMN created_by INTEGER DEFAULT -1;")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 created_by - %1").arg(query.lastError().text()));
+                return false;
+            }
+        }
+
+        // 5. reports 表加 version 字段（乐观锁）
+        if (!hasColumn("reports", "version")) {
+            if (!query.exec("ALTER TABLE reports ADD COLUMN version INTEGER DEFAULT 1;")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 version - %1").arg(query.lastError().text()));
+                return false;
+            }
+        }
+
+        LOG_INFO("v2 -> v3 迁移完成");
+    }
+
+    // v3 -> v4: reports 表加 word_count 字段（字数统计缓存）
+    if (fromVersion <= 3) {
+        if (!hasColumn("reports", "word_count")) {
+            if (!query.exec("ALTER TABLE reports ADD COLUMN word_count INTEGER DEFAULT 0;")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 word_count - %1").arg(query.lastError().text()));
+                return false;
+            }
+        }
+        LOG_INFO("v3 -> v4 迁移完成");
     }
 
     Q_UNUSED(toVersion);

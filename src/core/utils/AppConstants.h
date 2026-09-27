@@ -35,7 +35,7 @@ inline const QString APP_DISPLAY_NAME = "实验报告记录工具";
 inline const QString APP_VERSION = "1.0.0";
 
 /// 配置文件中的数据库版本号（用于迁移判断）
-inline const int DATABASE_VERSION = 2;
+inline const int DATABASE_VERSION = 4;
 
 // ---------------------------------------------------------------------------
 // 文件与目录相关常量

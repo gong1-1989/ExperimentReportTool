@@ -217,9 +217,6 @@ private:
     /// 连接块编辑器的信号
     void connectBlockEditor(BlockEditor* editor);
 
-    /// 更新底部状态栏
-    void updateStatusBar();
-
     /// 更新块的视觉选中状态
     void updateBlockSelection();
 

@@ -31,6 +31,7 @@ VersionHistoryDialog::VersionHistoryDialog(qint64 reportId, QWidget* parent)
     , m_reportId(reportId)
 {
     ui->setupUi(this);
+    // 槽函数通过 uic 自动连接（on_m_closeBtn_clicked 等）
     loadVersions();
     setWindowTitle(tr("版本历史"));
     resize(AppDimensions::Window::DialogLargeWidth, AppDimensions::Window::DialogLargeHeight);
@@ -357,6 +358,11 @@ void VersionHistoryDialog::on_m_refreshBtn_clicked()
 {
     loadVersions();
     showStatusMessage(tr("已刷新"));
+}
+
+void VersionHistoryDialog::on_m_closeBtn_clicked()
+{
+    reject();  // 关闭对话框
 }
 
 // ===========================================================================

@@ -112,6 +112,13 @@ private:
      */
     QTreeWidgetItem* createProjectItem(const Project::Ptr& project);
 
+    /**
+     * @brief 创建用户分组节点
+     * @param userId 用户 ID（-1 表示未分配）
+     * @return 树节点
+     */
+    QTreeWidgetItem* createUserNode(qint64 userId);
+
     // -----------------------------------------------------------------------
     // 成员变量
     // -----------------------------------------------------------------------
@@ -124,6 +131,7 @@ private:
     QAction* m_actionCollapseAll;    ///< 折叠所有
 
     qint64 m_contextProjectId;  ///< 右键菜单时的项目 ID
+    QMap<qint64, QTreeWidgetItem*> m_userNodeCache;  ///< 用户节点缓存
 };
 
 #endif // PROJECT_TREE_WIDGET_H

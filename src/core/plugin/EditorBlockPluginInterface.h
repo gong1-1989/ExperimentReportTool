@@ -18,6 +18,7 @@
 class ContentBlock;
 class BlockEditor;
 class QWidget;
+class Report;
 
 /**
  * @brief 编辑器块插件接口
@@ -94,10 +95,13 @@ public:
     /**
      * @brief 将块渲染为 HTML（用于打印和导出）
      * @param block 内容块
-     * @return HTML 字符串
+     * @param report 所属报告（可选，用于图表等需要查找数据表的块）
+     * @return HTML 字符串，返回空表示插件不支持渲染，由框架兜底
      */
-    virtual QString renderToHtml(const ContentBlock& block) const {
+    virtual QString renderToHtml(const ContentBlock& block,
+                                  const Report* report = nullptr) const {
         Q_UNUSED(block);
+        Q_UNUSED(report);
         return QString();
     }
 

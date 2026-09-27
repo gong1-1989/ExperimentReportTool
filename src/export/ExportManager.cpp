@@ -10,6 +10,8 @@
 #include "chart/ChartConfigDialog.h"
 #include "data/repositories/DataTableRepository.h"
 #include "core/models/DataTable.h"
+#include "core/plugin/PluginManager.h"
+#include "core/plugin/EditorBlockPluginInterface.h"
 #include "print/PrintManager.h"
 
 #include <QTextDocument>
@@ -36,6 +38,12 @@
 #include <QUrl>
 
 // ===========================================================================
+// 静态成员初始化
+// ===========================================================================
+
+PluginManager* ExportManager::s_pluginManager = nullptr;
+
+// ===========================================================================
 // 构造与析构
 // ===========================================================================
 
@@ -45,6 +53,67 @@ ExportManager::ExportManager()
 
 ExportManager::~ExportManager()
 {
+}
+
+// ===========================================================================
+// 插件渲染支持
+// ===========================================================================
+
+void ExportManager::setPluginManager(PluginManager* manager)
+{
+    s_pluginManager = manager;
+}
+
+EditorBlockPluginInterface* ExportManager::findBlockPlugin(BlockType type)
+{
+    if (!s_pluginManager) return nullptr;
+
+    // 将 BlockType 转换为字符串标识
+    QString typeStr;
+    switch (type) {
+        case BlockType::Paragraph:    typeStr = "paragraph"; break;
+        case BlockType::Heading1:     typeStr = "heading1"; break;
+        case BlockType::Heading2:     typeStr = "heading2"; break;
+        case BlockType::Heading3:     typeStr = "heading3"; break;
+        case BlockType::BulletList:   typeStr = "bullet_list"; break;
+        case BlockType::NumberedList: typeStr = "numbered_list"; break;
+        case BlockType::Quote:        typeStr = "quote"; break;
+        case BlockType::Table:        typeStr = "table"; break;
+        case BlockType::Image:        typeStr = "image"; break;
+        case BlockType::CodeBlock:    typeStr = "code"; break;
+        case BlockType::Divider:      typeStr = "divider"; break;
+        case BlockType::Chart:        typeStr = "chart"; break;
+        case BlockType::Formula:      typeStr = "formula"; break;
+        default:                      return nullptr;
+    }
+
+    // 遍历所有插件，查找匹配的编辑器块插件
+    const QList<PluginInterface*> plugins = s_pluginManager->loadedPlugins();
+    for (PluginInterface* p : plugins) {
+        auto* editorPlugin = dynamic_cast<EditorBlockPluginInterface*>(p);
+        if (!editorPlugin) continue;
+
+        const QString pluginType = editorPlugin->blockType();
+
+        // 精确匹配
+        if (pluginType == typeStr) {
+            return editorPlugin;
+        }
+
+        // 文本类型通配：TextBlockPlugin 的 blockType 为 "paragraph"，
+        // 但它处理所有文本类型（标题、段落、列表、引用）
+        if (pluginType == "paragraph" &&
+            (type == BlockType::Paragraph ||
+             type == BlockType::Heading1 ||
+             type == BlockType::Heading2 ||
+             type == BlockType::Heading3 ||
+             type == BlockType::BulletList ||
+             type == BlockType::NumberedList ||
+             type == BlockType::Quote)) {
+            return editorPlugin;
+        }
+    }
+    return nullptr;
 }
 
 // ===========================================================================
@@ -502,6 +571,25 @@ QString ExportManager::reportToHtml(const Report::Ptr& report, const ExportConfi
 
 QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounter, const Report::Ptr& report)
 {
+    // ========================================================================
+    // 第一步：优先通过插件渲染（消除重复逻辑）
+    // 插件返回非空字符串表示渲染成功，空字符串表示由框架兜底
+    // ========================================================================
+    EditorBlockPluginInterface* plugin = findBlockPlugin(block.type);
+    if (plugin) {
+        const QString pluginHtml = plugin->renderToHtml(block, report.data());
+        if (!pluginHtml.isEmpty()) {
+            // 标题块需要更新目录计数器
+            if (block.type == BlockType::Heading1 || block.type == BlockType::Heading2) {
+                ++headingCounter;
+            }
+            return pluginHtml + "\n";
+        }
+    }
+
+    // ========================================================================
+    // 第二步：插件未提供渲染时，使用框架内置实现（兜底）
+    // ========================================================================
     switch (block.type) {
     case BlockType::Heading1: {
         ++headingCounter;

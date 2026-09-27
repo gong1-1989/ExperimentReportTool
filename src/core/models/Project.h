@@ -97,6 +97,11 @@ public:
     /// 设置负责人
     void setOwner(const QString& owner) { m_owner = owner; }
 
+    /// 获取创建者用户 ID
+    qint64 createdBy() const { return m_createdBy; }
+    /// 设置创建者用户 ID
+    void setCreatedBy(qint64 userId) { m_createdBy = userId; }
+
     /// 获取父项目 ID（根项目为 -1）
     qint64 parentId() const { return m_parentId; }
     /// 设置父项目 ID
@@ -170,6 +175,7 @@ private:
     QString      m_description;  ///< 项目描述
     ProjectStatus m_status;      ///< 项目状态
     QString      m_owner;        ///< 负责人
+    qint64       m_createdBy = -1;  ///< 创建者用户 ID
     qint64       m_parentId;     ///< 父项目 ID（-1 表示根）
     QDateTime    m_createdAt;    ///< 创建时间
     QDateTime    m_updatedAt;    ///< 最后更新时间

@@ -15,8 +15,6 @@
  * =========================================================================== */
 
 QWidget {
-    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-    font-size: 13px;
     color: #303133;
 }
 

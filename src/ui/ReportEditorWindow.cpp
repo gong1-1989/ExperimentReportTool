@@ -17,6 +17,7 @@
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/AppConfig.h"
+#include "core/utils/UserSession.h"
 #include "ui/dialogs/VersionHistoryDialog.h"
 #include "ui/dialogs/AttachmentManagerDialog.h"
 
@@ -46,6 +47,7 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     , m_pluginManager(nullptr)
     , m_statusSaveLabel(nullptr)
     , m_statusWordLabel(nullptr)
+    , m_statusBlockLabel(nullptr)
     , m_statusPositionLabel(nullptr)
     , m_actionSave(nullptr)
     , m_actionUndo(nullptr)
@@ -66,8 +68,10 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     createActions();
     createMenus();
     createToolBar();
-    createStatusBar();
     connectSignals();
+
+    // 初始化状态栏
+    initStatusBar();
 
     // 加载报告
     if (m_report) {
@@ -80,6 +84,9 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     }
 
     updateWindowTitle();
+    // 初始化状态栏
+    m_statusWordLabel->setText(tr("字数: %1").arg(m_editor->wordCount()));
+    m_statusBlockLabel->setText(tr("块: %1").arg(m_editor->blockCount()));
     resize(AppDimensions::Window::EditorWidth, AppDimensions::Window::EditorHeight);
 
     LOG_INFO(QString("报告编辑窗口已打开: %1")
@@ -224,31 +231,26 @@ void ReportEditorWindow::createToolBar()
     toolBar->addAction(tr("分割线"), this, &ReportEditorWindow::onInsertDivider);
 }
 
-void ReportEditorWindow::createStatusBar()
+void ReportEditorWindow::initStatusBar()
 {
     QStatusBar* bar = statusBar();
 
-    const QString statusPadding = QString("padding: 0 %1px;").arg(AppTheme::Spacing::Normal);
-
+    // 左侧：保存状态
     m_statusSaveLabel = new QLabel(tr("已保存"), this);
-    m_statusSaveLabel->setStyleSheet(
-        QString("color: %1; %2").arg(AppTheme::Color::Success, statusPadding));
+    m_statusSaveLabel->setStyleSheet("color: #67C23A; padding: 0 8px;");
     bar->addWidget(m_statusSaveLabel);
 
-    // QStatusBar 没有 addStretch 方法，用一个空 QWidget 作为弹簧
-    // 使后续的 permanent widget 靠右显示
-    QWidget* spacer = new QWidget(this);
-    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    bar->addWidget(spacer, 1);
+    // 右侧：块数、字数、光标位置
+    m_statusBlockLabel = new QLabel(tr("块: 0"), this);
+    m_statusBlockLabel->setStyleSheet("color: #666; padding: 0 8px;");
+    bar->addPermanentWidget(m_statusBlockLabel);
 
     m_statusWordLabel = new QLabel(tr("字数: 0"), this);
-    m_statusWordLabel->setStyleSheet(
-        QString("color: %1; %2").arg(AppTheme::Color::Gray666, statusPadding));
+    m_statusWordLabel->setStyleSheet("color: #666; padding: 0 8px;");
     bar->addPermanentWidget(m_statusWordLabel);
 
     m_statusPositionLabel = new QLabel(this);
-    m_statusPositionLabel->setStyleSheet(
-        QString("color: %1; %2").arg(AppTheme::Color::Gray666, statusPadding));
+    m_statusPositionLabel->setStyleSheet("color: #666; padding: 0 8px;");
     bar->addPermanentWidget(m_statusPositionLabel);
 }
 
@@ -309,7 +311,8 @@ void ReportEditorWindow::onSaveAs()
         copy->setTitle(m_report->title() + tr(" (副本)"));
         copy->setProjectId(m_report->projectId());
         copy->setTemplateId(m_report->templateId());
-        copy->setAuthor(m_report->author());
+        copy->setAuthor(UserSession::instance().displayName());
+        copy->setCreatedBy(UserSession::instance().userId());
         copy->setExperimentDate(m_report->experimentDate());
 
         // 复制内容块
@@ -564,6 +567,7 @@ void ReportEditorWindow::onContentChanged()
 {
     updateWindowTitle();
     m_statusWordLabel->setText(tr("字数: %1").arg(m_editor->wordCount()));
+    m_statusBlockLabel->setText(tr("块: %1").arg(m_editor->blockCount()));
 }
 
 void ReportEditorWindow::onTitleChanged(const QString& title)
@@ -616,6 +620,14 @@ bool ReportEditorWindow::saveReport()
             LOG_INFO(QString("新报告已保存: id=%1").arg(m_report->id()));
         }
     } else {
+        // 权限检查：只有创建者或管理员可以修改已有报告
+        if (m_report->createdBy() > 0
+            && m_report->createdBy() != UserSession::instance().userId()
+            && !UserSession::instance().isAdmin()) {
+            QMessageBox::warning(this, tr("权限不足"),
+                tr("您没有权限修改此报告。\n只有创建者或管理员可以修改。"));
+            return false;
+        }
         success = ReportRepository::update(m_report);
     }
 

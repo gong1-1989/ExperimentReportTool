@@ -76,6 +76,22 @@ void SettingsDialog::loadSettings()
     ui->globalFontCombo->setCurrentFont(QFont(config.fontFamily()));
     ui->baseFontSizeSpin->setValue(config.baseFontSize());
 
+    // 更新颜色预览
+    updateColorPreview(ui->primaryColorPreview, ui->primaryColorEdit->text());
+    updateColorPreview(ui->successColorPreview, ui->successColorEdit->text());
+    updateColorPreview(ui->warningColorPreview, ui->warningColorEdit->text());
+    updateColorPreview(ui->dangerColorPreview, ui->dangerColorEdit->text());
+
+    // 连接输入框文本变化信号，实时更新颜色预览
+    connect(ui->primaryColorEdit, &QLineEdit::textChanged,
+            this, [this](const QString& color) { updateColorPreview(ui->primaryColorPreview, color); });
+    connect(ui->successColorEdit, &QLineEdit::textChanged,
+            this, [this](const QString& color) { updateColorPreview(ui->successColorPreview, color); });
+    connect(ui->warningColorEdit, &QLineEdit::textChanged,
+            this, [this](const QString& color) { updateColorPreview(ui->warningColorPreview, color); });
+    connect(ui->dangerColorEdit, &QLineEdit::textChanged,
+            this, [this](const QString& color) { updateColorPreview(ui->dangerColorPreview, color); });
+
     // ---- 编辑器设置 ----
     ui->fontCombo->setCurrentFont(QFont(config.editorFontFamily()));
     ui->fontSizeSpin->setValue(config.editorFontSize());
@@ -88,7 +104,9 @@ void SettingsDialog::loadSettings()
     ui->statusMessageDurationSpin->setValue(config.statusMessageDuration());
 
     // ---- 数据设置 ----
-    ui->dbPathEdit->setText(databasePath());
+    // 从配置读取数据库路径，为空时显示默认路径
+    const QString dbPath = AppConfig::instance().databasePath();
+    ui->dbPathEdit->setText(dbPath.isEmpty() ? databasePath() : dbPath);
 }
 
 void SettingsDialog::saveSettings()
@@ -122,6 +140,9 @@ void SettingsDialog::saveSettings()
     config.setShowStatusBar(ui->showStatusBarCheck->isChecked());
     config.setStatusMessageDuration(ui->statusMessageDurationSpin->value());
 
+    // ---- 数据设置 ----
+    config.setDatabasePath(ui->dbPathEdit->text().trimmed());
+
     // 保存到 config.ini
     config.save();
 }
@@ -129,9 +150,10 @@ void SettingsDialog::saveSettings()
 void SettingsDialog::applySettings()
 {
     saveSettings();
-    // 这里可以发出信号通知主窗口应用新设置
-    // 目前设置在下次新建报告或导出时生效
-    // 外观设置需要重启应用后生效
+    QMessageBox::information(this, tr("设置"),
+        tr("设置已应用并保存。\n\n"
+           "字体、外观和窗口设置将在重启应用后生效。\n"
+           "数据库路径修改后需要重启程序才能生效。"));
 }
 
 // ============================================================================
@@ -205,6 +227,21 @@ void SettingsDialog::on_primaryColorBtn_clicked()
     }
 }
 
+void SettingsDialog::updateColorPreview(QLabel* previewLabel, const QString& colorStr)
+{
+    if (!previewLabel) return;
+    const QColor color(colorStr);
+    if (color.isValid()) {
+        previewLabel->setStyleSheet(
+            QString("background-color: %1; border: 1px solid #999; border-radius: 3px;")
+                .arg(color.name()));
+    } else {
+        // 无效颜色时显示灰色斜纹
+        previewLabel->setStyleSheet(
+            "background-color: #eee; border: 1px solid #999; border-radius: 3px;");
+    }
+}
+
 void SettingsDialog::on_successColorBtn_clicked()
 {
     const QColor color = QColorDialog::getColor(
@@ -243,6 +280,20 @@ void SettingsDialog::on_exportPathBrowseBtn_clicked()
         ui->exportPathEdit->text().isEmpty() ? QDir::homePath() : ui->exportPathEdit->text());
     if (!dir.isEmpty()) {
         ui->exportPathEdit->setText(dir);
+    }
+}
+
+void SettingsDialog::on_dbPathBrowseBtn_clicked()
+{
+    // 选择数据库所在文件夹（共享文件夹），程序自动在该文件夹下创建 experiment_reports.db
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, tr("选择数据库所在文件夹"),
+        ui->dbPathEdit->text().isEmpty()
+            ? QDir::homePath()
+            : QFileInfo(ui->dbPathEdit->text()).absolutePath());
+    if (!dir.isEmpty()) {
+        // 自动拼接默认数据库文件名
+        ui->dbPathEdit->setText(QDir(dir).filePath("experiment_reports.db"));
     }
 }
 

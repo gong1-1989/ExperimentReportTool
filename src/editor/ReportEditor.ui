@@ -67,14 +67,14 @@
         <item>
          <widget class="QLabel" name="labelAuthor">
           <property name="text">
-           <string>作者:</string>
+           <string>创建者:</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QLineEdit" name="m_authorEdit">
           <property name="placeholderText">
-           <string>作者姓名</string>
+           <string>创建者</string>
           </property>
           <property name="maximumSize">
            <size>
@@ -225,70 +225,6 @@
        </item>
       </layout>
      </widget>
-    </widget>
-   </item>
-   <item>
-    <widget class="QWidget" name="statusBarWidget">
-     <layout class="QHBoxLayout" name="statusBarLayout">
-      <property name="spacing">
-       <number>16</number>
-      </property>
-      <property name="leftMargin">
-       <number>4</number>
-      </property>
-      <property name="topMargin">
-       <number>2</number>
-      </property>
-      <property name="rightMargin">
-       <number>4</number>
-      </property>
-      <property name="bottomMargin">
-       <number>2</number>
-      </property>
-      <item>
-       <widget class="QLabel" name="m_wordCountLabel">
-        <property name="text">
-         <string>字数: 0</string>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">color: #666; font-size: 12px;</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="m_blockCountLabel">
-        <property name="text">
-         <string>块: 0</string>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">color: #666; font-size: 12px;</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <spacer name="statusBarSpacer">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>40</width>
-          <height>20</height>
-         </size>
-        </property>
-       </spacer>
-      </item>
-      <item>
-       <widget class="QLabel" name="m_saveStatusLabel">
-        <property name="text">
-         <string>已保存</string>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">color: #67C23A; font-size: 12px;</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
     </widget>
    </item>
   </layout>

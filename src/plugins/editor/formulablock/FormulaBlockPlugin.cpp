@@ -31,7 +31,8 @@ void FormulaBlockPlugin::shutdown()
 ContentBlock FormulaBlockPlugin::createDefaultBlock() const
 {
     ContentBlock block(BlockType::Formula);
-    block.data["formula"] = "E = mc^2";
+    block.data["latex"] = "E = mc^2";
+    block.data["inline"] = false;
     return block;
 }
 
@@ -40,14 +41,16 @@ BlockEditor* FormulaBlockPlugin::createEditor(const ContentBlock& block, QWidget
     return new FormulaBlockEditor(block, parent);
 }
 
-QString FormulaBlockPlugin::renderToHtml(const ContentBlock& block) const
+QString FormulaBlockPlugin::renderToHtml(const ContentBlock& block, const Report* report) const
 {
-    const QString formula = block.data.value("formula").toString();
+    Q_UNUSED(report);
+
+    const QString formula = block.data.value("latex").toString();
     return QString("<div class='formula' style='text-align:center;padding:10px;font-style:italic;'>"
                    "%1</div>").arg(formula.toHtmlEscaped());
 }
 
 QString FormulaBlockPlugin::plainText(const ContentBlock& block) const
 {
-    return block.data.value("formula").toString();
+    return block.data.value("latex").toString();
 }

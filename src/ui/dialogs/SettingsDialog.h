@@ -17,6 +17,8 @@
 #include <QDialog>
 #include <QString>
 
+class QLabel;
+
 // UI 类前向声明（由 .ui 文件自动生成）
 namespace Ui {
 class SettingsDialog;
@@ -99,6 +101,9 @@ private slots:
     /// 点击导出路径浏览按钮
     void on_exportPathBrowseBtn_clicked();
 
+    /// 点击数据库路径浏览按钮
+    void on_dbPathBrowseBtn_clicked();
+
 private:
     // ========================================================================
     // 成员变量
@@ -117,6 +122,9 @@ private:
 
     /// 应用设置（立即生效）
     void applySettings();
+
+    /// 更新颜色预览方块
+    void updateColorPreview(QLabel* previewLabel, const QString& colorStr);
 };
 
 #endif // SETTINGS_DIALOG_H

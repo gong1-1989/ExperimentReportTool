@@ -60,6 +60,8 @@ TemplateEditorDialog::TemplateEditorDialog(QWidget* parent,
     ui->m_buttonBox->button(QDialogButtonBox::Save)->setText(tr("保存模板"));
     ui->m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
 
+    // 槽函数通过 uic 自动连接（on_m_buttonBox_accepted / on_m_buttonBox_rejected）
+
     // 槽函数通过 uic 自动连接（on_m_buttonBox_accepted）
 
     // 加载模板数据
@@ -177,6 +179,11 @@ void TemplateEditorDialog::on_m_buttonBox_accepted()
     } else {
         QMessageBox::critical(this, tr("保存失败"), tr("保存模板时发生错误。"));
     }
+}
+
+void TemplateEditorDialog::on_m_buttonBox_rejected()
+{
+    reject();  // 取消，关闭对话框
 }
 
 /**

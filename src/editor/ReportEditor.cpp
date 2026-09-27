@@ -13,6 +13,7 @@
 #include "data/repositories/TagRepository.h"
 #include "core/models/DataTable.h"
 #include "core/models/Tag.h"
+#include "core/utils/UserSession.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
@@ -103,7 +104,17 @@ void ReportEditor::loadReport(const Report::Ptr& report)
 
     // 加载元信息
     ui->m_titleEdit->setText(report->title());
-    ui->m_authorEdit->setText(report->author());
+
+    // 创建者：新建报告时自动填充当前用户显示名称，不允许修改
+    const QString currentUserName = UserSession::instance().displayName();
+    const bool isNewReport = (report->id() <= 0) || report->author().isEmpty();
+    if (isNewReport && !currentUserName.isEmpty()) {
+        ui->m_authorEdit->setText(currentUserName);
+    } else {
+        ui->m_authorEdit->setText(report->author());
+    }
+    ui->m_authorEdit->setReadOnly(true);
+
     ui->m_dateEdit->setDate(report->experimentDate());
 
     // 设置状态
@@ -119,7 +130,6 @@ void ReportEditor::loadReport(const Report::Ptr& report)
     m_modified = false;
     m_loading = false;
 
-    updateStatusBar();
     LOG_INFO(QString("报告已加载到编辑器: id=%1, title='%2'")
                  .arg(report->id()).arg(report->title()));
 }
@@ -137,7 +147,13 @@ Report::Ptr ReportEditor::saveToReport()
         m_report = Report::create();
     }
 
+    // 确保创建者为当前登录用户（新建报告或旧数据未设置时）
+    if (m_report->createdBy() <= 0) {
+        m_report->setCreatedBy(UserSession::instance().userId());
+    }
+
     m_report->setTitle(ui->m_titleEdit->text().trimmed());
+    // 创建者从输入框读取（只读，加载时已设置）
     m_report->setAuthor(ui->m_authorEdit->text().trimmed());
     m_report->setExperimentDate(ui->m_dateEdit->date());
     m_report->setStatus(static_cast<ReportStatus>(
@@ -149,8 +165,10 @@ Report::Ptr ReportEditor::saveToReport()
         m_report->appendBlock(editor->contentBlock());
     }
 
+    // 保存编辑器统计的字数，避免主界面重新解析计算
+    m_report->setWordCount(wordCount());
+
     m_modified = false;
-    updateStatusBar();
 
     return m_report;
 }
@@ -198,7 +216,6 @@ BlockEditor* ReportEditor::insertBlock(int index, BlockType type)
     editor->setFocusToEditor();
 
     updateBlockSelection();
-    updateStatusBar();
     setModified(true);
     emit contentChanged();
     emit blockCountChanged(m_blockEditors.size());
@@ -237,7 +254,6 @@ void ReportEditor::removeBlock(int index)
 
     updateEmptyLabelVisibility();  // 更新空提示标签显示状态
     updateBlockSelection();
-    updateStatusBar();
     setModified(true);
     emit contentChanged();
     emit blockCountChanged(m_blockEditors.size());
@@ -315,7 +331,6 @@ void ReportEditor::duplicateBlock(int index)
     newEditor->setFocusToEditor();
     updateEmptyLabelVisibility();  // 更新空提示标签显示状态
     updateBlockSelection();
-    updateStatusBar();
     setModified(true);
     emit contentChanged();
 }
@@ -352,29 +367,42 @@ void ReportEditor::setModified(bool modified)
     if (m_modified == modified) return;
     m_modified = modified;
 
-    if (modified) {
-        ui->m_saveStatusLabel->setText(tr("未保存"));
-        ui->m_saveStatusLabel->setStyleSheet(
-            QString("color: %1; font-size: %2px;")
-                .arg(AppTheme::Color::Warning).arg(AppTheme::FontSize::Small));
-    } else {
-        ui->m_saveStatusLabel->setText(tr("已保存"));
-        ui->m_saveStatusLabel->setStyleSheet(
-            QString("color: %1; font-size: %2px;")
-                .arg(AppTheme::Color::Success).arg(AppTheme::FontSize::Small));
-    }
-
     emit saveStateChanged(!modified);
 }
 
 int ReportEditor::wordCount() const
 {
-    int count = 0;
+    // 收集所有块的纯文本
+    QString allText;
     for (BlockEditor* editor : m_blockEditors) {
-        count += editor->plainText().length();
+        const QString text = editor->plainText();
+        if (!text.isEmpty()) {
+            allText += text + " ";
+        }
     }
     // 标题也算入
-    count += ui->m_titleEdit->text().length();
+    allText += ui->m_titleEdit->text();
+
+    if (allText.isEmpty()) return 0;
+
+    int count = 0;
+
+    // 统计中文字符（CJK 统一表意文字范围）
+    QRegularExpression cjkRegex(QStringLiteral("[\\u4e00-\\u9fff]"));
+    auto cjkIt = cjkRegex.globalMatch(allText);
+    while (cjkIt.hasNext()) {
+        cjkIt.next();
+        ++count;
+    }
+
+    // 统计英文单词（连续的字母数字序列）
+    QRegularExpression wordRegex(QStringLiteral("[a-zA-Z0-9]+"));
+    auto wordIt = wordRegex.globalMatch(allText);
+    while (wordIt.hasNext()) {
+        wordIt.next();
+        ++count;
+    }
+
     return count;
 }
 
@@ -387,7 +415,6 @@ void ReportEditor::onBlockContentChanged()
     if (m_loading) return;
     setModified(true);
     emit contentChanged();
-    updateStatusBar();
 }
 
 void ReportEditor::onBlockFocused(BlockEditor* editor)
@@ -656,12 +683,6 @@ void ReportEditor::connectBlockEditor(BlockEditor* editor)
             this, &ReportEditor::onRequestMoveUp);
     connect(editor, &BlockEditor::requestMoveDown,
             this, &ReportEditor::onRequestMoveDown);
-}
-
-void ReportEditor::updateStatusBar()
-{
-    ui->m_wordCountLabel->setText(tr("字数: %1").arg(wordCount()));
-    ui->m_blockCountLabel->setText(tr("块: %1").arg(m_blockEditors.size()));
 }
 
 void ReportEditor::updateEmptyLabelVisibility()

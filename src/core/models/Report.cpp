@@ -231,14 +231,20 @@ QString Report::toPlainText() const
     QStringList texts;
 
     for (const ContentBlock& block : m_blocks) {
+        // 所有块都优先尝试 plain_text 字段（TextBlockEditor 会预存纯文本）
+        const QString plainText = block.data.value("plain_text").toString().trimmed();
+        if (!plainText.isEmpty()) {
+            texts.append(plainText);
+            continue;
+        }
+
         switch (block.type) {
         case BlockType::Heading1:
         case BlockType::Heading2:
         case BlockType::Heading3:
         case BlockType::Paragraph:
         case BlockType::Quote: {
-            // 这些块的文本在 data["text"] 中，但存储的是完整 HTML 文档
-            // 需要用 QTextDocument 解析 HTML，提取纯文本
+            // 兼容旧数据：从 HTML 解析纯文本
             const QString html = block.data.value("text").toString();
             if (!html.isEmpty()) {
                 QTextDocument doc;
@@ -281,24 +287,28 @@ QString Report::toPlainText() const
         case BlockType::Chart:
         case BlockType::DataReference:
         case BlockType::Divider:
-            // 这些块没有可索引的文本内容，跳过
+            // 这些块没有可统计的文本
             break;
         }
     }
 
-    return texts.join("\n");
+    return texts.join(" ");
 }
 
 int Report::wordCount() const
 {
+    // 优先返回保存时统计的字数值
+    if (m_wordCount >= 0) {
+        return m_wordCount;
+    }
+
+    // 旧数据兼容：从内容实时计算
     const QString plainText = toPlainText();
     if (plainText.isEmpty()) return 0;
 
     int count = 0;
 
     // 统计中文字符（CJK 统一表意文字范围）
-    // Unicode 范围：\u4e00 - \u9fff（常用汉字）
-    // 扩展区也可以加上，但常用区足够
     QRegularExpression cjkRegex(QStringLiteral("[\\u4e00-\\u9fff]"));
     auto cjkIt = cjkRegex.globalMatch(plainText);
     while (cjkIt.hasNext()) {

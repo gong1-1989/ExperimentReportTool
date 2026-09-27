@@ -42,8 +42,10 @@ BlockEditor* CodeBlockPlugin::createEditor(const ContentBlock& block, QWidget* p
     return new CodeBlockEditor(block, parent);
 }
 
-QString CodeBlockPlugin::renderToHtml(const ContentBlock& block) const
+QString CodeBlockPlugin::renderToHtml(const ContentBlock& block, const Report* report) const
 {
+    Q_UNUSED(report);
+
     const QString code = block.data.value("code").toString();
     const QString language = block.data.value("language").toString("text");
     const bool showLineNumbers = block.data.value("showLineNumbers").toBool(true);

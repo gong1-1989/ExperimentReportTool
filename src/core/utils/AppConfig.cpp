@@ -158,6 +158,20 @@ QString AppConfig::defaultExportPath() const
 }
 
 // ===========================================================================
+// 数据库配置 [Database]
+// ===========================================================================
+
+QString AppConfig::databasePath() const
+{
+    return value("Database/path", "").toString();
+}
+
+void AppConfig::setDatabasePath(const QString& path)
+{
+    setValue("Database/path", path);
+}
+
+// ===========================================================================
 // 配置写入
 // ===========================================================================
 
