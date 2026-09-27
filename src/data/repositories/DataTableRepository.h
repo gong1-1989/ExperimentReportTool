@@ -14,6 +14,7 @@ class DataTableRepository
 public:
     static DataTable::Ptr findById(qint64 id);
     static DataTable::List findByReport(qint64 reportId);
+    static DataTable::List findGlobal();
     static bool insert(DataTable::Ptr table);
     static bool update(const DataTable::Ptr& table);
     static bool remove(qint64 id);

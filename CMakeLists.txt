@@ -1,11 +1,14 @@
 # ============================================================================
 # 实验报告记录工具 - CMake 构建配置
-# 支持 Qt5 和 Qt6，优先查找 Qt6，回退到 Qt5
+#
+# 标准 Qt 插件架构：
+#   core_lib.dll      - 核心动态库（所有非插件代码）
+#   plugins/*.dll     - 18个独立动态库插件（每个有自己的 CMakeLists.txt）
+#   ExperimentReportTool.exe - 主程序（只含 main.cpp）
 # ============================================================================
 
 cmake_minimum_required(VERSION 3.16)
 
-# 项目名称、版本、语言
 project(ExperimentReportTool
     VERSION 1.0.0
     DESCRIPTION "基于 Qt+C++ 的实验报告记录工具"
@@ -15,105 +18,89 @@ project(ExperimentReportTool
 # ---------------------------------------------------------------------------
 # 全局编译设置
 # ---------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 17)              # 使用 C++17 标准
-set(CMAKE_CXX_STANDARD_REQUIRED ON)     # 强制要求 C++17
-set(CMAKE_CXX_EXTENSIONS OFF)            # 不使用编译器扩展
-set(CMAKE_AUTOMOC ON)                    # 自动运行 MOC（元对象编译器）
-set(CMAKE_AUTORCC ON)                    # 自动处理资源文件 (.qrc)
-set(CMAKE_AUTOUIC ON)                    # 自动处理 UI 文件 (.ui)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-# 默认构建类型为 Release（如果未指定）
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "构建类型" FORCE)
 endif()
 
-# 输出目录统一设置
+# 输出目录
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # ---------------------------------------------------------------------------
-# 查找 Qt（优先 Qt6，回退 Qt5）
+# 查找 Qt
 # ---------------------------------------------------------------------------
-find_package(Qt6 QUIET COMPONENTS
-    Core Gui Widgets Sql Charts PrintSupport
-)
-
+find_package(Qt6 QUIET COMPONENTS Core Gui Widgets Sql Charts PrintSupport)
 if(Qt6_FOUND)
     set(QT_VERSION_MAJOR 6)
-    message(STATUS "找到 Qt6，版本: ${Qt6_VERSION}")
+    set(QT_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Charts Qt6::PrintSupport)
 else()
-    find_package(Qt5 REQUIRED COMPONENTS
-        Core Gui Widgets Sql Charts PrintSupport
-    )
+    find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Sql Charts PrintSupport)
     set(QT_VERSION_MAJOR 5)
-    message(STATUS "找到 Qt5，版本: ${Qt5_VERSION}")
+    set(QT_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql Qt5::Charts Qt5::PrintSupport)
 endif()
 
 # ---------------------------------------------------------------------------
-# 收集源文件
-# 使用 GLOB_RECURSE 自动收集，但建议新增文件后重新运行 CMake
+# 核心动态库 core_lib
+# 包含 src/ 下除 plugins/ 和 main.cpp 之外的所有代码
 # ---------------------------------------------------------------------------
-file(GLOB_RECURSE SOURCES
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/src/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/*.h"
 )
+file(GLOB_RECURSE CORE_UI CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.ui")
+file(GLOB_RECURSE CORE_QRC CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.qrc")
 
-file(GLOB_RECURSE UI_FILES
-    "${CMAKE_SOURCE_DIR}/src/*.ui"
+# 排除 main.cpp
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
+# 排除 plugins/ 目录（插件有自己的 CMakeLists.txt）
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/src/plugins/.*")
+list(FILTER CORE_UI EXCLUDE REGEX ".*/src/plugins/.*")
+list(FILTER CORE_QRC EXCLUDE REGEX ".*/src/plugins/.*")
+
+add_library(core_lib SHARED ${CORE_SOURCES} ${CORE_UI} ${CORE_QRC})
+
+target_include_directories(core_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(core_lib PUBLIC ${QT_LIBS})
+
+# Windows 下自动导出所有符号
+set_target_properties(core_lib PROPERTIES
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    POSITION_INDEPENDENT_CODE ON
 )
 
-file(GLOB_RECURSE QRC_FILES
-    "${CMAKE_SOURCE_DIR}/src/*.qrc"
+# ---------------------------------------------------------------------------
+# 插件（每个插件有独立的 CMakeLists.txt）
+# ---------------------------------------------------------------------------
+add_subdirectory(src/plugins)
+
+# ---------------------------------------------------------------------------
+# 主程序可执行文件
+# ---------------------------------------------------------------------------
+add_executable(${PROJECT_NAME} src/main.cpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE core_lib)
+
+# 主程序依赖所有插件（确保编译顺序）
+add_dependencies(${PROJECT_NAME}
+    TextBlockPlugin TableBlockPlugin ChartBlockPlugin
+    FormulaBlockPlugin ImageBlockPlugin CodeBlockPlugin
+    PdfExportPlugin HtmlExportPlugin WordExportPlugin TextExportPlugin
+    SearchPlugin TagManagerPlugin AttachmentManagerPlugin
+    VersionManagerPlugin TemplateManagerPlugin PluginManagerPlugin
+    CsvImportPlugin SamplePlugin
 )
 
-# ---------------------------------------------------------------------------
-# 可执行文件目标
-# ---------------------------------------------------------------------------
-add_executable(${PROJECT_NAME}
-    ${SOURCES}
-    ${UI_FILES}
-    ${QRC_FILES}
-)
-
-# 头文件包含目录（让 #include 可以使用相对 src 的路径）
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-)
-
-# ---------------------------------------------------------------------------
-# 链接 Qt 库
-# ---------------------------------------------------------------------------
-if(QT_VERSION_MAJOR EQUAL 6)
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Widgets
-        Qt6::Sql
-        Qt6::Charts
-        Qt6::PrintSupport
-    )
-else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        Qt5::Core
-        Qt5::Gui
-        Qt5::Widgets
-        Qt5::Sql
-        Qt5::Charts
-        Qt5::PrintSupport
-    )
-endif()
-
-# ---------------------------------------------------------------------------
-# 平台特定设置
-# ---------------------------------------------------------------------------
 if(WIN32)
-    # Windows：设置应用程序图标、入口子系统
-    set_target_properties(${PROJECT_NAME} PROPERTIES
-        WIN32_EXECUTABLE TRUE
-    )
+    set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
 elseif(APPLE)
-    # macOS：设置为 .app 包
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/packaging/Info.plist
@@ -121,36 +108,38 @@ elseif(APPLE)
 endif()
 
 # ---------------------------------------------------------------------------
-# 编译警告设置
+# 编译警告
 # ---------------------------------------------------------------------------
 if(MSVC)
+    target_compile_options(core_lib PRIVATE /W4 /utf-8)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /utf-8)
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE
-        -Wall -Wextra -Wpedantic
-        -Wno-unused-parameter    # 暂未使用的参数不警告（接口预留）
-    )
+    target_compile_options(core_lib PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
 endif()
 
 # ---------------------------------------------------------------------------
 # 编译定义
 # ---------------------------------------------------------------------------
-target_compile_definitions(${PROJECT_NAME} PRIVATE
+target_compile_definitions(core_lib PUBLIC
     CMAKE_APP_NAME="${PROJECT_NAME}"
     CMAKE_APP_VERSION="${PROJECT_VERSION}"
-    QT_DEPRECATED_WARNINGS          # 启用 Qt 废弃 API 警告
+    QT_DEPRECATED_WARNINGS
 )
 
 # ---------------------------------------------------------------------------
-# 安装规则（可选，用于 make install）
+# 安装规则
 # ---------------------------------------------------------------------------
-install(TARGETS ${PROJECT_NAME}
+install(TARGETS ${PROJECT_NAME} core_lib
     BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
+    LIBRARY DESTINATION bin
 )
+install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/plugins/ DESTINATION bin/plugins
+    FILES_MATCHING PATTERN "*.dll" PATTERN "*.so" PATTERN "*.dylib")
 
 # ---------------------------------------------------------------------------
-# 单元测试（可选，tests 目录存在时启用）
+# 单元测试
 # ---------------------------------------------------------------------------
 option(BUILD_TESTS "构建单元测试" OFF)
 if(BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/tests/CMakeLists.txt")
@@ -162,5 +151,6 @@ message(STATUS "==================================================")
 message(STATUS "项目: ${PROJECT_NAME} v${PROJECT_VERSION}")
 message(STATUS "Qt 版本: Qt${QT_VERSION_MAJOR}")
 message(STATUS "构建类型: ${CMAKE_BUILD_TYPE}")
-message(STATUS "C++ 标准: ${CMAKE_CXX_STANDARD}")
+message(STATUS "架构: core_lib.dll + 18个独立插件.dll + 主程序")
+message(STATUS "每个插件有独立的 CMakeLists.txt")
 message(STATUS "==================================================")

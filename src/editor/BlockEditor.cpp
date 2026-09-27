@@ -5,6 +5,8 @@
 
 #include "BlockEditor.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
 
 #include <QPainter>
 #include <QStyleOption>
@@ -33,7 +35,7 @@ BlockEditor::BlockEditor(const ContentBlock& block, QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
 
     // 设置最小高度，避免块太矮难以点击
-    setMinimumHeight(32);
+    setMinimumHeight(AppDimensions::Widget::BlockMinHeight);
 
     // ========================================================================
     // 关键修复：设置尺寸策略
@@ -87,10 +89,14 @@ void BlockEditor::createHandle()
     m_handleButton->setFlat(true);
     m_handleButton->setToolTip(tr("拖拽移动 / 点击打开菜单"));
     m_handleButton->setStyleSheet(
-        "QPushButton { border: none; border-radius: 3px; color: #999; "
-        "font-size: 14px; font-weight: bold; }"
-        "QPushButton:hover { background-color: #e8e8e8; color: #333; }"
-    );
+        QString("QPushButton { border: none; border-radius: %1px; color: %2; "
+                "font-size: %3px; font-weight: bold; }"
+                "QPushButton:hover { background-color: %4; color: %5; }")
+            .arg(AppTheme::Radius::Small)
+            .arg(AppTheme::Color::TextSecondary)
+            .arg(AppTheme::FontSize::Normal)
+            .arg(AppTheme::Color::Border)
+            .arg(AppTheme::Color::Gray333));
     m_handleButton->setText("⋮⋮");  // 拖拽手柄图标
 
     // -----------------------------------------------------------------------
@@ -168,7 +174,8 @@ void BlockEditor::setBlockSelected(bool selected)
 {
     m_selected = selected;
     setStyleSheet(selected
-        ? "#blockEditor { background-color: #e8f0fe; border-radius: 4px; }"
+        ? QString("#blockEditor { background-color: %1; border-radius: %2px; }")
+              .arg(AppTheme::Color::PrimaryLight).arg(AppTheme::Radius::Small)
         : "#blockEditor { background-color: transparent; }");
     update();
 }
@@ -341,8 +348,8 @@ QSize BlockEditor::minimumSizeHint() const
 void BlockEditor::updateHeight()
 {
     // 通知布局系统重新计算尺寸
-    // 使用 QTimer::singleShot(0) 延迟到事件循环，确保布局完成
-    QTimer::singleShot(0, this, [this]() {
+    // 使用 QTimer::singleShot(Immediate) 延迟到事件循环，确保布局完成
+    QTimer::singleShot(AppDimensions::Delay::Immediate, this, [this]() {
         // 强制更新布局
         if (m_mainLayout) {
             m_mainLayout->invalidate();

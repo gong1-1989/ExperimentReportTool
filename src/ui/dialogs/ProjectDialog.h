@@ -78,7 +78,7 @@ private slots:
      *
      * 验证用户输入，验证通过后关闭对话框并返回 Accepted
      */
-    void onAccept();
+    void on_m_buttonBox_accepted();
 
 private:
     /**

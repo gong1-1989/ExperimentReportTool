@@ -245,9 +245,11 @@ bool DatabaseManager::createTables()
     // -----------------------------------------------------------------------
     const QString createTags = R"(
         CREATE TABLE IF NOT EXISTS tags (
-            id    INTEGER PRIMARY KEY AUTOINCREMENT,
-            name  TEXT NOT NULL UNIQUE,
-            color TEXT DEFAULT '#4A90D9'
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL UNIQUE,
+            color       TEXT DEFAULT '#4A90D9',
+            description TEXT DEFAULT '',
+            created_at  TEXT DEFAULT ''
         );
     )";
 
@@ -447,14 +449,42 @@ bool DatabaseManager::createTriggers()
 
 bool DatabaseManager::migrate(int fromVersion, int toVersion)
 {
-    // 当前只有版本 1，暂无迁移逻辑
-    // 未来版本升级时，在这里添加增量迁移脚本
-    // 例如：if (fromVersion < 2) { /* v1 -> v2 迁移 */ }
+    QSqlDatabase db = database();
+    QSqlQuery query(db);
 
-    Q_UNUSED(fromVersion);
+    // v1 -> v2: tags 表添加 description 和 created_at 字段
+    if (fromVersion < 2) {
+        LOG_INFO("执行 v1 -> v2 数据库迁移: tags 表添加字段");
+
+        // 检查列是否已存在（避免重复添加）
+        bool hasDescription = false;
+        bool hasCreatedAt = false;
+        query.exec("PRAGMA table_info(tags);");
+        while (query.next()) {
+            const QString colName = query.value(1).toString();
+            if (colName == "description") hasDescription = true;
+            if (colName == "created_at") hasCreatedAt = true;
+        }
+
+        if (!hasDescription) {
+            if (!query.exec("ALTER TABLE tags ADD COLUMN description TEXT DEFAULT '';")) {
+                LOG_ERROR(QString("迁移失败: 添加 description 列 - %1").arg(query.lastError().text()));
+                return false;
+            }
+        }
+
+        if (!hasCreatedAt) {
+            if (!query.exec("ALTER TABLE tags ADD COLUMN created_at TEXT DEFAULT '';")) {
+                LOG_ERROR(QString("迁移失败: 添加 created_at 列 - %1").arg(query.lastError().text()));
+                return false;
+            }
+        }
+
+        LOG_INFO("v1 -> v2 迁移完成");
+    }
+
     Q_UNUSED(toVersion);
-
-    LOG_INFO("数据库迁移完成（当前版本无需增量迁移）");
+    LOG_INFO("数据库迁移完成");
     return true;
 }
 

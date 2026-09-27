@@ -1,17 +1,20 @@
 /**
  * @file SearchService.cpp
  * @brief 搜索服务实现文件
+ *
+ * 搜索范围：报告标题、作者、标签、状态（不搜索报告内容）
  */
 
 #include "SearchService.h"
 #include "data/repositories/ProjectRepository.h"
+#include "data/repositories/ReportRepository.h"
+#include "data/repositories/TagRepository.h"
 #include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
 
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QSettings>
-#include <QRegularExpression>
 
 // ===========================================================================
 // 构造与析构
@@ -42,17 +45,10 @@ QList<SearchResultItem> SearchService::search(const SearchQuery& query)
         return QList<SearchResultItem>();
     }
 
-    // 添加到搜索历史
-    addToHistory(query.keyword);
-
     QList<SearchResultItem> results;
 
-    // 优先使用 FTS5，降级为 LIKE
-    if (isFtsAvailable()) {
-        results = ftsSearch(query);
-    } else {
-        results = likeSearch(query);
-    }
+    // 使用 LIKE 模糊搜索：标题、作者、标签、状态
+    results = metadataSearch(query);
 
     // 补充项目名称等信息
     enrichResults(results);
@@ -73,69 +69,65 @@ QList<SearchResultItem> SearchService::search(const QString& keyword,
 }
 
 // ===========================================================================
-// FTS5 全文搜索
+// 元数据搜索（标题、作者、标签、状态）
 // ===========================================================================
 
-QList<SearchResultItem> SearchService::ftsSearch(const SearchQuery& query)
+QList<SearchResultItem> SearchService::metadataSearch(const SearchQuery& query)
 {
     QList<SearchResultItem> results;
 
     QSqlDatabase db = DatabaseManager::instance().database();
     QSqlQuery sqlQuery(db);
 
-    // 构建 FTS 查询
-    // 使用 snippet() 生成高亮摘要，bm25() 计算相关度
+    // 搜索范围：
+    //   r.title   - 报告标题
+    //   r.author  - 作者
+    //   t.name    - 标签名称（通过 report_tags 关联）
+    //   r.status  - 状态（整数，转为字符串比较）
+    //
+    // 使用 DISTINCT 避免一个报告有多个标签匹配时重复出现
     QString sql = R"(
-        SELECT r.*,
-               snippet(reports_fts, 1, '<mark>', '</mark>', '...', 12) AS highlight,
-               bm25(reports_fts) AS score
-        FROM reports_fts
-        JOIN reports r ON r.id = reports_fts.rowid
-        WHERE reports_fts MATCH :keyword
+        SELECT DISTINCT r.*
+        FROM reports r
+        LEFT JOIN report_tags rt ON rt.report_id = r.id
+        LEFT JOIN tags t ON t.id = rt.tag_id
+        WHERE (r.title LIKE :keyword
+            OR r.author LIKE :keyword
+            OR t.name LIKE :keyword
+            OR CAST(r.status AS TEXT) LIKE :keyword)
     )";
 
     if (query.projectId > 0) {
         sql += " AND r.project_id = :projectId";
     }
-    if (query.dateFrom.isValid()) {
-        sql += " AND r.experiment_date >= :dateFrom";
-    }
-    if (query.dateTo.isValid()) {
-        sql += " AND r.experiment_date <= :dateTo";
-    }
-    sql += " ORDER BY score LIMIT :limit;";
+    sql += " ORDER BY r.updated_at DESC LIMIT :limit;";
 
     sqlQuery.prepare(sql);
-    sqlQuery.bindValue(":keyword", query.keyword);
+    sqlQuery.bindValue(":keyword", "%" + query.keyword + "%");
     if (query.projectId > 0) {
         sqlQuery.bindValue(":projectId", query.projectId);
-    }
-    if (query.dateFrom.isValid()) {
-        sqlQuery.bindValue(":dateFrom", query.dateFrom);
-    }
-    if (query.dateTo.isValid()) {
-        sqlQuery.bindValue(":dateTo", query.dateTo);
     }
     sqlQuery.bindValue(":limit", query.maxResults);
 
     if (!sqlQuery.exec()) {
-        LOG_ERROR(QString("FTS 搜索失败: %1").arg(sqlQuery.lastError().text()));
-        // FTS 失败，降级为 LIKE
-        return likeSearch(query);
+        LOG_ERROR(QString("元数据搜索失败: %1").arg(sqlQuery.lastError().text()));
+        return results;
     }
 
     while (sqlQuery.next()) {
+        // 用 ReportRepository::findById 加载完整报告（包含内容块）
+        const qint64 reportId = sqlQuery.value("id").toLongLong();
+        Report::Ptr report = ReportRepository::findById(reportId);
+        if (!report) continue;
+
         SearchResultItem item;
-        item.report = Report::create();
-        item.report->setId(sqlQuery.value("id").toLongLong());
-        item.report->setProjectId(sqlQuery.value("project_id").toLongLong());
-        item.report->setTitle(sqlQuery.value("title").toString());
-        item.report->setAuthor(sqlQuery.value("author").toString());
-        item.report->setExperimentDate(sqlQuery.value("experiment_date").toDate());
-        item.report->setUpdatedAt(sqlQuery.value("updated_at").toDateTime());
-        item.highlight = sqlQuery.value("highlight").toString();
-        item.score = sqlQuery.value("score").toDouble();
+        item.report = report;
+        item.score = 0.0;
         item.matchedAt = QDateTime::currentDateTime();
+
+        // 生成匹配字段描述（用于显示匹配了哪些字段）
+        item.highlight = buildMatchDescription(report, query.keyword);
+
         results.append(item);
     }
 
@@ -143,30 +135,54 @@ QList<SearchResultItem> SearchService::ftsSearch(const SearchQuery& query)
 }
 
 // ===========================================================================
-// LIKE 模糊搜索（降级方案）
+// 生成匹配字段描述
 // ===========================================================================
 
-QList<SearchResultItem> SearchService::likeSearch(const SearchQuery& query)
+QString SearchService::buildMatchDescription(const Report::Ptr& report,
+                                              const QString& keyword)
 {
-    QList<SearchResultItem> results;
+    if (!report) return QString();
 
-    ReportQuery reportQuery;
-    reportQuery.keyword = query.keyword;
-    reportQuery.projectId = query.projectId;
-    reportQuery.limit = query.maxResults;
+    QStringList matchedFields;
+    const QString kw = keyword.toLower();
 
-    const Report::List reports = ReportRepository::findAll(reportQuery);
-
-    for (const Report::Ptr& report : reports) {
-        SearchResultItem item;
-        item.report = report;
-        item.highlight = generateSnippet(report->toPlainText(), query.keyword);
-        item.score = 0.0;  // LIKE 搜索没有相关度分数
-        item.matchedAt = QDateTime::currentDateTime();
-        results.append(item);
+    // 检查标题
+    if (report->title().toLower().contains(kw)) {
+        matchedFields.append(tr("标题"));
     }
 
-    return results;
+    // 检查作者
+    if (report->author().toLower().contains(kw)) {
+        matchedFields.append(tr("作者"));
+    }
+
+    // 检查状态
+    const QString statusStr = [](ReportStatus s) {
+        switch (s) {
+            case ReportStatus::Draft:     return QStringLiteral("草稿");
+            case ReportStatus::Submitted: return QStringLiteral("已提交");
+            case ReportStatus::Reviewed:  return QStringLiteral("已审核");
+            default:                       return QStringLiteral("未知");
+        }
+    }(report->status());
+    if (statusStr.toLower().contains(kw)) {
+        matchedFields.append(tr("状态"));
+    }
+
+    // 检查标签
+    const Tag::List tags = TagRepository::findByReport(report->id());
+    for (const Tag::Ptr& tag : tags) {
+        if (tag->name().toLower().contains(kw)) {
+            matchedFields.append(tr("标签"));
+            break;
+        }
+    }
+
+    if (matchedFields.isEmpty()) {
+        return tr("匹配元数据");
+    }
+
+    return tr("匹配字段: %1").arg(matchedFields.join("、"));
 }
 
 // ===========================================================================
@@ -183,40 +199,6 @@ void SearchService::enrichResults(QList<SearchResultItem>& results)
             }
         }
     }
-}
-
-// ===========================================================================
-// 摘要生成
-// ===========================================================================
-
-QString SearchService::generateSnippet(const QString& content, const QString& keyword, int contextLength)
-{
-    if (content.isEmpty() || keyword.isEmpty()) {
-        return QString();
-    }
-
-    // 查找关键词位置
-    const int pos = content.indexOf(keyword, 0, Qt::CaseInsensitive);
-    if (pos < 0) {
-        // 没找到，返回前 contextLength 个字符
-        return content.left(contextLength) + (content.length() > contextLength ? "..." : "");
-    }
-
-    // 计算上下文范围
-    const int start = qMax(0, pos - contextLength / 2);
-    const int end = qMin(content.length(), pos + keyword.length() + contextLength / 2);
-
-    QString snippet = content.mid(start, end - start);
-
-    // 高亮关键词
-    const QString highlighted = QString("<mark>%1</mark>").arg(keyword);
-    snippet.replace(keyword, highlighted, Qt::CaseInsensitive);
-
-    // 添加省略号
-    if (start > 0) snippet = "..." + snippet;
-    if (end < content.length()) snippet = snippet + "...";
-
-    return snippet;
 }
 
 // ===========================================================================
@@ -249,39 +231,16 @@ void SearchService::clearHistory()
 }
 
 // ===========================================================================
-// FTS 状态与索引维护
+// 保留的 FTS 相关方法（不再使用，但保留接口兼容）
 // ===========================================================================
 
 bool SearchService::isFtsAvailable() const
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
-    QSqlQuery query(db);
-    query.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='reports_fts';");
-    return query.next();
+    return false;
 }
 
 bool SearchService::rebuildIndex()
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
-    QSqlQuery query(db);
-
-    // 清空 FTS 表
-    if (!query.exec("DELETE FROM reports_fts;")) {
-        LOG_ERROR(QString("清空 FTS 表失败: %1").arg(query.lastError().text()));
-        return false;
-    }
-
-    // 重新插入所有报告
-    query.prepare(R"(
-        INSERT INTO reports_fts(rowid, title, content, tags)
-        SELECT id, title, content, '' FROM reports;
-    )");
-
-    if (!query.exec()) {
-        LOG_ERROR(QString("重建 FTS 索引失败: %1").arg(query.lastError().text()));
-        return false;
-    }
-
-    LOG_INFO("FTS 全文索引已重建");
+    LOG_INFO("全文搜索已禁用，仅搜索元数据（标题、作者、标签、状态）");
     return true;
 }

@@ -1,28 +1,31 @@
 /**
  * @file SettingsDialog.cpp
  * @brief 设置对话框实现文件
+ *
+ * UI 布局由 SettingsDialog.ui 可视化设计，本文件只负责业务逻辑。
+ * 配置读写通过 AppConfig 统一管理，支持 config.ini 配置文件。
+ *
+ * 配置项分为五个标签页：
+ * - 常规：自动保存、最大版本数、默认导出格式、默认导出路径
+ * - 外观：主题颜色（主色/成功/警告/危险）、全局字体、基础字号
+ * - 编辑器：编辑器默认字体、字号
+ * - 界面：主窗口尺寸、记住窗口大小、状态栏显示、消息时长
+ * - 数据：数据库路径查看
  */
 
 #include "SettingsDialog.h"
-#include "core/utils/AppConstants.h"
+#include "ui_SettingsDialog.h"
+#include "core/utils/AppConfig.h"
+#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
 
-#include <QTabWidget>
-#include <QWidget>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QCheckBox>
-#include <QSpinBox>
-#include <QComboBox>
-#include <QFontComboBox>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QDialogButtonBox>
 #include <QMessageBox>
 #include <QDir>
+#include <QCoreApplication>
 #include <QStandardPaths>
+#include <QFont>
+#include <QColorDialog>
+#include <QFileDialog>
 
 // ============================================================================
 // 构造与析构
@@ -30,179 +33,20 @@
 
 SettingsDialog::SettingsDialog(QWidget* parent)
     : QDialog(parent)
-    , m_tabWidget(nullptr)
-    , m_autoSaveCheck(nullptr)
-    , m_autoSaveIntervalSpin(nullptr)
-    , m_exportFormatCombo(nullptr)
-    , m_fontCombo(nullptr)
-    , m_fontSizeSpin(nullptr)
-    , m_dbPathEdit(nullptr)
-    , m_okButton(nullptr)
-    , m_applyButton(nullptr)
-    , m_cancelButton(nullptr)
-    , m_resetButton(nullptr)
+    , ui(new Ui::SettingsDialog)
 {
-    setWindowTitle(tr("设置"));
-    setMinimumSize(500, 450);
+    // 加载 .ui 文件中设计的布局
+    ui->setupUi(this);
 
-    setupUi();
+    // 槽函数通过 uic 自动连接（on_<objectName>_<signalName> 命名约定）
+
+    // 加载当前设置
     loadSettings();
 }
 
 SettingsDialog::~SettingsDialog()
 {
-}
-
-// ============================================================================
-// UI 初始化
-// ============================================================================
-
-void SettingsDialog::setupUi()
-{
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(10);
-
-    // 选项卡控件
-    m_tabWidget = new QTabWidget(this);
-
-    // ------------------------------------------------------------------------
-    // 常规设置选项卡
-    // ------------------------------------------------------------------------
-    QWidget* generalTab = new QWidget(this);
-    QVBoxLayout* generalLayout = new QVBoxLayout(generalTab);
-    generalLayout->setContentsMargins(16, 16, 16, 16);
-    generalLayout->setSpacing(12);
-
-    // 自动保存组
-    QGroupBox* autoSaveGroup = new QGroupBox(tr("自动保存"), generalTab);
-    QVBoxLayout* autoSaveLayout = new QVBoxLayout(autoSaveGroup);
-
-    m_autoSaveCheck = new QCheckBox(tr("启用自动保存"), autoSaveGroup);
-    m_autoSaveCheck->setToolTip(tr("编辑报告时自动保存，防止数据丢失"));
-    autoSaveLayout->addWidget(m_autoSaveCheck);
-
-    QHBoxLayout* intervalLayout = new QHBoxLayout();
-    intervalLayout->addWidget(new QLabel(tr("保存间隔（分钟）："), autoSaveGroup));
-    m_autoSaveIntervalSpin = new QSpinBox(autoSaveGroup);
-    m_autoSaveIntervalSpin->setRange(1, 60);
-    m_autoSaveIntervalSpin->setValue(5);
-    m_autoSaveIntervalSpin->setSuffix(tr(" 分钟"));
-    intervalLayout->addWidget(m_autoSaveIntervalSpin);
-    intervalLayout->addStretch();
-    autoSaveLayout->addLayout(intervalLayout);
-
-    generalLayout->addWidget(autoSaveGroup);
-
-    // 导出设置组
-    QGroupBox* exportGroup = new QGroupBox(tr("导出设置"), generalTab);
-    QFormLayout* exportLayout = new QFormLayout(exportGroup);
-
-    m_exportFormatCombo = new QComboBox(exportGroup);
-    m_exportFormatCombo->addItem(tr("PDF 文档"), "pdf");
-    m_exportFormatCombo->addItem(tr("HTML 网页"), "html");
-    m_exportFormatCombo->addItem(tr("Word 文档"), "word");
-    m_exportFormatCombo->addItem(tr("纯文本"), "text");
-    exportLayout->addRow(tr("默认导出格式："), m_exportFormatCombo);
-
-    generalLayout->addWidget(exportGroup);
-    generalLayout->addStretch();
-
-    m_tabWidget->addTab(generalTab, tr("常规"));
-
-    // ------------------------------------------------------------------------
-    // 编辑器设置选项卡
-    // ------------------------------------------------------------------------
-    QWidget* editorTab = new QWidget(this);
-    QVBoxLayout* editorLayout = new QVBoxLayout(editorTab);
-    editorLayout->setContentsMargins(16, 16, 16, 16);
-    editorLayout->setSpacing(12);
-
-    QGroupBox* fontGroup = new QGroupBox(tr("默认字体"), editorTab);
-    QFormLayout* fontLayout = new QFormLayout(fontGroup);
-
-    m_fontCombo = new QFontComboBox(fontGroup);
-    m_fontCombo->setToolTip(tr("新建报告时的默认字体"));
-    fontLayout->addRow(tr("字体族："), m_fontCombo);
-
-    m_fontSizeSpin = new QSpinBox(fontGroup);
-    m_fontSizeSpin->setRange(8, 72);
-    m_fontSizeSpin->setValue(12);
-    m_fontSizeSpin->setSuffix(tr(" pt"));
-    fontLayout->addRow(tr("字号："), m_fontSizeSpin);
-
-    editorLayout->addWidget(fontGroup);
-
-    // 提示标签
-    QLabel* hintLabel = new QLabel(tr(
-        "<div style='color: #999; font-size: 12px;'>"
-        "注意：字体设置仅对新建的报告生效，已有报告保持原有字体设置。"
-        "</div>"), editorTab);
-    hintLabel->setWordWrap(true);
-    editorLayout->addWidget(hintLabel);
-
-    editorLayout->addStretch();
-
-    m_tabWidget->addTab(editorTab, tr("编辑器"));
-
-    // ------------------------------------------------------------------------
-    // 数据设置选项卡
-    // ------------------------------------------------------------------------
-    QWidget* dataTab = new QWidget(this);
-    QVBoxLayout* dataLayout = new QVBoxLayout(dataTab);
-    dataLayout->setContentsMargins(16, 16, 16, 16);
-    dataLayout->setSpacing(12);
-
-    QGroupBox* dbGroup = new QGroupBox(tr("数据库"), dataTab);
-    QVBoxLayout* dbLayout = new QVBoxLayout(dbGroup);
-
-    dbLayout->addWidget(new QLabel(tr("数据库文件路径："), dbGroup));
-    m_dbPathEdit = new QLineEdit(dbGroup);
-    m_dbPathEdit->setReadOnly(true);
-    m_dbPathEdit->setStyleSheet("background-color: #f5f5f5; color: #666;");
-    dbLayout->addWidget(m_dbPathEdit);
-
-    // 数据库大小提示
-    QLabel* dbHintLabel = new QLabel(tr(
-        "<div style='color: #999; font-size: 12px; margin-top: 8px;'>"
-        "数据库文件包含所有项目、报告、标签和附件信息。<br>"
-        "建议定期备份数据库文件以防止数据丢失。"
-        "</div>"), dbGroup);
-    dbHintLabel->setWordWrap(true);
-    dbLayout->addWidget(dbHintLabel);
-
-    dataLayout->addWidget(dbGroup);
-    dataLayout->addStretch();
-
-    m_tabWidget->addTab(dataTab, tr("数据"));
-
-    mainLayout->addWidget(m_tabWidget);
-
-    // ------------------------------------------------------------------------
-    // 底部按钮
-    // ------------------------------------------------------------------------
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-
-    m_resetButton = new QPushButton(tr("恢复默认"), this);
-    connect(m_resetButton, &QPushButton::clicked, this, &SettingsDialog::onResetDefaults);
-    buttonLayout->addWidget(m_resetButton);
-
-    buttonLayout->addStretch();
-
-    m_applyButton = new QPushButton(tr("应用"), this);
-    connect(m_applyButton, &QPushButton::clicked, this, &SettingsDialog::onApply);
-    buttonLayout->addWidget(m_applyButton);
-
-    m_okButton = new QPushButton(tr("确定"), this);
-    m_okButton->setDefault(true);
-    connect(m_okButton, &QPushButton::clicked, this, &SettingsDialog::onAccept);
-    buttonLayout->addWidget(m_okButton);
-
-    m_cancelButton = new QPushButton(tr("取消"), this);
-    connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
-    buttonLayout->addWidget(m_cancelButton);
-
-    mainLayout->addLayout(buttonLayout);
+    delete ui;
 }
 
 // ============================================================================
@@ -211,39 +55,75 @@ void SettingsDialog::setupUi()
 
 void SettingsDialog::loadSettings()
 {
-    QSettings settings;
+    AppConfig& config = AppConfig::instance();
 
-    // 常规设置
-    m_autoSaveCheck->setChecked(settings.value("autoSave/enabled", true).toBool());
-    m_autoSaveIntervalSpin->setValue(settings.value("autoSave/interval", 5).toInt());
+    // ---- 常规设置 ----
+    ui->autoSaveCheck->setChecked(config.autoSaveEnabled());
+    // AppConfig 中自动保存间隔为毫秒，转换为分钟显示
+    ui->autoSaveIntervalSpin->setValue(config.autoSaveInterval() / 60000);
+    ui->maxVersionsSpin->setValue(config.maxVersions());
 
-    const QString exportFormat = settings.value("export/defaultFormat", "pdf").toString();
-    const int idx = m_exportFormatCombo->findData(exportFormat);
-    m_exportFormatCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    const QString exportFormat = config.defaultExportFormat();
+    const int idx = ui->exportFormatCombo->findData(exportFormat);
+    ui->exportFormatCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    ui->exportPathEdit->setText(config.defaultExportPath());
 
-    // 编辑器设置
-    const QString fontFamily = settings.value("editor/defaultFontFamily", "Microsoft YaHei").toString();
-    m_fontCombo->setCurrentFont(QFont(fontFamily));
-    m_fontSizeSpin->setValue(settings.value("editor/defaultFontSize", 12).toInt());
+    // ---- 外观设置 ----
+    ui->primaryColorEdit->setText(config.primaryColor().name());
+    ui->successColorEdit->setText(config.successColor().name());
+    ui->warningColorEdit->setText(config.warningColor().name());
+    ui->dangerColorEdit->setText(config.dangerColor().name());
+    ui->globalFontCombo->setCurrentFont(QFont(config.fontFamily()));
+    ui->baseFontSizeSpin->setValue(config.baseFontSize());
 
-    // 数据设置
-    m_dbPathEdit->setText(databasePath());
+    // ---- 编辑器设置 ----
+    ui->fontCombo->setCurrentFont(QFont(config.editorFontFamily()));
+    ui->fontSizeSpin->setValue(config.editorFontSize());
+
+    // ---- 界面设置 ----
+    ui->windowWidthSpin->setValue(config.mainWindowWidth());
+    ui->windowHeightSpin->setValue(config.mainWindowHeight());
+    ui->rememberWindowSizeCheck->setChecked(config.rememberWindowSize());
+    ui->showStatusBarCheck->setChecked(config.showStatusBar());
+    ui->statusMessageDurationSpin->setValue(config.statusMessageDuration());
+
+    // ---- 数据设置 ----
+    ui->dbPathEdit->setText(databasePath());
 }
 
 void SettingsDialog::saveSettings()
 {
-    QSettings settings;
+    AppConfig& config = AppConfig::instance();
 
-    // 常规设置
-    settings.setValue("autoSave/enabled", m_autoSaveCheck->isChecked());
-    settings.setValue("autoSave/interval", m_autoSaveIntervalSpin->value());
-    settings.setValue("export/defaultFormat", m_exportFormatCombo->currentData().toString());
+    // ---- 常规设置 ----
+    config.setAutoSaveEnabled(ui->autoSaveCheck->isChecked());
+    // 分钟转换为毫秒
+    config.setAutoSaveInterval(ui->autoSaveIntervalSpin->value() * 60000);
+    config.setMaxVersions(ui->maxVersionsSpin->value());
+    config.setDefaultExportFormat(ui->exportFormatCombo->currentData().toString());
+    config.setDefaultExportPath(ui->exportPathEdit->text().trimmed());
 
-    // 编辑器设置
-    settings.setValue("editor/defaultFontFamily", m_fontCombo->currentFont().family());
-    settings.setValue("editor/defaultFontSize", m_fontSizeSpin->value());
+    // ---- 外观设置 ----
+    config.setPrimaryColor(QColor(ui->primaryColorEdit->text().trimmed()));
+    config.setSuccessColor(QColor(ui->successColorEdit->text().trimmed()));
+    config.setWarningColor(QColor(ui->warningColorEdit->text().trimmed()));
+    config.setDangerColor(QColor(ui->dangerColorEdit->text().trimmed()));
+    config.setFontFamily(ui->globalFontCombo->currentFont().family());
+    config.setBaseFontSize(ui->baseFontSizeSpin->value());
 
-    settings.sync();
+    // ---- 编辑器设置 ----
+    config.setEditorFontFamily(ui->fontCombo->currentFont().family());
+    config.setEditorFontSize(ui->fontSizeSpin->value());
+
+    // ---- 界面设置 ----
+    config.setMainWindowWidth(ui->windowWidthSpin->value());
+    config.setMainWindowHeight(ui->windowHeightSpin->value());
+    config.setRememberWindowSize(ui->rememberWindowSizeCheck->isChecked());
+    config.setShowStatusBar(ui->showStatusBarCheck->isChecked());
+    config.setStatusMessageDuration(ui->statusMessageDurationSpin->value());
+
+    // 保存到 config.ini
+    config.save();
 }
 
 void SettingsDialog::applySettings()
@@ -251,25 +131,32 @@ void SettingsDialog::applySettings()
     saveSettings();
     // 这里可以发出信号通知主窗口应用新设置
     // 目前设置在下次新建报告或导出时生效
+    // 外观设置需要重启应用后生效
 }
 
 // ============================================================================
 // 槽函数
 // ============================================================================
 
-void SettingsDialog::onAccept()
+void SettingsDialog::on_okButton_clicked()
 {
     saveSettings();
     accept();
 }
 
-void SettingsDialog::onApply()
+void SettingsDialog::on_applyButton_clicked()
 {
     applySettings();
-    QMessageBox::information(this, tr("设置"), tr("设置已应用并保存。"));
+    QMessageBox::information(this, tr("设置"),
+        tr("设置已应用并保存。\n外观和窗口设置将在重启应用后生效。"));
 }
 
-void SettingsDialog::onResetDefaults()
+void SettingsDialog::on_cancelButton_clicked()
+{
+    reject();
+}
+
+void SettingsDialog::on_resetButton_clicked()
 {
     const QMessageBox::StandardButton ret = QMessageBox::question(
         this, tr("恢复默认"),
@@ -278,51 +165,120 @@ void SettingsDialog::onResetDefaults()
 
     if (ret != QMessageBox::Yes) return;
 
-    // 恢复默认值
-    m_autoSaveCheck->setChecked(true);
-    m_autoSaveIntervalSpin->setValue(5);
-    m_exportFormatCombo->setCurrentIndex(0);
-    m_fontCombo->setCurrentFont(QFont("Microsoft YaHei"));
-    m_fontSizeSpin->setValue(12);
+    // ---- 常规设置 ----
+    ui->autoSaveCheck->setChecked(true);
+    ui->autoSaveIntervalSpin->setValue(AppDimensions::AutoSave::IntervalMs / 60000);
+    ui->maxVersionsSpin->setValue(AppDimensions::AutoSave::MaxVersions);
+    ui->exportFormatCombo->setCurrentIndex(0);
+    ui->exportPathEdit->setText(QDir::homePath());
+
+    // ---- 外观设置 ----
+    ui->primaryColorEdit->setText(AppTheme::Color::Primary);
+    ui->successColorEdit->setText(AppTheme::Color::Success);
+    ui->warningColorEdit->setText(AppTheme::Color::Warning);
+    ui->dangerColorEdit->setText(AppTheme::Color::Danger);
+    ui->globalFontCombo->setCurrentFont(QFont("Microsoft YaHei"));
+    ui->baseFontSizeSpin->setValue(AppTheme::FontSize::Small);
+
+    // ---- 编辑器设置 ----
+    ui->fontCombo->setCurrentFont(QFont("Microsoft YaHei"));
+    ui->fontSizeSpin->setValue(AppTheme::FontSize::Normal);
+
+    // ---- 界面设置 ----
+    ui->windowWidthSpin->setValue(AppDimensions::Window::MainWidth);
+    ui->windowHeightSpin->setValue(AppDimensions::Window::MainHeight);
+    ui->rememberWindowSizeCheck->setChecked(true);
+    ui->showStatusBarCheck->setChecked(true);
+    ui->statusMessageDurationSpin->setValue(AppDimensions::Delay::StatusMessage);
 }
 
 // ============================================================================
-// 静态便捷方法
+// 颜色选择按钮槽函数
+// ============================================================================
+
+void SettingsDialog::on_primaryColorBtn_clicked()
+{
+    const QColor color = QColorDialog::getColor(
+        QColor(ui->primaryColorEdit->text()), this, tr("选择主色调"));
+    if (color.isValid()) {
+        ui->primaryColorEdit->setText(color.name());
+    }
+}
+
+void SettingsDialog::on_successColorBtn_clicked()
+{
+    const QColor color = QColorDialog::getColor(
+        QColor(ui->successColorEdit->text()), this, tr("选择成功色"));
+    if (color.isValid()) {
+        ui->successColorEdit->setText(color.name());
+    }
+}
+
+void SettingsDialog::on_warningColorBtn_clicked()
+{
+    const QColor color = QColorDialog::getColor(
+        QColor(ui->warningColorEdit->text()), this, tr("选择警告色"));
+    if (color.isValid()) {
+        ui->warningColorEdit->setText(color.name());
+    }
+}
+
+void SettingsDialog::on_dangerColorBtn_clicked()
+{
+    const QColor color = QColorDialog::getColor(
+        QColor(ui->dangerColorEdit->text()), this, tr("选择危险色"));
+    if (color.isValid()) {
+        ui->dangerColorEdit->setText(color.name());
+    }
+}
+
+// ============================================================================
+// 导出路径浏览按钮槽函数
+// ============================================================================
+
+void SettingsDialog::on_exportPathBrowseBtn_clicked()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, tr("选择默认导出路径"),
+        ui->exportPathEdit->text().isEmpty() ? QDir::homePath() : ui->exportPathEdit->text());
+    if (!dir.isEmpty()) {
+        ui->exportPathEdit->setText(dir);
+    }
+}
+
+// ============================================================================
+// 静态便捷方法（改用 AppConfig）
 // ============================================================================
 
 bool SettingsDialog::autoSaveEnabled()
 {
-    QSettings settings;
-    return settings.value("autoSave/enabled", true).toBool();
+    return AppConfig::instance().autoSaveEnabled();
 }
 
 int SettingsDialog::autoSaveInterval()
 {
-    QSettings settings;
-    return settings.value("autoSave/interval", 5).toInt();
+    // 返回分钟数（保持原有接口兼容）
+    return AppConfig::instance().autoSaveInterval() / 60000;
 }
 
 QString SettingsDialog::defaultExportFormat()
 {
-    QSettings settings;
-    return settings.value("export/defaultFormat", "pdf").toString();
+    return AppConfig::instance().defaultExportFormat();
 }
 
 QString SettingsDialog::defaultFontFamily()
 {
-    QSettings settings;
-    return settings.value("editor/defaultFontFamily", "Microsoft YaHei").toString();
+    return AppConfig::instance().editorFontFamily();
 }
 
 int SettingsDialog::defaultFontSize()
 {
-    QSettings settings;
-    return settings.value("editor/defaultFontSize", 12).toInt();
+    return AppConfig::instance().editorFontSize();
 }
 
 QString SettingsDialog::databasePath()
 {
-    // 使用应用数据目录下的数据库文件
-    const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    return QDir(dataDir).filePath("experiment_report.db");
+    // 数据库文件放在程序目录下的 data 子目录
+    return QDir(QCoreApplication::applicationDirPath() + "/data")
+        .filePath("experiment_reports.db");
 }

@@ -5,10 +5,12 @@
 
 #include "ExportManager.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppConfig.h"
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
 #include "data/repositories/DataTableRepository.h"
 #include "core/models/DataTable.h"
+#include "print/PrintManager.h"
 
 #include <QTextDocument>
 #include <QTextCursor>
@@ -31,6 +33,7 @@
 #include <QMimeType>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QUrl>
 
 // ===========================================================================
 // 构造与析构
@@ -109,35 +112,15 @@ bool ExportManager::exportToPdf(const Report::Ptr& report,
                                   const ExportConfig& config,
                                   QWidget* parent)
 {
-    Q_UNUSED(parent);
+    // 直接复用打印预览的渲染逻辑，确保 PDF 与打印预览显示一致
+    PrintManager printManager;
+    PrintConfig printConfig = printManager.currentConfig();
+    printConfig.includeTitle = config.includeTitle;
+    printConfig.includeMeta = config.includeMeta;
+    printConfig.includeTableOfContents = config.includeTableOfContents;
+    printManager.setConfig(printConfig);
 
-    // 生成 HTML
-    const QString html = reportToHtml(report, config);
-
-    // 使用 QTextDocument 渲染 HTML 并打印到 PDF
-    QTextDocument doc;
-    doc.setHtml(html);
-    doc.setDefaultFont(QFont(config.fontFamily, config.fontSize));
-
-    // 设置页面大小
-    QPrinter printer(QPrinter::HighResolution);
-    printer.setOutputFormat(QPrinter::PdfFormat);
-    printer.setOutputFileName(config.filePath);
-
-    if (config.pageSize == "A4") {
-        printer.setPageSize(QPageSize(QPageSize::A4));
-    } else if (config.pageSize == "Letter") {
-        printer.setPageSize(QPageSize(QPageSize::Letter));
-    } else {
-        printer.setPageSize(QPageSize(QPageSize::A4));
-    }
-
-    printer.setPageMargins(QMarginsF(20, 20, 20, 20), QPageLayout::Millimeter);
-
-    // 打印文档
-    doc.print(&printer);
-
-    return QFile::exists(config.filePath);
+    return printManager.exportToPdf(report, config.filePath, parent);
 }
 
 // ===========================================================================
@@ -169,6 +152,55 @@ bool ExportManager::exportToHtml(const Report::Ptr& report,
 // Word 导出（基于 HTML 的 .docx 简化实现）
 // ===========================================================================
 
+/**
+ * @brief 将 HTML 中的 base64 图片保存到指定目录，并用相对路径替换
+ *
+ * 用于 Word 导出：Word 对 base64 data: URI 支持有限，
+ * 需要将图片保存为本地文件，用相对路径引用。
+ *
+ * @param html 原始 HTML
+ * @param outputDir 输出目录（图片保存到 outputDir/images/）
+ * @return 转换后的 HTML
+ */
+static QString convertBase64ImagesToRelativeFiles(const QString& html, const QString& outputDir)
+{
+    QString result = html;
+    const QString imagesDir = QDir(outputDir).filePath("images");
+    QDir().mkpath(imagesDir);
+
+    QRegularExpression regex("src=\"data:([^;]+);base64,([^\"]+)\"");
+    QRegularExpressionMatchIterator it = regex.globalMatch(html);
+    int imageIndex = 0;
+
+    while (it.hasNext()) {
+        const QRegularExpressionMatch match = it.next();
+        const QString mimeType = match.captured(1);
+        const QString base64Data = match.captured(2);
+
+        // 确定文件扩展名
+        QString ext = "png";
+        if (mimeType.contains("jpeg") || mimeType.contains("jpg")) ext = "jpg";
+        else if (mimeType.contains("gif")) ext = "gif";
+        else if (mimeType.contains("bmp")) ext = "bmp";
+
+        // 保存图片文件
+        const QString fileName = QString("image_%1.%2").arg(imageIndex++).arg(ext);
+        const QString filePath = QDir(imagesDir).filePath(fileName);
+
+        QFile file(filePath);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(QByteArray::fromBase64(base64Data.toLatin1()));
+            file.close();
+        }
+
+        // 用相对路径替换（Word 支持相对路径）
+        const QString relativePath = QString("images/%1").arg(fileName);
+        result.replace(match.captured(0), QString("src=\"%1\"").arg(relativePath));
+    }
+
+    return result;
+}
+
 bool ExportManager::exportToWord(const Report::Ptr& report,
                                    const ExportConfig& config,
                                    QWidget* parent)
@@ -177,7 +209,11 @@ bool ExportManager::exportToWord(const Report::Ptr& report,
 
     // 简化实现：生成 Word 可以打开的 HTML 文件，扩展名用 .doc
     // 完整的 .docx 需要 OOXML 格式，后续可以用 libdocx 或 pandoc
-    const QString html = reportToHtml(report, config);
+    QString html = reportToHtml(report, config);
+
+    // Word 对 base64 图片支持有限，将图片保存到同目录的 images/ 文件夹
+    const QString outputDir = QFileInfo(config.filePath).absolutePath();
+    html = convertBase64ImagesToRelativeFiles(html, outputDir);
 
     // 包装为 Word 兼容的 HTML（添加 MSO 命名空间）
     const QString wordHtml = QString(
@@ -314,16 +350,47 @@ bool ExportManager::exportToText(const Report::Ptr& report,
  */
 static QString extractHtmlBody(const QString& html)
 {
+    if (html.isEmpty()) return QString();
+
+    // 如果不包含 <body 标签，说明是 HTML 片段，直接返回
     if (!html.contains("<body", Qt::CaseInsensitive)) {
         return html;
     }
+
+    // 查找 <body 开始位置
     const int bodyStart = html.indexOf("<body", 0, Qt::CaseInsensitive);
     if (bodyStart < 0) return html;
+
+    // 查找 <body> 标签结束位置（> 字符）
     const int bodyTagEnd = html.indexOf('>', bodyStart);
     if (bodyTagEnd < 0) return html;
-    const int bodyEnd = html.indexOf("</body>", bodyTagEnd, Qt::CaseInsensitive);
-    if (bodyEnd < 0) return html;
-    return html.mid(bodyTagEnd + 1, bodyEnd - bodyTagEnd - 1);
+
+    // 查找 </body> 位置
+    int bodyEnd = html.indexOf("</body>", bodyTagEnd, Qt::CaseInsensitive);
+    if (bodyEnd < 0) {
+        // 没有 </body>，取到文档末尾
+        bodyEnd = html.size();
+    }
+
+    QString result = html.mid(bodyTagEnd + 1, bodyEnd - bodyTagEnd - 1).trimmed();
+
+    // 如果提取结果为空，尝试用 QTextDocument 解析整个 HTML 并提取 body 内容
+    if (result.isEmpty()) {
+        QTextDocument doc;
+        doc.setHtml(html);
+        result = doc.toHtml();
+        // 再次提取 body
+        if (result.contains("<body", Qt::CaseInsensitive)) {
+            const int s = result.indexOf("<body", 0, Qt::CaseInsensitive);
+            const int e = result.indexOf('>', s);
+            const int end = result.indexOf("</body>", e, Qt::CaseInsensitive);
+            if (e >= 0 && end > e) {
+                result = result.mid(e + 1, end - e - 1).trimmed();
+            }
+        }
+    }
+
+    return result;
 }
 
 /**
@@ -339,6 +406,31 @@ static QString htmlToPlainText(const QString& html)
     QTextDocument doc;
     doc.setHtml(html);
     return doc.toPlainText().trimmed();
+}
+
+/**
+ * @brief 安全获取文本块的 HTML 内容
+ *
+ * 优先使用 text 字段（完整 HTML），提取 body 内容。
+ * 如果提取结果为空，降级使用 plain_text 字段。
+ *
+ * @param block 内容块
+ * @return HTML 片段
+ */
+static QString getBlockTextHtml(const ContentBlock& block)
+{
+    const QString textHtml = block.data.value("text").toString();
+    QString result = extractHtmlBody(textHtml);
+
+    // 如果 HTML 提取结果为空，尝试用 plain_text 兜底
+    if (result.isEmpty() || result == "<p></p>" || result == "<p><br></p>") {
+        const QString plainText = block.data.value("plain_text").toString();
+        if (!plainText.isEmpty()) {
+            result = QString("<p>%1</p>").arg(plainText.toHtmlEscaped());
+        }
+    }
+
+    return result;
 }
 
 QString ExportManager::reportToHtml(const Report::Ptr& report, const ExportConfig& config)
@@ -415,21 +507,21 @@ QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounte
         ++headingCounter;
         return QString("<h1 id=\"heading-%1\">%2</h1>\n")
             .arg(headingCounter)
-            .arg(extractHtmlBody(block.data.value("text").toString()));
+            .arg(getBlockTextHtml(block));
     }
     case BlockType::Heading2: {
         ++headingCounter;
         return QString("<h2 id=\"heading-%1\">%2</h2>\n")
             .arg(headingCounter)
-            .arg(extractHtmlBody(block.data.value("text").toString()));
+            .arg(getBlockTextHtml(block));
     }
     case BlockType::Heading3:
         return QString("<h3>%1</h3>\n")
-            .arg(extractHtmlBody(block.data.value("text").toString()));
+            .arg(getBlockTextHtml(block));
 
     case BlockType::Paragraph:
         // 段落直接使用提取后的 HTML 内容（保留格式）
-        return extractHtmlBody(block.data.value("text").toString()) + "\n";
+        return getBlockTextHtml(block) + "\n";
 
     case BlockType::BulletList: {
         QString html = "<ul>\n";
@@ -455,7 +547,7 @@ QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounte
 
     case BlockType::Quote:
         return QString("<blockquote>%1</blockquote>\n")
-            .arg(extractHtmlBody(block.data.value("text").toString()));
+            .arg(getBlockTextHtml(block));
 
     case BlockType::CodeBlock: {
         const QString code = block.data.value("code").toString().toHtmlEscaped();
@@ -495,30 +587,31 @@ QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounte
 
     case BlockType::Table: {
         // 从 JSON 数据渲染 HTML 表格
+        // 注意：QTextDocument 对 HTML 表格支持有限，只用最基本的属性
         const int rows = block.data.value("rows").toInt(0);
         const int cols = block.data.value("cols").toInt(0);
 
         if (rows > 0 && cols > 0) {
-            QString html = "<div class=\"table-block\">\n";
-            html += "<table>\n";
+            // 用最简单的表格标签，确保 QTextDocument 能正确渲染
+            QString html = "<table border=\"1\" width=\"100%\" cellpadding=\"4\" cellspacing=\"0\">\n";
 
             // 表头
             if (block.data.value("headers").isArray()) {
                 const QJsonArray headers = block.data.value("headers").toArray();
-                html += "<thead><tr>\n";
+                html += "<tr>\n";
                 for (int col = 0; col < cols; ++col) {
                     const QString headerText = col < headers.size()
                                                    ? headers[col].toString()
                                                    : QString("列%1").arg(col + 1);
-                    html += QString("<th>%1</th>\n").arg(headerText.toHtmlEscaped());
+                    html += QString("<th bgcolor=\"#f0f0f0\"><b>%1</b></th>\n")
+                               .arg(headerText.toHtmlEscaped());
                 }
-                html += "</tr></thead>\n";
+                html += "</tr>\n";
             }
 
             // 表格数据
             if (block.data.value("cells").isArray()) {
                 const QJsonArray cells = block.data.value("cells").toArray();
-                html += "<tbody>\n";
                 for (int row = 0; row < rows && row < cells.size(); ++row) {
                     html += "<tr>\n";
                     const QJsonArray rowData = cells[row].toArray();
@@ -530,14 +623,13 @@ QString ExportManager::blockToHtml(const ContentBlock& block, int& headingCounte
                     }
                     html += "</tr>\n";
                 }
-                html += "</tbody>\n";
             }
 
             html += "</table>\n";
-            html += "</div>\n";
+            html += "<br>\n";
             return html;
         }
-        return "<div class=\"table-block\">[空表格]</div>\n";
+        return "<p>[空表格]</p>\n";
     }
 
     case BlockType::Chart: {
@@ -856,8 +948,14 @@ QPair<QString, ExportFormat> ExportManager::getSaveFilePath(QWidget* parent,
     }
     const QString filter = filters.join(";;");
 
+    // 使用配置中的默认导出路径
+    const QString defaultPath = AppConfig::instance().defaultExportPath();
+    const QString fullDefaultName = defaultPath.isEmpty()
+        ? defaultName
+        : QDir(defaultPath).filePath(defaultName);
+
     const QString filePath = QFileDialog::getSaveFileName(
-        parent, QObject::tr("导出报告"), defaultName, filter);
+        parent, QObject::tr("导出报告"), fullDefaultName, filter);
 
     if (filePath.isEmpty()) {
         return qMakePair(QString(), ExportFormat::Pdf);

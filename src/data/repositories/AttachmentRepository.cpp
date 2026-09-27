@@ -396,8 +396,26 @@ bool AttachmentRepository::openWithDefaultApp(qint64 attachmentId)
         return false;
     }
 
-    // 用系统默认程序打开文件
-    return QDesktopServices::openUrl(QUrl::fromLocalFile(attachment->storedPath()));
+    // 复制到临时目录，使用原始文件名，这样打开时标题栏显示原始文件名
+    const QString tempDir = QDir::tempPath() + "/ExperimentReportTool";
+    QDir().mkpath(tempDir);
+    const QString tempFilePath = tempDir + "/" + attachment->fileName();
+
+    // 如果临时文件已存在，先删除
+    if (QFile::exists(tempFilePath)) {
+        QFile::remove(tempFilePath);
+    }
+
+    // 复制文件
+    if (!QFile::copy(attachment->storedPath(), tempFilePath)) {
+        LOG_ERROR(QString("复制附件到临时目录失败: %1 -> %2")
+            .arg(attachment->storedPath()).arg(tempFilePath));
+        // 复制失败时回退到直接打开存储路径
+        return QDesktopServices::openUrl(QUrl::fromLocalFile(attachment->storedPath()));
+    }
+
+    // 用系统默认程序打开临时文件（显示原始文件名）
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(tempFilePath));
 }
 
 /**

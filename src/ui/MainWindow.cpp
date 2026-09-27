@@ -10,14 +10,24 @@
 #include "ui/ReportEditorWindow.h"
 #include "ui/dialogs/ProjectDialog.h"
 #include "ui/dialogs/SettingsDialog.h"
-#include "template/TemplateEditorDialog.h"
-#include "search/SearchResultDialog.h"
+#include "ui/dialogs/SearchResultDialog.h"
+#include "ui/dialogs/TemplateEditorDialog.h"
+#include "ui/dialogs/PluginManagerDialog.h"
+#include "core/plugin/PluginManager.h"
+#include "core/plugin/ImportPluginInterface.h"
 #include "data/repositories/ProjectRepository.h"
 #include "data/repositories/ReportRepository.h"
 #include "data/repositories/TemplateRepository.h"
+#include "data/repositories/TagRepository.h"
+#include "data/repositories/DataTableRepository.h"
+#include "core/models/Tag.h"
+#include "core/models/DataTable.h"
 #include "export/ExportManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
+#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
+#include "core/utils/AppConfig.h"
 
 #include <QMenuBar>
 #include <QToolBar>
@@ -26,7 +36,9 @@
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QDir>
+#include <QRegularExpression>
 #include <QFile>
 #include <QStandardPaths>
 #include <QApplication>
@@ -93,24 +105,29 @@ void MainWindow::setupUi()
 {
     // 设置窗口基本属性
     setWindowTitle(AppConstants::APP_DISPLAY_NAME);
-    resize(AppConstants::DEFAULT_WINDOW_WIDTH, AppConstants::DEFAULT_WINDOW_HEIGHT);
+    // 从配置文件读取窗口大小
+    resize(AppConfig::instance().mainWindowWidth(),
+           AppConfig::instance().mainWindowHeight());
     setMinimumSize(800, 600);
 
     // -----------------------------------------------------------------------
     // 主分割器（左-中-右三栏布局）
     // -----------------------------------------------------------------------
     m_mainSplitter = new QSplitter(Qt::Horizontal, this);
-    m_mainSplitter->setHandleWidth(6);
+    m_mainSplitter->setHandleWidth(AppTheme::Spacing::Medium);
     m_mainSplitter->setChildrenCollapsible(false);
 
     // 左侧：项目树
     QWidget* leftPanel = new QWidget(this);
     QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
-    leftLayout->setContentsMargins(4, 4, 4, 4);
-    leftLayout->setSpacing(4);
+    leftLayout->setContentsMargins(AppTheme::Spacing::Small, AppTheme::Spacing::Small,
+                                   AppTheme::Spacing::Small, AppTheme::Spacing::Small);
+    leftLayout->setSpacing(AppTheme::Spacing::Small);
 
     QLabel* projectTitle = new QLabel(tr("📁 项目树"), leftPanel);
-    projectTitle->setStyleSheet("font-weight: bold; padding: 4px; color: #333;");
+    projectTitle->setStyleSheet(
+        QString("font-weight: bold; padding: %1px; color: %2;")
+            .arg(AppTheme::Spacing::Small).arg(AppTheme::Color::Gray333));
     leftLayout->addWidget(projectTitle);
 
     m_projectTree = new ProjectTreeWidget(leftPanel);
@@ -123,11 +140,14 @@ void MainWindow::setupUi()
     // 中间：报告列表面板（直接占满中间区域，移除多余的编辑器占位区）
     QWidget* reportListPanel = new QWidget(this);
     QVBoxLayout* reportListLayout = new QVBoxLayout(reportListPanel);
-    reportListLayout->setContentsMargins(4, 4, 4, 4);
-    reportListLayout->setSpacing(4);
+    reportListLayout->setContentsMargins(AppTheme::Spacing::Small, AppTheme::Spacing::Small,
+                                         AppTheme::Spacing::Small, AppTheme::Spacing::Small);
+    reportListLayout->setSpacing(AppTheme::Spacing::Small);
 
     QLabel* reportListTitle = new QLabel(tr("📝 报告列表"), reportListPanel);
-    reportListTitle->setStyleSheet("font-weight: bold; padding: 4px; color: #333;");
+    reportListTitle->setStyleSheet(
+        QString("font-weight: bold; padding: %1px; color: %2;")
+            .arg(AppTheme::Spacing::Small).arg(AppTheme::Color::Gray333));
     reportListLayout->addWidget(reportListTitle);
 
     m_reportList = new ReportListWidget(reportListPanel);
@@ -137,19 +157,28 @@ void MainWindow::setupUi()
 
     // 右侧：属性面板
     m_propertyPanel = new QWidget(this);
-    m_propertyPanel->setMinimumWidth(220);
+    m_propertyPanel->setMinimumWidth(AppDimensions::Widget::PropertyPanelMinWidth);
     QVBoxLayout* propLayout = new QVBoxLayout(m_propertyPanel);
-    propLayout->setContentsMargins(12, 12, 12, 12);
+    propLayout->setContentsMargins(AppTheme::Spacing::Large, AppTheme::Spacing::Large,
+                                   AppTheme::Spacing::Large, AppTheme::Spacing::Large);
     QLabel* propTitle = new QLabel(tr("属性面板"), m_propertyPanel);
-    propTitle->setStyleSheet("font-weight: bold; font-size: 14px; padding-bottom: 8px; border-bottom: 1px solid #ddd;");
+    propTitle->setStyleSheet(
+        QString("font-weight: bold; font-size: %1px; padding-bottom: %2px; "
+                "border-bottom: 1px solid %3;")
+            .arg(AppTheme::FontSize::Normal)
+            .arg(AppTheme::Spacing::Normal)
+            .arg(AppTheme::Color::GrayDDD));
     propLayout->addWidget(propTitle);
     m_propertyContentLabel = new QLabel(m_propertyPanel);
     m_propertyContentLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     m_propertyContentLabel->setWordWrap(true);
-    m_propertyContentLabel->setText(tr(
-        "<div style='color: #999; font-size: 12px; margin-top: 12px;'>"
-        "选择项目或报告后，<br>此处将显示其属性信息。"
-        "</div>"));
+    m_propertyContentLabel->setText(
+        QString("<div style='color: %1; font-size: %2px; margin-top: %3px;'>"
+                "选择项目或报告后，<br>此处将显示其属性信息。"
+                "</div>")
+            .arg(AppTheme::Color::Gray999)
+            .arg(AppTheme::FontSize::Small)
+            .arg(AppTheme::Spacing::Large));
     propLayout->addWidget(m_propertyContentLabel);
     propLayout->addStretch();
     m_mainSplitter->addWidget(m_propertyPanel);
@@ -180,9 +209,13 @@ void MainWindow::createActions()
     m_actionOpenReport->setShortcut(QKeySequence("Ctrl+O"));
     m_actionOpenReport->setStatusTip(tr("打开已有报告"));
 
-    m_actionExportReport = new QAction(tr("导出报告(&E)..."), this);
+    m_actionImportData = new QAction(tr("导入数据(&I)..."), this);
+    m_actionImportData->setShortcut(QKeySequence("Ctrl+I"));
+    m_actionImportData->setStatusTip(tr("从外部文件导入数据表（CSV等）"));
+
+    m_actionExportReport = new QAction(tr("导出项目(&E)..."), this);
     m_actionExportReport->setShortcut(QKeySequence("Ctrl+E"));
-    m_actionExportReport->setStatusTip(tr("导出报告为 PDF/Word 等格式"));
+    m_actionExportReport->setStatusTip(tr("批量导出当前项目下的所有报告"));
     m_actionExportReport->setEnabled(false);
 
     m_actionExit = new QAction(tr("退出(&X)"), this);
@@ -229,7 +262,7 @@ void MainWindow::createActions()
     m_actionFullscreen->setStatusTip(tr("切换全屏模式"));
 
     m_actionZoomIn = new QAction(tr("放大"), this);
-    m_actionZoomIn->setShortcut(QKeySequence("Ctrl++"));
+    m_actionZoomIn->setShortcut(QKeySequence("Ctrl+="));
     m_actionZoomIn->setStatusTip(tr("放大界面"));
 
     m_actionZoomOut = new QAction(tr("缩小"), this);
@@ -267,6 +300,9 @@ void MainWindow::createActions()
 
     m_actionCheckUpdate = new QAction(tr("检查更新"), this);
     m_actionCheckUpdate->setStatusTip(tr("检查软件更新"));
+
+    m_actionPluginManager = new QAction(tr("插件管理..."), this);
+    m_actionPluginManager->setStatusTip(tr("查看和管理已加载的插件"));
 }
 
 void MainWindow::createMenus()
@@ -279,6 +315,7 @@ void MainWindow::createMenus()
     fileMenu->addAction(m_actionNewReport);
     fileMenu->addSeparator();
     fileMenu->addAction(m_actionOpenReport);
+    fileMenu->addAction(m_actionImportData);
     fileMenu->addAction(m_actionExportReport);
     fileMenu->addSeparator();
     fileMenu->addAction(m_actionExit);
@@ -317,6 +354,8 @@ void MainWindow::createMenus()
     helpMenu->addAction(m_actionAbout);
     helpMenu->addAction(m_actionAboutQt);
     helpMenu->addSeparator();
+    helpMenu->addAction(m_actionPluginManager);
+    helpMenu->addSeparator();
     helpMenu->addAction(m_actionCheckUpdate);
 }
 
@@ -341,7 +380,7 @@ void MainWindow::createToolBar()
     m_globalSearchEdit = new QLineEdit(toolBar);
     m_globalSearchEdit->setPlaceholderText(tr("🔍 全局搜索报告..."));
     m_globalSearchEdit->setClearButtonEnabled(true);
-    m_globalSearchEdit->setMaximumWidth(280);
+    m_globalSearchEdit->setMaximumWidth(AppDimensions::Widget::GlobalSearchMaxWidth);
     toolBar->addWidget(m_globalSearchEdit);
 
     toolBar->addSeparator();
@@ -352,12 +391,15 @@ void MainWindow::createStatusBar()
 {
     QStatusBar* statusBar = this->statusBar();
 
+    const QString statusLabelStyle =
+        QString("padding: 0 %1px;").arg(AppTheme::Spacing::Normal);
+
     m_statusProjectLabel = new QLabel(tr("项目: 全部"), this);
-    m_statusProjectLabel->setStyleSheet("padding: 0 8px;");
+    m_statusProjectLabel->setStyleSheet(statusLabelStyle);
     statusBar->addWidget(m_statusProjectLabel);
 
     m_statusReportLabel = new QLabel(tr("报告: 无"), this);
-    m_statusReportLabel->setStyleSheet("padding: 0 8px;");
+    m_statusReportLabel->setStyleSheet(statusLabelStyle);
     statusBar->addWidget(m_statusReportLabel);
 
     // QStatusBar 没有 addStretch 方法，用一个空 QWidget 作为弹簧
@@ -367,10 +409,15 @@ void MainWindow::createStatusBar()
     statusBar->addWidget(spacer, 1);
 
     m_statusCountLabel = new QLabel(this);
-    m_statusCountLabel->setStyleSheet("padding: 0 8px; color: #666;");
+    m_statusCountLabel->setStyleSheet(
+        QString("padding: 0 %1px; color: %2;")
+            .arg(AppTheme::Spacing::Normal).arg(AppTheme::Color::Gray666));
     statusBar->addPermanentWidget(m_statusCountLabel);
 
     updateStatusBar();
+
+    // 根据配置显示或隐藏状态栏
+    statusBar->setVisible(AppConfig::instance().showStatusBar());
 }
 
 void MainWindow::connectSignals()
@@ -379,7 +426,8 @@ void MainWindow::connectSignals()
     connect(m_actionNewProject, &QAction::triggered, this, &MainWindow::onNewProject);
     connect(m_actionNewReport, &QAction::triggered, this, &MainWindow::onNewReport);
     connect(m_actionOpenReport, &QAction::triggered, this, &MainWindow::onOpenReport);
-    connect(m_actionExportReport, &QAction::triggered, this, &MainWindow::onExportReport);
+    connect(m_actionImportData, &QAction::triggered, this, &MainWindow::onImportData);
+    connect(m_actionExportReport, &QAction::triggered, this, &MainWindow::onExportProject);
     connect(m_actionExit, &QAction::triggered, this, &MainWindow::close);
 
     // 编辑菜单
@@ -406,6 +454,7 @@ void MainWindow::connectSignals()
     connect(m_actionAbout, &QAction::triggered, this, &MainWindow::onAbout);
     connect(m_actionAboutQt, &QAction::triggered, this, &MainWindow::onAboutQt);
     connect(m_actionCheckUpdate, &QAction::triggered, this, &MainWindow::onCheckUpdate);
+    connect(m_actionPluginManager, &QAction::triggered, this, &MainWindow::onPluginManager);
 
     // 项目树
     connect(m_projectTree, &ProjectTreeWidget::projectSelected,
@@ -533,50 +582,232 @@ void MainWindow::onOpenReport()
     }
 }
 
-void MainWindow::onExportReport()
+// ===========================================================================
+// 导入数据
+// ===========================================================================
+
+void MainWindow::onImportData()
 {
-    const qint64 reportId = currentReportId();
-    if (reportId <= 0) {
-        QMessageBox::information(this, tr("提示"), tr("请先选择要导出的报告"));
+    // 获取所有导入插件
+    if (!m_pluginManager) {
+        QMessageBox::warning(this, tr("错误"), tr("插件管理器未初始化"));
         return;
     }
 
-    // 从数据库加载报告
-    Report::Ptr report = ReportRepository::findById(reportId);
-    if (!report) {
-        QMessageBox::warning(this, tr("错误"), tr("无法加载报告数据"));
+    const QList<ImportPluginInterface*> importPlugins =
+        m_pluginManager->pluginsOfType<ImportPluginInterface>();
+
+    if (importPlugins.isEmpty()) {
+        QMessageBox::information(this, tr("提示"), tr("没有可用的导入插件"));
         return;
     }
 
-    // 显示导出文件对话框，让用户选择格式和保存路径
-    QPair<QString, ExportFormat> result = ExportManager::getSaveFilePath(
-        this, report->title());
+    // 构建文件过滤器
+    QStringList filters;
+    QMap<QString, ImportPluginInterface*> filterToPlugin;
+    for (ImportPluginInterface* plugin : importPlugins) {
+        const QString filter = plugin->fileFilter();
+        if (!filter.isEmpty()) {
+            filters.append(filter);
+            filterToPlugin.insert(filter, plugin);
+        }
+    }
+    filters.append(tr("所有文件 (*.*)"));
 
-    if (result.first.isEmpty()) {
-        // 用户取消了导出
+    // 让用户选择文件
+    const QString filePath = QFileDialog::getOpenFileName(this,
+        tr("导入数据"), QDir::homePath(), filters.join(";;"));
+
+    if (filePath.isEmpty()) return;
+
+    // 根据文件扩展名选择合适的导入插件
+    ImportPluginInterface* selectedPlugin = nullptr;
+    const QFileInfo fileInfo(filePath);
+    const QString suffix = fileInfo.suffix().toLower();
+
+    for (ImportPluginInterface* plugin : importPlugins) {
+        if (plugin->supportedFormats().contains(suffix)) {
+            selectedPlugin = plugin;
+            break;
+        }
+    }
+
+    // 如果没有匹配的插件，让用户选择
+    if (!selectedPlugin) {
+        QStringList pluginNames;
+        for (ImportPluginInterface* plugin : importPlugins) {
+            pluginNames.append(plugin->name());
+        }
+        bool ok = false;
+        const QString choice = QInputDialog::getItem(this, tr("选择导入插件"),
+            tr("无法自动识别文件格式，请选择导入插件："),
+            pluginNames, 0, false, &ok);
+        if (!ok || choice.isEmpty()) return;
+
+        for (ImportPluginInterface* plugin : importPlugins) {
+            if (plugin->name() == choice) {
+                selectedPlugin = plugin;
+                break;
+            }
+        }
+    }
+
+    if (!selectedPlugin) {
+        QMessageBox::warning(this, tr("错误"), tr("未选择导入插件"));
         return;
     }
 
-    // 执行导出
-    ExportManager exporter;
-    ExportConfig config;
-    config.format = result.second;
-    config.filePath = result.first;
-    config.includeTitle = true;
-    config.includeMeta = true;
-
+    // 执行导入
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const bool ok = exporter.exportReport(report, config, this);
+    DataTable::Ptr table = selectedPlugin->importFromFile(filePath, this);
     QApplication::restoreOverrideCursor();
 
-    if (ok) {
-        showStatusMessage(tr("导出成功: %1").arg(result.first));
-        QMessageBox::information(this, tr("导出成功"),
-            tr("报告已成功导出到：\n%1").arg(result.first));
+    if (!table) {
+        QMessageBox::warning(this, tr("导入失败"), tr("数据导入失败，请检查文件格式"));
+        return;
+    }
+
+    // 设置数据表名称（使用文件名）
+    if (table->name().isEmpty()) {
+        table->setName(fileInfo.baseName());
+    }
+    // 导入的数据表为全局数据表，不关联到特定报告
+    table->setReportId(0);
+
+    // 保存到数据库
+    if (!DataTableRepository::insert(table)) {
+        QMessageBox::warning(this, tr("保存失败"), tr("数据表保存到数据库失败"));
+        return;
+    }
+
+    QMessageBox::information(this, tr("导入成功"),
+        tr("数据导入成功！\n\n"
+           "数据表名称：%1\n"
+           "行数：%2\n"
+           "列数：%3\n\n"
+           "可在报告编辑器的图表配置中选择此数据表作为数据源。")
+            .arg(table->name())
+            .arg(table->rowCount())
+            .arg(table->columnCount()));
+
+    showStatusMessage(tr("数据导入成功：%1").arg(table->name()));
+    LOG_INFO(QString("数据导入成功: %1 (行数=%2, 列数=%3)")
+                 .arg(table->name()).arg(table->rowCount()).arg(table->columnCount()));
+}
+
+void MainWindow::onExportProject()
+{
+    const qint64 projectId = currentProjectId();
+    if (projectId <= 0) {
+        QMessageBox::information(this, tr("提示"), tr("请先在左侧选择要导出的项目"));
+        return;
+    }
+
+    // 加载项目信息
+    Project::Ptr project = ProjectRepository::findById(projectId);
+    if (!project) {
+        QMessageBox::warning(this, tr("错误"), tr("无法加载项目信息"));
+        return;
+    }
+
+    // 查询该项目下的所有报告
+    QList<Report::Ptr> reports = ReportRepository::findByProject(projectId);
+    if (reports.isEmpty()) {
+        QMessageBox::information(this, tr("提示"), tr("该项目下没有报告可导出"));
+        return;
+    }
+
+    // 让用户选择导出格式
+    const QString formatStr = QInputDialog::getItem(this, tr("导出项目"),
+        tr("选择导出格式："),
+        QStringList() << tr("PDF 文档") << tr("HTML 网页") << tr("Word 文档") << tr("纯文本"),
+        0, false);
+
+    if (formatStr.isEmpty()) {
+        return;  // 用户取消
+    }
+
+    // 解析选择的格式
+    ExportFormat format = ExportFormat::Pdf;
+    QString ext = "pdf";
+    if (formatStr == tr("PDF 文档")) {
+        format = ExportFormat::Pdf;
+        ext = "pdf";
+    } else if (formatStr == tr("HTML 网页")) {
+        format = ExportFormat::Html;
+        ext = "html";
+    } else if (formatStr == tr("Word 文档")) {
+        format = ExportFormat::Word;
+        ext = "docx";
+    } else if (formatStr == tr("纯文本")) {
+        format = ExportFormat::Text;
+        ext = "txt";
+    }
+
+    // 让用户选择保存目录
+    const QString dirPath = QFileDialog::getExistingDirectory(this,
+        tr("选择导出目录"), QDir::homePath(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+
+    if (dirPath.isEmpty()) {
+        return;  // 用户取消
+    }
+
+    // 创建以项目名命名的子目录
+    const QString projectDir = QDir(dirPath).filePath(project->name());
+    QDir().mkpath(projectDir);
+
+    // 循环导出每个报告
+    int successCount = 0;
+    int failCount = 0;
+    QStringList failedReports;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    ExportManager exporter;
+    for (const Report::Ptr& report : reports) {
+        // 构造文件名（用报告标题，替换非法字符）
+        QString fileName = report->title();
+        if (fileName.isEmpty()) {
+            fileName = tr("未命名报告_%1").arg(report->id());
+        }
+        // 替换文件名中的非法字符
+        fileName.replace(QRegularExpression("[\\\\/:*?\"<>|]"), "_");
+        const QString filePath = QDir(projectDir).filePath(QString("%1.%2").arg(fileName, ext));
+
+        // 执行导出
+        ExportConfig config;
+        config.format = format;
+        config.filePath = filePath;
+        config.includeTitle = true;
+        config.includeMeta = true;
+
+        if (exporter.exportReport(report, config, this)) {
+            successCount++;
+        } else {
+            failCount++;
+            failedReports << report->title();
+        }
+    }
+
+    QApplication::restoreOverrideCursor();
+
+    // 显示导出结果
+    QString message = tr("项目导出完成！\n\n"
+                         "成功：%1 份\n"
+                         "失败：%2 份\n"
+                         "导出目录：\n%3").arg(successCount).arg(failCount).arg(projectDir);
+
+    if (!failedReports.isEmpty()) {
+        message += tr("\n\n失败的报告：\n") + failedReports.join("\n");
+    }
+
+    showStatusMessage(tr("项目导出完成：成功 %1，失败 %2").arg(successCount).arg(failCount));
+
+    if (failCount == 0) {
+        QMessageBox::information(this, tr("导出成功"), message);
     } else {
-        showStatusMessage(tr("导出失败"));
-        QMessageBox::warning(this, tr("导出失败"),
-            tr("报告导出失败，请检查文件路径和权限。"));
+        QMessageBox::warning(this, tr("导出完成（部分失败）"), message);
     }
 }
 
@@ -664,10 +895,8 @@ void MainWindow::onDeleteReport()
 
 void MainWindow::onFind()
 {
-    if (m_globalSearchEdit) {
-        m_globalSearchEdit->setFocus();
-        m_globalSearchEdit->selectAll();
-    }
+    m_globalSearchEdit->setFocus();
+    m_globalSearchEdit->selectAll();
 }
 
 // ===========================================================================
@@ -792,8 +1021,8 @@ void MainWindow::onDataBackup()
     if (filePath.isEmpty()) return;
 
     // 简单的文件复制备份
-    const QString dbPath = QStandardPaths::writableLocation(
-        QStandardPaths::AppDataLocation) + "/experiment_reports.db";
+    const QString dbPath = QCoreApplication::applicationDirPath()
+        + "/data/experiment_reports.db";
 
     if (QFile::copy(dbPath, filePath)) {
         QMessageBox::information(this, tr("备份成功"),
@@ -838,10 +1067,12 @@ void MainWindow::onAbout()
             "<li>多格式导出（PDF/Word/HTML）</li>"
             "<li>全文检索</li>"
             "</ul>"
-            "<p style='color: #888; font-size: 11px;'>%4</p>"
+            "<p style='color: %4; font-size: %5px;'>%6</p>"
         ).arg(AppConstants::APP_DISPLAY_NAME)
          .arg(AppConstants::APP_VERSION)
          .arg(qVersion())
+         .arg(AppTheme::Color::TextSecondary)
+         .arg(AppTheme::FontSize::ExtraSmall)
          .arg(tr("© 2024 实验报告记录工具开发组")));
 }
 
@@ -855,6 +1086,17 @@ void MainWindow::onCheckUpdate()
     QMessageBox::information(this, tr("检查更新"),
         tr("当前已是最新版本: %1\n\n"
            "更新检查功能将在后续版本中实现。").arg(AppConstants::APP_VERSION));
+}
+
+void MainWindow::onPluginManager()
+{
+    if (!m_pluginManager) {
+        QMessageBox::warning(this, tr("提示"), tr("插件管理器未初始化"));
+        return;
+    }
+
+    PluginManagerDialog dialog(m_pluginManager, this);
+    dialog.exec();
 }
 
 // ===========================================================================
@@ -902,6 +1144,8 @@ void MainWindow::onReportOpenRequested(qint64 reportId)
     // 创建新的报告编辑器窗口
     ReportEditorWindow* editorWindow = new ReportEditorWindow(report, this);
     editorWindow->setAttribute(Qt::WA_DeleteOnClose);
+    // 传递插件管理器，使报告编辑器能集成报告级工具插件（附件管理、版本历史等）
+    editorWindow->setPluginManager(m_pluginManager);
     connect(editorWindow, &ReportEditorWindow::reportSaved,
             this, &MainWindow::onReportEditorSaved);
     connect(editorWindow, &ReportEditorWindow::windowClosed,
@@ -912,7 +1156,6 @@ void MainWindow::onReportOpenRequested(qint64 reportId)
 
     showStatusMessage(tr("已打开报告: %1").arg(report->title()));
     m_statusReportLabel->setText(tr("报告: %1").arg(report->title()));
-    m_actionExportReport->setEnabled(true);
     updateActionsState();
 }
 
@@ -946,8 +1189,9 @@ void MainWindow::onReportListChanged()
 void MainWindow::onReportEditorSaved(qint64 reportId)
 {
     Q_UNUSED(reportId);
-    // 报告保存后刷新列表
+    // 报告保存后刷新列表和属性面板
     m_reportList->refreshList();
+    updatePropertyPanel();
     updateStatusBar();
     showStatusMessage(tr("报告已保存"));
 }
@@ -995,7 +1239,10 @@ void MainWindow::onGlobalSearchTextChanged(const QString& text)
 
 void MainWindow::showStatusMessage(const QString& message, int timeout)
 {
-    statusBar()->showMessage(message, timeout);
+    // 如果未指定超时时间，使用配置中的默认值
+    const int actualTimeout = (timeout > 0) ? timeout
+                                            : AppConfig::instance().statusMessageDuration();
+    statusBar()->showMessage(message, actualTimeout);
 }
 
 void MainWindow::refreshAll()
@@ -1041,6 +1288,7 @@ void MainWindow::updateActionsState()
     m_actionDeleteProject->setEnabled(hasProject);
     m_actionDeleteReport->setEnabled(hasReport);
     m_actionOpenReport->setEnabled(hasReport);
+    m_actionExportReport->setEnabled(hasProject);  // 导出项目需要选中项目
 }
 
 void MainWindow::updateStatusBar()
@@ -1087,42 +1335,47 @@ void MainWindow::updatePropertyPanel()
                 if (project) projectName = project->name();
             }
 
-            // 字数统计
-            int wordCount = 0;
-            for (int i = 0; i < report->blockCount(); ++i) {
-                const ContentBlock& block = report->blockAt(i);
-                if (block.type == BlockType::Paragraph ||
-                    block.type == BlockType::Heading1 ||
-                    block.type == BlockType::Heading2 ||
-                    block.type == BlockType::Heading3) {
-                    wordCount += block.data.value("text").toString().length();
+            // 标签
+            const Tag::List tags = TagRepository::findByReport(report->id());
+            QString tagsHtml;
+            if (tags.isEmpty()) {
+                tagsHtml = tr("无标签");
+            } else {
+                for (int i = 0; i < tags.size(); ++i) {
+                    const QColor color = tags[i]->effectiveColor();
+                    if (i > 0) tagsHtml += "&nbsp;&nbsp;";
+                    tagsHtml += QString("<span style='color: %1;'>■</span>&nbsp;%2")
+                                    .arg(color.name())
+                                    .arg(tags[i]->name().toHtmlEscaped());
                 }
             }
 
             const QString html = QString(
-                "<div style='font-size: 12px; line-height: 1.8;'>"
-                "<p><b style='color: #409EFF;'>报告属性</b></p>"
-                "<p><b>标题：</b>%1</p>"
-                "<p><b>状态：</b>%2</p>"
-                "<p><b>项目：</b>%3</p>"
-                "<p><b>作者：</b>%4</p>"
-                "<p><b>实验日期：</b>%5</p>"
-                "<p><b>更新时间：</b>%6</p>"
-                "<p><b>字数：</b>%7 字</p>"
-                "<p><b>内容块：</b>%8 个</p>"
-                "<p><b>报告ID：</b>%9</p>"
+                "<div style='font-size: %1px; line-height: 1.8;'>"
+                "<p><b style='color: %2;'>报告属性</b></p>"
+                "<p><b>标题：</b>%3</p>"
+                "<p><b>状态：</b>%4</p>"
+                "<p><b>项目：</b>%5</p>"
+                "<p><b>作者：</b>%6</p>"
+                "<p><b>实验日期：</b>%7</p>"
+                "<p><b>更新时间：</b>%8</p>"
+                "<p><b>字数：</b>%9 字</p>"
+                "<p><b>内容块：</b>%10 个</p>"
+                "<p><b>标签：</b>%11</p>"
+                "<p><b>报告ID：</b>%12</p>"
                 "</div>"
-            ).arg(
-                report->title().isEmpty() ? tr("未命名") : report->title().toHtmlEscaped(),
-                statusStr,
-                projectName.toHtmlEscaped(),
-                report->author().isEmpty() ? tr("未设置") : report->author().toHtmlEscaped(),
-                report->experimentDate().isValid() ? report->experimentDate().toString("yyyy-MM-dd") : tr("未设置"),
-                report->updatedAt().isValid() ? report->updatedAt().toString("yyyy-MM-dd HH:mm") : tr("未知"),
-                QString::number(wordCount),
-                QString::number(report->blockCount()),
-                QString::number(report->id())
-            );
+            ).arg(AppTheme::FontSize::Small)
+             .arg(AppTheme::Color::Primary)
+             .arg(report->title().isEmpty() ? tr("未命名") : report->title().toHtmlEscaped())
+             .arg(statusStr)
+             .arg(projectName.toHtmlEscaped())
+             .arg(report->author().isEmpty() ? tr("未设置") : report->author().toHtmlEscaped())
+             .arg(report->experimentDate().isValid() ? report->experimentDate().toString("yyyy-MM-dd") : tr("未设置"))
+             .arg(report->updatedAt().isValid() ? report->updatedAt().toString("yyyy-MM-dd HH:mm") : tr("未知"))
+             .arg(QString::number(report->wordCount()))
+             .arg(QString::number(report->blockCount()))
+             .arg(tagsHtml)
+             .arg(QString::number(report->id()));
 
             m_propertyContentLabel->setText(html);
             return;
@@ -1136,21 +1389,21 @@ void MainWindow::updatePropertyPanel()
         if (project) {
             const int reportCount = ReportRepository::countByProject(projectId);
             const QString html = QString(
-                "<div style='font-size: 12px; line-height: 1.8;'>"
-                "<p><b style='color: #67C23A;'>项目属性</b></p>"
-                "<p><b>名称：</b>%1</p>"
-                "<p><b>描述：</b>%2</p>"
-                "<p><b>报告数：</b>%3 份</p>"
-                "<p><b>创建时间：</b>%4</p>"
-                "<p><b>项目ID：</b>%5</p>"
+                "<div style='font-size: %1px; line-height: 1.8;'>"
+                "<p><b style='color: %2;'>项目属性</b></p>"
+                "<p><b>名称：</b>%3</p>"
+                "<p><b>描述：</b>%4</p>"
+                "<p><b>报告数：</b>%5 份</p>"
+                "<p><b>创建时间：</b>%6</p>"
+                "<p><b>项目ID：</b>%7</p>"
                 "</div>"
-            ).arg(
-                project->name().toHtmlEscaped(),
-                project->description().isEmpty() ? tr("无描述") : project->description().toHtmlEscaped(),
-                QString::number(reportCount),
-                project->createdAt().isValid() ? project->createdAt().toString("yyyy-MM-dd HH:mm") : tr("未知"),
-                QString::number(project->id())
-            );
+            ).arg(AppTheme::FontSize::Small)
+             .arg(AppTheme::Color::Success)
+             .arg(project->name().toHtmlEscaped())
+             .arg(project->description().isEmpty() ? tr("无描述") : project->description().toHtmlEscaped())
+             .arg(QString::number(reportCount))
+             .arg(project->createdAt().isValid() ? project->createdAt().toString("yyyy-MM-dd HH:mm") : tr("未知"))
+             .arg(QString::number(project->id()));
 
             m_propertyContentLabel->setText(html);
             return;
@@ -1158,10 +1411,12 @@ void MainWindow::updatePropertyPanel()
     }
 
     // 都没有选中，显示提示
-    m_propertyContentLabel->setText(tr(
-        "<div style='color: #999; font-size: 12px; margin-top: 12px;'>"
+    m_propertyContentLabel->setText(QString(
+        "<div style='color: %1; font-size: %2px; margin-top: %3px;'>"
         "选择项目或报告后，<br>此处将显示其属性信息。"
-        "</div>"));
+        "</div>").arg(AppTheme::Color::TextSecondary)
+                  .arg(AppTheme::FontSize::Small)
+                  .arg(AppTheme::Spacing::Large));
 }
 
 // ===========================================================================

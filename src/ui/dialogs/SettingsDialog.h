@@ -8,24 +8,19 @@
  * - 数据设置（数据库路径查看）
  *
  * 使用 QSettings 持久化保存设置。
+ * UI 布局由 SettingsDialog.ui 可视化设计。
  */
 
 #ifndef SETTINGS_DIALOG_H
 #define SETTINGS_DIALOG_H
 
 #include <QDialog>
-#include <QSettings>
 #include <QString>
 
-// 前向声明
-class QCheckBox;
-class QSpinBox;
-class QComboBox;
-class QFontComboBox;
-class QLineEdit;
-class QLabel;
-class QTabWidget;
-class QPushButton;
+// UI 类前向声明（由 .ui 文件自动生成）
+namespace Ui {
+class SettingsDialog;
+}
 
 /**
  * @brief 设置对话框类
@@ -78,44 +73,41 @@ public:
 
 private slots:
     /// 点击确定按钮
-    void onAccept();
+    void on_okButton_clicked();
 
     /// 点击应用按钮
-    void onApply();
+    void on_applyButton_clicked();
+
+    /// 点击取消按钮
+    void on_cancelButton_clicked();
 
     /// 点击恢复默认按钮
-    void onResetDefaults();
+    void on_resetButton_clicked();
+
+    /// 点击主色调选择按钮
+    void on_primaryColorBtn_clicked();
+
+    /// 点击成功色选择按钮
+    void on_successColorBtn_clicked();
+
+    /// 点击警告色选择按钮
+    void on_warningColorBtn_clicked();
+
+    /// 点击危险色选择按钮
+    void on_dangerColorBtn_clicked();
+
+    /// 点击导出路径浏览按钮
+    void on_exportPathBrowseBtn_clicked();
 
 private:
     // ========================================================================
-    // UI 组件
+    // 成员变量
     // ========================================================================
-    QTabWidget* m_tabWidget;          ///< 选项卡控件
-
-    // 常规设置
-    QCheckBox* m_autoSaveCheck;       ///< 自动保存复选框
-    QSpinBox* m_autoSaveIntervalSpin; ///< 自动保存间隔
-    QComboBox* m_exportFormatCombo;   ///< 默认导出格式
-
-    // 编辑器设置
-    QFontComboBox* m_fontCombo;       ///< 默认字体
-    QSpinBox* m_fontSizeSpin;         ///< 默认字号
-
-    // 数据设置
-    QLineEdit* m_dbPathEdit;          ///< 数据库路径（只读）
-
-    // 按钮
-    QPushButton* m_okButton;
-    QPushButton* m_applyButton;
-    QPushButton* m_cancelButton;
-    QPushButton* m_resetButton;
+    Ui::SettingsDialog* ui;  ///< UI 界面对象（由 .ui 文件生成）
 
     // ========================================================================
     // 内部方法
     // ========================================================================
-
-    /// 初始化 UI
-    void setupUi();
 
     /// 加载当前设置到控件
     void loadSettings();

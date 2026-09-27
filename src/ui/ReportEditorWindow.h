@@ -14,8 +14,11 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QLabel>
+#include <QToolButton>
+#include <QMenu>
 
 #include "core/models/Report.h"
+#include "core/models/Tag.h"
 
 // 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
 namespace Ui {
@@ -24,6 +27,7 @@ class ReportEditorWindow;
 
 // 前向声明
 class ReportEditor;
+class PluginManager;
 
 /**
  * @brief 报告编辑窗口
@@ -50,6 +54,9 @@ public:
     /// 保存报告（公共方法，供主窗口调用）
     bool saveReport();
 
+    /// 设置插件管理器
+    void setPluginManager(PluginManager* manager) { m_pluginManager = manager; }
+
 signals:
     /// 报告已保存
     void reportSaved(qint64 reportId);
@@ -71,14 +78,12 @@ private slots:
     void onPrintPreview();
     void onPageSetup();
     void onVersionHistory();
-    void onEditTags();
-    void onManageTags();
-    void onManageAttachments();
 
     // 编辑操作
     void onUndo();
     void onRedo();
     void onFind();
+    void onManageAttachments();
 
     // 格式操作
     void onBold();
@@ -132,6 +137,7 @@ private:
     ReportEditor* m_editor;              ///< 报告编辑器组件
     Report::Ptr m_report;                ///< 当前报告
     class PrintManager* m_printManager;  ///< 打印管理器
+    PluginManager* m_pluginManager;      ///< 插件管理器
 
     // 状态栏控件（动态创建）
     QLabel* m_statusSaveLabel;           ///< 保存状态
@@ -145,6 +151,8 @@ private:
     QAction* m_actionBold;
     QAction* m_actionItalic;
     QAction* m_actionUnderline;
+    QAction* m_actionVersionHistory;     ///< 版本历史
+    QAction* m_actionManageAttachments;  ///< 附件管理
 
     bool m_isNewReport;              ///< 是否为新建报告
     double m_zoomFactor;             ///< 缩放因子

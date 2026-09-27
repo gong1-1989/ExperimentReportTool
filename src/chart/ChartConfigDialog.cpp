@@ -6,6 +6,7 @@
 #include "ChartConfigDialog.h"
 #include "ui_ChartConfigDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "core/utils/Logger.h"
+#include "core/utils/AppDimensions.h"
 
 #include <QMessageBox>
 #include <QTabWidget>
@@ -132,7 +133,8 @@ ChartConfigDialog::ChartConfigDialog(const DataTable::List& tables,
     loadConfig();
 
     setWindowTitle(tr("图表配置"));
-    resize(600, 550);
+    resize(AppDimensions::Window::DialogMediumWidth,
+           AppDimensions::Window::DialogMediumHeight);
 }
 
 // ===========================================================================

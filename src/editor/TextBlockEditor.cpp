@@ -5,6 +5,8 @@
 
 #include "TextBlockEditor.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
 
 #include <QPainter>
 #include <QTextDocument>
@@ -82,7 +84,7 @@ void AutoResizeTextEdit::paintEvent(QPaintEvent* event)
     // 如果文档为空，绘制占位符
     if (document()->isEmpty() && !m_placeholder.isEmpty()) {
         QPainter painter(viewport());
-        painter.setPen(QColor("#aaa"));
+        painter.setPen(QColor(AppTheme::Color::TextPlaceholder));
         QFont f = font();
         f.setItalic(true);
         painter.setFont(f);
@@ -124,7 +126,7 @@ void AutoResizeTextEdit::resizeEvent(QResizeEvent* event)
     }
 
     // 延迟更新高度，确保布局完成
-    QTimer::singleShot(0, this, [this]() {
+    QTimer::singleShot(AppDimensions::Delay::Immediate, this, [this]() {
         updateGeometry();
         const int newHeight = qMax(m_minHeight, qCeil(document()->size().height()) + 8);
         emit heightChanged(newHeight);
@@ -150,7 +152,7 @@ void AutoResizeTextEdit::onDocumentSizeChanged()
  */
 void AutoResizeTextEdit::updateHeight()
 {
-    QTimer::singleShot(0, this, [this]() {
+    QTimer::singleShot(AppDimensions::Delay::Immediate, this, [this]() {
         updateGeometry();
         const int newHeight = qMax(m_minHeight, qCeil(document()->size().height()) + 8);
         emit heightChanged(newHeight);
@@ -349,7 +351,7 @@ void TextBlockEditor::applyFormat(const QString& format)
             charFormat.setBackground(Qt::transparent);
         } else {
             charFormat.setFontFamilies(QStringList{"Consolas"});
-            charFormat.setBackground(QColor("#f0f0f0"));
+            charFormat.setBackground(QColor(AppTheme::Color::BgGray));
         }
     }
 
@@ -365,47 +367,56 @@ void TextBlockEditor::updateStyleForType()
 {
     QFont font = m_textEdit->font();
     QString styleSheet;
-    int minHeight = 32;
+    int minHeight = AppDimensions::Widget::BlockMinHeight;
 
     switch (m_textType) {
     case BlockType::Heading1:
         font.setPointSize(22);
         font.setBold(true);
         minHeight = 44;
-        styleSheet = "QTextEdit { color: #1a1a1a; padding: 8px 0; }";
+        styleSheet = QString("QTextEdit { color: %1; padding: %2px 0; }")
+                         .arg(AppTheme::Color::TextPrimary).arg(AppTheme::Spacing::Normal);
         break;
     case BlockType::Heading2:
         font.setPointSize(18);
         font.setBold(true);
         minHeight = 38;
-        styleSheet = "QTextEdit { color: #2a2a2a; padding: 6px 0; }";
+        styleSheet = QString("QTextEdit { color: %1; padding: %2px 0; }")
+                         .arg(AppTheme::Color::TextPrimary).arg(AppTheme::Spacing::Medium);
         break;
     case BlockType::Heading3:
         font.setPointSize(15);
         font.setBold(true);
         minHeight = 34;
-        styleSheet = "QTextEdit { color: #333; padding: 4px 0; }";
+        styleSheet = QString("QTextEdit { color: %1; padding: %2px 0; }")
+                         .arg(AppTheme::Color::Gray333).arg(AppTheme::Spacing::Small);
         break;
     case BlockType::Paragraph:
-        font.setPointSize(14);
+        font.setPointSize(AppTheme::FontSize::Normal);
         font.setBold(false);
-        styleSheet = "QTextEdit { color: #333; line-height: 1.6; padding: 2px 0; }";
+        styleSheet = QString("QTextEdit { color: %1; line-height: 1.6; padding: %2px 0; }")
+                         .arg(AppTheme::Color::Gray333).arg(AppTheme::Spacing::Tiny);
         break;
     case BlockType::BulletList:
     case BlockType::NumberedList:
-        font.setPointSize(14);
+        font.setPointSize(AppTheme::FontSize::Normal);
         font.setBold(false);
-        styleSheet = "QTextEdit { color: #333; padding: 2px 0; }";
+        styleSheet = QString("QTextEdit { color: %1; padding: %2px 0; }")
+                         .arg(AppTheme::Color::Gray333).arg(AppTheme::Spacing::Tiny);
         break;
     case BlockType::Quote:
-        font.setPointSize(14);
+        font.setPointSize(AppTheme::FontSize::Normal);
         font.setItalic(true);
-        styleSheet = "QTextEdit { color: #666; border-left: 3px solid #ddd; "
-                     "padding-left: 12px; margin-left: 8px; }";
+        styleSheet = QString("QTextEdit { color: %1; border-left: 3px solid %2; "
+                             "padding-left: %3px; margin-left: %4px; }")
+                         .arg(AppTheme::Color::Gray666)
+                         .arg(AppTheme::Color::GrayDDD)
+                         .arg(AppTheme::Spacing::Large)
+                         .arg(AppTheme::Spacing::Normal);
         break;
     default:
-        font.setPointSize(14);
-        styleSheet = "QTextEdit { color: #333; }";
+        font.setPointSize(AppTheme::FontSize::Normal);
+        styleSheet = QString("QTextEdit { color: %1; }").arg(AppTheme::Color::Gray333);
         break;
     }
 

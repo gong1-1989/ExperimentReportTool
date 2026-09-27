@@ -15,6 +15,7 @@
 #include <QPageSize>
 #include <QPageLayout>
 #include <QTextDocument>  // 用于渲染打印文档
+#include <QJsonArray>
 
 #include "core/models/Report.h"
 #include "export/ExportManager.h"
@@ -123,16 +124,42 @@ public:
      */
     void setConfig(const PrintConfig& config) { m_config = config; }
 
+    /**
+     * @brief 将报告渲染到 QTextDocument（公开，供 PDF 导出复用）
+     * @param report 报告
+     * @param config 打印配置
+     * @return 渲染好的 QTextDocument（调用方负责释放）
+     */
+    QTextDocument* renderDocument(const Report::Ptr& report, const PrintConfig& config);
+
+    /**
+     * @brief 导出为 PDF（复用打印预览的渲染逻辑）
+     * @param report 报告
+     * @param filePath PDF 文件路径
+     * @param parent 父窗口
+     * @return 成功返回 true
+     */
+    bool exportToPdf(const Report::Ptr& report, const QString& filePath, QWidget* parent = nullptr);
+
+    /**
+     * @brief 将内容块 JSON 数组渲染为 HTML 片段（公共静态，供版本历史等复用）
+     * @param blocks 内容块 JSON 数组
+     * @return HTML 片段（不含 <html><head><body> 标签）
+     */
+    static QString renderBlocksToHtml(const QJsonArray& blocks);
+
+    /**
+     * @brief 从完整 HTML 文档中提取 <body> 内容（公共静态）
+     * @param html 完整的 HTML 文档
+     * @return body 标签内的 HTML 片段
+     */
+    static QString extractHtmlBody(const QString& html);
+
 private:
     /**
      * @brief 配置 QPrinter
      */
     void setupPrinter(QPrinter& printer, const PrintConfig& config);
-
-    /**
-     * @brief 将报告渲染到 QTextDocument
-     */
-    QTextDocument* renderDocument(const Report::Ptr& report, const PrintConfig& config);
 
     /**
      * @brief 打印页眉页脚

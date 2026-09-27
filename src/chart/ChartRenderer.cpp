@@ -5,6 +5,7 @@
 
 #include "ChartRenderer.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppDimensions.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -15,6 +16,8 @@
 #include <QLinearGradient>
 #include <QTimer>
 #include <QEventLoop>
+#include <QGraphicsScene>
+#include <QElapsedTimer>
 
 // 预定义颜色方案
 static const QList<QColor> CHART_COLORS = {
@@ -68,7 +71,8 @@ bool ChartRenderer::render()
     // 创建新图表
     m_chart = new QChart();
     m_chart->setTitle(m_config.title);
-    m_chart->setAnimationOptions(QChart::SeriesAnimations);
+    // 关闭动画：离屏渲染时动画会导致数据系列尚未绘制完成
+    m_chart->setAnimationOptions(QChart::NoAnimation);
 
     bool success = false;
     switch (m_config.type) {
@@ -445,25 +449,59 @@ QPixmap ChartRenderer::toPixmap(int width, int height)
     const int w = width > 0 ? width : m_config.width;
     const int h = height > 0 ? height : m_config.height;
 
-    // 设置 chartView 大小
-    m_chartView->setFixedSize(w, h);
+    // ========================================================================
+    // 使用 QChartView::grab() 离屏渲染
+    // QWidget::grab() 不需要 widget 可见，会渲染到离屏表面
+    //
+    // 关键：QChart 的坐标轴、系列等子元素需要多次布局才能正确定位。
+    // 经验证，需要等待约 RenderWaitMs 让 QChart 完成所有异步布局和渲染，
+    // 否则只会显示坐标轴而不显示折线/柱状图。
+    // ========================================================================
+
+    // 设置图表视图和图表的大小
     m_chartView->resize(w, h);
+    m_chart->setGeometry(QRectF(0, 0, w, h));
 
-    // 移到屏幕外避免闪烁
-    m_chartView->move(-10000, -10000);
-    m_chartView->show();
+    // 强制初始布局更新
+    m_chartView->ensurePolished();
+    m_chart->update();
+    m_chartView->update();
 
-    // 等待图表绘制（500ms，确保折线完全渲染）
-    QEventLoop loop;
-    QTimer::singleShot(500, &loop, &QEventLoop::quit);
-    loop.exec();
+    // 等待 RenderWaitMs，期间持续处理事件让 QChart 完成布局
+    // 这是关键：QChart 的系列渲染是异步的，必须给足够时间
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < AppDimensions::Chart::RenderWaitMs) {
+        QApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+        QApplication::sendPostedEvents(nullptr, QEvent::Paint);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+        m_chart->update();
+        m_chartView->update();
+    }
 
-    // 使用 grab() 捕获整个 widget 的内容
-    QPixmap pixmap = m_chartView->grab();
+    // 最后再强制刷新一次
+    m_chartView->repaint();
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
 
-    // 隐藏并处理任何待处理的事件
-    m_chartView->hide();
-    QApplication::processEvents();
+    // 使用 grab 渲染整个图表视图
+    QPixmap pixmap = m_chartView->grab(QRect(0, 0, w, h));
+
+    // 安全检查：如果 pixmap 为空或尺寸不对，用 QPainter 手动渲染作为后备
+    if (pixmap.isNull() || pixmap.width() != w || pixmap.height() != h) {
+        LOG_WARNING("ChartRenderer: grab() 失败，使用 QGraphicsScene 后备渲染");
+
+        // 后备方案：创建独立场景渲染
+        // 注意：不能直接把 m_chart 加入新场景，因为它已属于 chartView 的场景
+        // 所以这里只填充背景，确保不返回空
+        pixmap = QPixmap(w, h);
+        pixmap.fill(Qt::white);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.drawText(QRect(0, 0, w, h), Qt::AlignCenter,
+                         QString("图表渲染失败\n%1").arg(m_config.title));
+        painter.end();
+    }
 
     return pixmap;
 }

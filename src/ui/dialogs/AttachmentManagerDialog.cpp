@@ -7,12 +7,15 @@
 #include "ui_AttachmentManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/AttachmentRepository.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppDimensions.h"
+#include "core/utils/AppTheme.h"
 
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QApplication>
 #include <QDateTime>
 #include <QMenu>
+#include <QLabel>
 
 // ===========================================================================
 // 构造与析构
@@ -26,7 +29,7 @@ AttachmentManagerDialog::AttachmentManagerDialog(qint64 reportId, QWidget* paren
     ui->setupUi(this);
     loadAttachments();
     setWindowTitle(tr("附件管理"));
-    resize(700, 500);
+    resize(AppDimensions::Window::DialogSmallWidth, AppDimensions::Window::DialogSmallHeight);
 }
 
 AttachmentManagerDialog::~AttachmentManagerDialog()
@@ -53,7 +56,7 @@ void AttachmentManagerDialog::updateAttachmentList()
         QListWidgetItem* item = new QListWidgetItem(
             tr("暂无附件\n点击「上传附件」添加文件"), ui->m_attachmentList);
         item->setTextAlignment(Qt::AlignCenter);
-        item->setForeground(QColor("#999"));
+        item->setForeground(QColor(AppTheme::Color::TextSecondary));
         item->setFlags(Qt::NoItemFlags);
         item->setSizeHint(QSize(0, 80));
         ui->m_infoLabel->setText(tr("暂无附件"));
@@ -66,23 +69,35 @@ void AttachmentManagerDialog::updateAttachmentList()
 
         QListWidgetItem* item = new QListWidgetItem(ui->m_attachmentList);
 
+        // 使用简单的 HTML 表格布局，不使用 flexbox（QLabel 富文本不支持）
         const QString displayText = QString(
-            "<div style='display: flex; align-items: center;'>"
-            "<span style='font-size: 24px; margin-right: 12px;'>%1</span>"
-            "<div style='flex: 1;'>"
-            "<div style='font-weight: bold; font-size: 14px; color: #1a1a1a;'>%2</div>"
-            "<div style='font-size: 12px; color: #888; margin-top: 2px;'>"
-            "%3 | %4 | 上传于 %5"
-            "</div>"
-            "</div>"
-            "</div>"
-        ).arg(att->typeIcon())
+            "<table width='100%' cellpadding='4' cellspacing='0' border='0'>"
+            "<tr>"
+            "<td width='40' align='center'><span style='font-size: %1px;'>%2</span></td>"
+            "<td>"
+            "<span style='font-weight: bold; font-size: %3px; color: %4;'>%5</span><br>"
+            "<span style='font-size: %6px; color: %7;'>%8 | %9 | 上传于 %10</span>"
+            "</td>"
+            "</tr>"
+            "</table>"
+        ).arg(AppTheme::FontSize::Huge)
+         .arg(att->typeIcon())
+         .arg(AppTheme::FontSize::Normal)
+         .arg(AppTheme::Color::TextPrimary)
          .arg(att->fileName().toHtmlEscaped())
+         .arg(AppTheme::FontSize::Small)
+         .arg(AppTheme::Color::TextSecondary)
          .arg(att->formattedSize())
          .arg(att->mimeType())
          .arg(att->uploadedAt().toString("yyyy-MM-dd hh:mm"));
 
-        item->setText(displayText);
+        // 使用 QLabel 作为 item widget，确保 HTML 富文本正确渲染
+        QLabel* label = new QLabel(displayText);
+        label->setTextFormat(Qt::RichText);
+        label->setWordWrap(true);
+        label->setStyleSheet("padding: 4px 8px; background: transparent;");
+        ui->m_attachmentList->setItemWidget(item, label);
+
         item->setData(Qt::UserRole, att->id());
         item->setSizeHint(QSize(0, 60));
     }
@@ -133,7 +148,7 @@ void AttachmentManagerDialog::showStatusMessage(const QString& message)
 // 上传
 // ===========================================================================
 
-void AttachmentManagerDialog::onUpload()
+void AttachmentManagerDialog::on_m_uploadBtn_clicked()
 {
     const QStringList filePaths = QFileDialog::getOpenFileNames(
         this, tr("选择要上传的文件"), QString(),
@@ -176,7 +191,7 @@ void AttachmentManagerDialog::onUpload()
 // 下载
 // ===========================================================================
 
-void AttachmentManagerDialog::onDownload()
+void AttachmentManagerDialog::on_m_downloadBtn_clicked()
 {
     Attachment::Ptr att = currentAttachment();
     if (!att) return;
@@ -199,7 +214,7 @@ void AttachmentManagerDialog::onDownload()
 // 打开
 // ===========================================================================
 
-void AttachmentManagerDialog::onOpen()
+void AttachmentManagerDialog::on_m_openBtn_clicked()
 {
     Attachment::Ptr att = currentAttachment();
     if (!att) return;
@@ -214,7 +229,7 @@ void AttachmentManagerDialog::onOpen()
 // 删除
 // ===========================================================================
 
-void AttachmentManagerDialog::onDelete()
+void AttachmentManagerDialog::on_m_deleteBtn_clicked()
 {
     Attachment::Ptr att = currentAttachment();
     if (!att) return;
@@ -239,23 +254,28 @@ void AttachmentManagerDialog::onDelete()
 // 选择/双击
 // ===========================================================================
 
-void AttachmentManagerDialog::onItemSelected(QListWidgetItem* item)
+void AttachmentManagerDialog::on_m_attachmentList_itemClicked(QListWidgetItem* item)
 {
     Q_UNUSED(item);
     updateButtons();
 }
 
-void AttachmentManagerDialog::onItemDoubleClicked(QListWidgetItem* item)
+void AttachmentManagerDialog::on_m_attachmentList_itemDoubleClicked(QListWidgetItem* item)
 {
     Q_UNUSED(item);
-    onOpen();
+    on_m_openBtn_clicked();
 }
 
 // ===========================================================================
 // 刷新
 // ===========================================================================
 
-void AttachmentManagerDialog::onRefresh()
+void AttachmentManagerDialog::on_m_refreshBtn_clicked()
 {
     loadAttachments();
+}
+
+void AttachmentManagerDialog::on_m_closeBtn_clicked()
+{
+    accept();
 }

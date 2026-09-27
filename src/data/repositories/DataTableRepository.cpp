@@ -134,6 +134,25 @@ DataTable::List DataTableRepository::findByReport(qint64 reportId)
     return result;
 }
 
+DataTable::List DataTableRepository::findGlobal()
+{
+    DataTable::List result;
+
+    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlQuery query(db);
+
+    // 全局数据表的 report_id 为 0
+    query.prepare("SELECT * FROM data_tables WHERE report_id = 0 ORDER BY created_at;");
+
+    if (query.exec()) {
+        while (query.next()) {
+            result.append(mapToDataTable(query));
+        }
+    }
+
+    return result;
+}
+
 // ===========================================================================
 // 写入操作
 // ===========================================================================

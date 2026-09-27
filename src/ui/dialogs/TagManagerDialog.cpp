@@ -7,11 +7,14 @@
 #include "ui_TagManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "data/repositories/TagRepository.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppDimensions.h"
+#include "core/utils/AppTheme.h"
 
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QColor>
 #include <QBrush>
+#include <QLabel>
 
 // ===========================================================================
 // 构造与析构
@@ -23,9 +26,10 @@ TagManagerDialog::TagManagerDialog(QWidget* parent)
     , m_editing(false)
 {
     ui->setupUi(this);
+    // 槽函数命名符合 on_<objectName>_<signalName> 约定，uic 自动连接，无需手动 connect
     loadTags();
     setWindowTitle(tr("标签管理"));
-    resize(700, 500);
+    resize(AppDimensions::Window::DialogSmallWidth, AppDimensions::Window::DialogSmallHeight);
 }
 
 TagManagerDialog::~TagManagerDialog()
@@ -60,11 +64,15 @@ void TagManagerDialog::updateTagList()
             "<span style='display: inline-block; width: 14px; height: 14px; "
             "border-radius: 3px; background: %1; margin-right: 8px;'></span>"
             "<span style='font-weight: bold;'>%2</span>"
-            "<span style='color: #999; font-size: 11px; margin-left: auto;'>%3 篇</span>"
             "</div>"
-        ).arg(color.name()).arg(tag->name().toHtmlEscaped()).arg(tag->usageCount());
+        ).arg(color.name()).arg(tag->name().toHtmlEscaped());
 
-        item->setText(displayText);
+        // 使用 QLabel 作为 item widget 以支持 HTML 富文本渲染
+        QLabel* label = new QLabel(displayText);
+        label->setTextFormat(Qt::RichText);
+        label->setStyleSheet("padding: 6px 10px; background: transparent;");
+        ui->m_tagList->setItemWidget(item, label);
+
         item->setData(Qt::UserRole, tag->id());
         item->setSizeHint(QSize(0, 40));
     }
@@ -79,7 +87,7 @@ void TagManagerDialog::updateTagList()
 // 标签选择
 // ===========================================================================
 
-void TagManagerDialog::onTagSelected(QListWidgetItem* item)
+void TagManagerDialog::on_m_tagList_itemClicked(QListWidgetItem* item)
 {
     if (!item || !item->data(Qt::UserRole).isValid()) {
         m_currentTag.reset();
@@ -99,7 +107,6 @@ void TagManagerDialog::onTagSelected(QListWidgetItem* item)
             // 显示详情（只读）
             ui->m_nameEdit->setText(tag->name());
             ui->m_descEdit->setPlainText(tag->description());
-            ui->m_usageLabel->setText(tr("使用次数: %1").arg(tag->usageCount()));
 
             // 设置颜色
             const QString color = tag->color().isEmpty()
@@ -117,7 +124,7 @@ void TagManagerDialog::onTagSelected(QListWidgetItem* item)
 // 新建/编辑/删除
 // ===========================================================================
 
-void TagManagerDialog::onNewTag()
+void TagManagerDialog::on_m_newBtn_clicked()
 {
     m_currentTag = Tag::create();
     m_currentTag->setColor(Tag::presetColors().first());
@@ -126,7 +133,7 @@ void TagManagerDialog::onNewTag()
     setEditMode(true);
 }
 
-void TagManagerDialog::onEditTag()
+void TagManagerDialog::on_m_editBtn_clicked()
 {
     if (!m_currentTag) return;
     setEditMode(true);
@@ -134,7 +141,7 @@ void TagManagerDialog::onEditTag()
     ui->m_nameEdit->selectAll();
 }
 
-void TagManagerDialog::onDeleteTag()
+void TagManagerDialog::on_m_deleteBtn_clicked()
 {
     if (!m_currentTag) return;
 
@@ -165,7 +172,7 @@ void TagManagerDialog::onDeleteTag()
 // 保存/取消
 // ===========================================================================
 
-void TagManagerDialog::onSaveTag()
+void TagManagerDialog::on_m_saveBtn_clicked()
 {
     const QString name = ui->m_nameEdit->text().trimmed();
     if (name.isEmpty()) {
@@ -198,7 +205,7 @@ void TagManagerDialog::onSaveTag()
             QListWidgetItem* item = ui->m_tagList->item(i);
             if (item->data(Qt::UserRole).toLongLong() == m_currentTag->id()) {
                 ui->m_tagList->setCurrentRow(i);
-                onTagSelected(item);
+                on_m_tagList_itemClicked(item);
                 break;
             }
         }
@@ -207,11 +214,11 @@ void TagManagerDialog::onSaveTag()
     }
 }
 
-void TagManagerDialog::onCancelEdit()
+void TagManagerDialog::on_m_cancelBtn_clicked()
 {
     if (m_currentTag && !m_currentTag->isNew()) {
         // 恢复原始数据
-        onTagSelected(ui->m_tagList->currentItem());
+        on_m_tagList_itemClicked(ui->m_tagList->currentItem());
     } else {
         clearEditForm();
         m_currentTag.reset();
@@ -223,7 +230,7 @@ void TagManagerDialog::onCancelEdit()
 // 搜索
 // ===========================================================================
 
-void TagManagerDialog::onSearchTextChanged(const QString& text)
+void TagManagerDialog::on_m_searchEdit_textChanged(const QString& text)
 {
     loadTags(text);
 }
@@ -237,10 +244,9 @@ void TagManagerDialog::clearEditForm()
     ui->m_nameEdit->clear();
     ui->m_descEdit->clear();
     ui->m_colorCombo->setCurrentIndex(0);
-    ui->m_usageLabel->setText(tr("使用次数: -"));
 }
 
-void TagManagerDialog::onColorSelected(int index)
+void TagManagerDialog::on_m_colorCombo_currentIndexChanged(int index)
 {
     // 颜色下拉框选择变化时的处理
     // 如果正在编辑标签，可以在此更新颜色预览

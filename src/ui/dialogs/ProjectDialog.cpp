@@ -47,11 +47,7 @@ ProjectDialog::ProjectDialog(QWidget* parent)
     ui->m_buttonBox->button(QDialogButtonBox::Ok)->setText(tr("确定"));
     ui->m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
 
-    // 连接确定按钮的信号到自定义槽函数（用于输入验证）
-    // 注意：.ui 文件中已经连接了 accepted/rejected 到 accept/reject，
-    // 但我们需要先验证输入，所以这里重新连接到 onAccept
-    disconnect(ui->m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(ui->m_buttonBox, &QDialogButtonBox::accepted, this, &ProjectDialog::onAccept);
+    // 槽函数通过 uic 自动连接（on_m_buttonBox_accepted）
 
     // 设置初始焦点在名称输入框，方便用户直接输入
     ui->m_nameEdit->setFocus();
@@ -151,7 +147,7 @@ void ProjectDialog::setProjectData(const Project::Ptr& project)
  * 如果验证通过则调用 accept() 关闭对话框并返回 Accepted 结果码，
  * 如果验证失败则保持对话框打开，让用户修改输入。
  */
-void ProjectDialog::onAccept()
+void ProjectDialog::on_m_buttonBox_accepted()
 {
     if (validateInput()) {
         accept();  // 验证通过，关闭对话框

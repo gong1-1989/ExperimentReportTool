@@ -2,8 +2,8 @@
  * @file SearchService.h
  * @brief 搜索服务头文件
  *
- * 封装报告全文检索功能，提供统一的搜索接口。
- * 支持关键词搜索、项目范围筛选、结果高亮、搜索历史。
+ * 封装报告元数据检索功能，搜索范围：标题、作者、标签、状态（不搜索报告内容）。
+ * 支持关键词搜索、项目范围筛选、搜索历史。
  */
 
 #ifndef SEARCH_SERVICE_H
@@ -22,8 +22,8 @@
  */
 struct SearchResultItem {
     Report::Ptr report;       ///< 匹配的报告
-    QString highlight;         ///< 高亮摘要
-    double score;              ///< 匹配分数
+    QString highlight;         ///< 匹配字段描述（如"匹配字段: 标题、标签"）
+    double score;              ///< 匹配分数（保留字段，当前未使用）
     QString projectName;       ///< 所属项目名称
     QDateTime matchedAt;       ///< 匹配时间
 
@@ -37,18 +37,12 @@ struct SearchQuery {
     QString keyword;           ///< 搜索关键词
     qint64 projectId;          ///< 限定项目（-1 表示所有）
     int maxResults;            ///< 最大结果数
-    bool searchTitle;          ///< 是否搜索标题
-    bool searchContent;        ///< 是否搜索正文
-    bool searchTags;           ///< 是否搜索标签
-    QDate dateFrom;            ///< 日期范围起始
-    QDate dateTo;              ///< 日期范围结束
+    QDate dateFrom;            ///< 日期范围起始（保留字段）
+    QDate dateTo;              ///< 日期范围结束（保留字段）
 
     SearchQuery()
         : projectId(-1)
         , maxResults(50)
-        , searchTitle(true)
-        , searchContent(true)
-        , searchTags(true)
     {}
 };
 
@@ -72,9 +66,9 @@ public:
     ~SearchService() override;
 
     /**
-     * @brief 执行搜索
+     * @brief 执行搜索（搜索范围：标题、作者、标签、状态）
      * @param query 搜索条件
-     * @return 搜索结果列表（按相关度排序）
+     * @return 搜索结果列表（按更新时间倒序）
      */
     QList<SearchResultItem> search(const SearchQuery& query);
 
@@ -107,14 +101,12 @@ public:
     void clearHistory();
 
     /**
-     * @brief 检查 FTS5 全文索引是否可用
-     * @return 可用返回 true
+     * @brief 检查全文索引是否可用（已禁用，始终返回 false）
      */
     bool isFtsAvailable() const;
 
     /**
-     * @brief 重建全文索引（当 FTS 表损坏或数据不一致时使用）
-     * @return 成功返回 true
+     * @brief 重建全文索引（已禁用，仅保留接口兼容）
      */
     bool rebuildIndex();
 
@@ -127,28 +119,22 @@ signals:
 
 private:
     /**
-     * @brief 使用 FTS5 全文索引搜索
+     * @brief 元数据搜索（标题、作者、标签、状态）
      */
-    QList<SearchResultItem> ftsSearch(const SearchQuery& query);
+    QList<SearchResultItem> metadataSearch(const SearchQuery& query);
 
     /**
-     * @brief 使用 LIKE 模糊搜索（降级方案）
+     * @brief 生成匹配字段描述
+     * @param report 报告
+     * @param keyword 关键词
+     * @return 匹配字段描述，如"匹配字段: 标题、标签"
      */
-    QList<SearchResultItem> likeSearch(const SearchQuery& query);
+    QString buildMatchDescription(const Report::Ptr& report, const QString& keyword);
 
     /**
      * @brief 为搜索结果补充项目名称等信息
      */
     void enrichResults(QList<SearchResultItem>& results);
-
-    /**
-     * @brief 生成搜索摘要（高亮匹配部分）
-     * @param content 报告内容
-     * @param keyword 关键词
-     * @param contextLength 上下文长度
-     * @return 高亮摘要
-     */
-    QString generateSnippet(const QString& content, const QString& keyword, int contextLength = 80);
 
     // -----------------------------------------------------------------------
     // 成员变量

@@ -16,9 +16,13 @@
 #include <QDebug>
 
 #include "ui/MainWindow.h"
+#include "ui/dialogs/LoginDialog.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
 #include "data/database/DatabaseManager.h"
+#include "core/plugin/CoreServiceImpl.h"
+#include "core/plugin/PluginManager.h"
+#include "editor/OtherBlockEditors.h"  // BlockEditorFactory
 
 /**
  * @brief 初始化应用程序的全局设置
@@ -33,19 +37,16 @@ static void initializeApplication()
     QCoreApplication::setApplicationName(AppConstants::APP_NAME);
     QCoreApplication::setApplicationVersion(AppConstants::APP_VERSION);
 
-    // 确保数据存储目录存在
-    // QStandardPaths::AppDataLocation 在各平台的路径：
-    //   Windows: C:/Users/<user>/AppData/Local/<org>/<app>
-    //   macOS:   ~/Library/Application Support/<org>/<app>
-    //   Linux:   ~/.local/share/<org>/<app>
-    const QString dataDir = QStandardPaths::writableLocation(
-        QStandardPaths::AppDataLocation);
+    // 确保数据存储目录存在（程序目录下的 data 子目录）
+    const QString dataDir = QCoreApplication::applicationDirPath() + "/data";
     QDir().mkpath(dataDir);
 
-    // 初始化日志系统
-    Logger::instance().initialize(dataDir + "/logs");
+    // 初始化日志系统（程序目录下的 logs 子目录）
+    const QString logDir = QCoreApplication::applicationDirPath() + "/logs";
+    Logger::instance().initialize(logDir);
     Logger::instance().info(QString("应用程序启动，版本 %1").arg(AppConstants::APP_VERSION));
     Logger::instance().info(QString("数据目录: %1").arg(dataDir));
+    Logger::instance().info(QString("日志目录: %1").arg(logDir));
 }
 
 /**
@@ -54,9 +55,9 @@ static void initializeApplication()
  */
 static bool initializeDatabase()
 {
-    // 获取数据库文件路径
-    const QString dbPath = QStandardPaths::writableLocation(
-        QStandardPaths::AppDataLocation) + "/experiment_reports.db";
+    // 获取数据库文件路径（程序目录下的 data 子目录）
+    const QString dbPath = QCoreApplication::applicationDirPath()
+        + "/data/experiment_reports.db";
 
     // 初始化数据库管理器（单例）
     DatabaseManager& dbMgr = DatabaseManager::instance();
@@ -91,6 +92,16 @@ int main(int argc, char *argv[])
     // 可选值："Fusion", "Windows", "WindowsVista", "Macintosh" 等
     app.setStyle(QStyleFactory::create("Fusion"));
 
+    // 加载全局样式表（从资源文件读取）
+    QFile qssFile(":/ui/resources/styles/app.qss");
+    if (qssFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        app.setStyleSheet(qssFile.readAll());
+        qssFile.close();
+        Logger::instance().info("全局样式表已加载");
+    } else {
+        Logger::instance().warning("全局样式表加载失败");
+    }
+
     // 初始化全局设置
     initializeApplication();
 
@@ -100,8 +111,49 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // -----------------------------------------------------------------------
+    // 初始化插件框架
+    // -----------------------------------------------------------------------
+    const QString dataDir = QCoreApplication::applicationDirPath() + "/data";
+
+    // 初始化核心服务
+    CoreServiceImpl coreService;
+    coreService.initialize(dataDir);
+
+    // 创建插件管理器
+    PluginManager pluginManager;
+    pluginManager.setCoreService(&coreService);
+
+    // 添加插件搜索目录（可执行文件同级的 plugins 目录 + 数据目录下的 plugins）
+    pluginManager.addPluginDirectory(QCoreApplication::applicationDirPath() + "/plugins");
+    pluginManager.addPluginDirectory(coreService.pluginDirectory());
+
+    // 动态加载所有插件（从 plugins/ 目录扫描 .dll/.so/.dylib）
+    const int pluginCount = pluginManager.loadAllPlugins();
+
+    Logger::instance().info(QString("插件框架初始化完成，共加载 %1 个插件")
+        .arg(pluginCount));
+
+    // 设置块编辑器工厂的插件管理器，使编辑器能通过插件创建块编辑器
+    BlockEditorFactory::setPluginManager(&pluginManager);
+
+    // -----------------------------------------------------------------------
+    // 用户登录验证
+    // -----------------------------------------------------------------------
+    LoginDialog loginDialog;
+    if (loginDialog.exec() != QDialog::Accepted) {
+        // 用户取消登录或关闭登录窗口，直接退出程序
+        Logger::instance().info("用户取消登录，程序退出");
+        pluginManager.unloadAllPlugins();
+        DatabaseManager::instance().close();
+        return 0;
+    }
+
+    Logger::instance().info(QString("用户 '%1' 登录成功").arg(loginDialog.currentUsername()));
+
     // 创建并显示主窗口
     MainWindow mainWindow;
+    mainWindow.setPluginManager(&pluginManager);
     mainWindow.show();
 
     // 进入 Qt 事件循环
@@ -109,6 +161,8 @@ int main(int argc, char *argv[])
     const int exitCode = app.exec();
 
     // 清理资源
+    pluginManager.unloadAllPlugins();
+    coreService.shutdown();
     DatabaseManager::instance().close();
     Logger::instance().info("应用程序正常退出");
 

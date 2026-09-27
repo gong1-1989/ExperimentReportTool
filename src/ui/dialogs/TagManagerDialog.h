@@ -41,14 +41,14 @@ public:
     ~TagManagerDialog() override;
 
 private slots:
-    void onTagSelected(QListWidgetItem* item);
-    void onNewTag();
-    void onEditTag();
-    void onDeleteTag();
-    void onSaveTag();
-    void onCancelEdit();
-    void onSearchTextChanged(const QString& text);
-    void onColorSelected(int index);
+    void on_m_tagList_itemClicked(QListWidgetItem* item);
+    void on_m_newBtn_clicked();
+    void on_m_editBtn_clicked();
+    void on_m_deleteBtn_clicked();
+    void on_m_saveBtn_clicked();
+    void on_m_cancelBtn_clicked();
+    void on_m_searchEdit_textChanged(const QString& text);
+    void on_m_colorCombo_currentIndexChanged(int index);
 
 private:
 

@@ -5,6 +5,8 @@
 
 #include "PrintManager.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppDimensions.h"
+#include "core/utils/AppTheme.h"
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
 #include "data/repositories/DataTableRepository.h"
@@ -74,7 +76,7 @@ bool PrintManager::printPreview(const Report::Ptr& report, QWidget* parent)
 
     QPrintPreviewDialog preview(&printer, parent);
     preview.setWindowTitle(tr("打印预览 - %1").arg(report->title()));
-    preview.resize(1000, 700);
+    preview.resize(AppDimensions::Window::PrintPreviewWidth, AppDimensions::Window::PrintPreviewHeight);
 
     // 连接 paintRequested 信号
     connect(&preview, &QPrintPreviewDialog::paintRequested,
@@ -149,6 +151,43 @@ bool PrintManager::printWithConfig(const Report::Ptr& report,
 }
 
 // ===========================================================================
+// 导出为 PDF（复用打印预览的渲染逻辑）
+// ===========================================================================
+
+bool PrintManager::exportToPdf(const Report::Ptr& report,
+                                const QString& filePath,
+                                QWidget* parent)
+{
+    Q_UNUSED(parent);
+
+    if (!report) return false;
+    if (filePath.isEmpty()) return false;
+
+    // 确保输出目录存在
+    QDir().mkpath(QFileInfo(filePath).absolutePath());
+
+    // 使用与打印预览相同的配置
+    PrintConfig config = m_config;
+    config.includeTitle = true;
+    config.includeMeta = true;
+
+    // 创建 PDF 打印机
+    QPrinter printer(QPrinter::HighResolution);
+    printer.setOutputFormat(QPrinter::PdfFormat);
+    printer.setOutputFileName(filePath);
+    setupPrinter(printer, config);
+
+    // 复用打印预览的渲染逻辑
+    QTextDocument* doc = renderDocument(report, config);
+    if (doc) {
+        doc->print(&printer);
+        delete doc;
+        return QFile::exists(filePath);
+    }
+    return false;
+}
+
+// ===========================================================================
 // 页面设置
 // ===========================================================================
 
@@ -208,7 +247,7 @@ void PrintManager::setupPrinter(QPrinter& printer, const PrintConfig& config)
  * @param html 完整的 HTML 文档
  * @return body 标签内的 HTML 片段，如果不是完整文档则返回原文本
  */
-static QString extractHtmlBody(const QString& html)
+QString PrintManager::extractHtmlBody(const QString& html)
 {
     // 如果不是完整的 HTML 文档（没有 <body 标签），直接返回原文本
     if (!html.contains("<body", Qt::CaseInsensitive)) {

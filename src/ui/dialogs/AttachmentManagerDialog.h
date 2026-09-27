@@ -41,13 +41,14 @@ public:
     ~AttachmentManagerDialog() override;
 
 private slots:
-    void onUpload();
-    void onDownload();
-    void onOpen();
-    void onDelete();
-    void onItemSelected(QListWidgetItem* item);
-    void onItemDoubleClicked(QListWidgetItem* item);
-    void onRefresh();
+    void on_m_uploadBtn_clicked();
+    void on_m_downloadBtn_clicked();
+    void on_m_openBtn_clicked();
+    void on_m_deleteBtn_clicked();
+    void on_m_closeBtn_clicked();
+    void on_m_attachmentList_itemClicked(QListWidgetItem* item);
+    void on_m_attachmentList_itemDoubleClicked(QListWidgetItem* item);
+    void on_m_refreshBtn_clicked();
 
 private:
 

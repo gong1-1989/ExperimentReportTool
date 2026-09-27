@@ -9,14 +9,16 @@
 #include "editor/TextBlockEditor.h"
 #include "export/ExportManager.h"
 #include "print/PrintManager.h"
-#include "version/VersionHistoryDialog.h"
-#include "ui/dialogs/TagManagerDialog.h"
-#include "ui/dialogs/ReportTagDialog.h"
-#include "ui/dialogs/AttachmentManagerDialog.h"
 #include "data/repositories/TagRepository.h"
 #include "data/repositories/ReportRepository.h"
+#include "core/plugin/PluginManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
+#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
+#include "core/utils/AppConfig.h"
+#include "ui/dialogs/VersionHistoryDialog.h"
+#include "ui/dialogs/AttachmentManagerDialog.h"
 
 #include <QMenuBar>
 #include <QToolBar>
@@ -41,6 +43,7 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     , m_editor(nullptr)
     , m_report(report)
     , m_printManager(nullptr)
+    , m_pluginManager(nullptr)
     , m_statusSaveLabel(nullptr)
     , m_statusWordLabel(nullptr)
     , m_statusPositionLabel(nullptr)
@@ -77,7 +80,7 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     }
 
     updateWindowTitle();
-    resize(1200, 800);
+    resize(AppDimensions::Window::EditorWidth, AppDimensions::Window::EditorHeight);
 
     LOG_INFO(QString("报告编辑窗口已打开: %1")
                  .arg(m_isNewReport ? "新建报告" : m_report->title()));
@@ -120,6 +123,13 @@ void ReportEditorWindow::createActions()
     m_actionUnderline = new QAction(tr("下划线"), this);
     m_actionUnderline->setShortcut(QKeySequence::Underline);
     connect(m_actionUnderline, &QAction::triggered, this, &ReportEditorWindow::onUnderline);
+
+    // 工具
+    m_actionVersionHistory = new QAction(tr("版本历史(&V)..."), this);
+    m_actionVersionHistory->setStatusTip(tr("查看报告的版本历史"));
+
+    m_actionManageAttachments = new QAction(tr("附件管理(&M)..."), this);
+    m_actionManageAttachments->setStatusTip(tr("管理报告的附件"));
 }
 
 void ReportEditorWindow::createMenus()
@@ -138,7 +148,7 @@ void ReportEditorWindow::createMenus()
     fileMenu->addAction(tr("打印(&P)..."), QKeySequence::Print, this, &ReportEditorWindow::onPrint);
     fileMenu->addAction(tr("页面设置(&G)..."), this, &ReportEditorWindow::onPageSetup);
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("版本历史(&H)..."), this, &ReportEditorWindow::onVersionHistory);
+    fileMenu->addAction(m_actionVersionHistory);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("关闭(&C)"), QKeySequence::Close, this, &QWidget::close);
 
@@ -149,10 +159,7 @@ void ReportEditorWindow::createMenus()
     editMenu->addSeparator();
     editMenu->addAction(tr("查找(&F)..."), QKeySequence::Find, this, &ReportEditorWindow::onFind);
     editMenu->addSeparator();
-    editMenu->addAction(tr("编辑标签(&T)..."), this, &ReportEditorWindow::onEditTags);
-    editMenu->addAction(tr("管理标签(&M)..."), this, &ReportEditorWindow::onManageTags);
-    editMenu->addSeparator();
-    editMenu->addAction(tr("附件管理(&A)..."), this, &ReportEditorWindow::onManageAttachments);
+    editMenu->addAction(m_actionManageAttachments);
 
     // 插入菜单
     QMenu* insertMenu = bar->addMenu(tr("插入(&I)"));
@@ -190,7 +197,7 @@ void ReportEditorWindow::createToolBar()
 {
     QToolBar* toolBar = addToolBar(tr("编辑工具栏"));
     toolBar->setMovable(false);
-    toolBar->setIconSize(QSize(18, 18));
+    toolBar->setIconSize(QSize(AppDimensions::Widget::ButtonIconSize, AppDimensions::Widget::ButtonIconSize));
 
     toolBar->addAction(m_actionSave);
     toolBar->addSeparator();
@@ -221,8 +228,11 @@ void ReportEditorWindow::createStatusBar()
 {
     QStatusBar* bar = statusBar();
 
+    const QString statusPadding = QString("padding: 0 %1px;").arg(AppTheme::Spacing::Normal);
+
     m_statusSaveLabel = new QLabel(tr("已保存"), this);
-    m_statusSaveLabel->setStyleSheet("color: #67C23A; padding: 0 8px;");
+    m_statusSaveLabel->setStyleSheet(
+        QString("color: %1; %2").arg(AppTheme::Color::Success, statusPadding));
     bar->addWidget(m_statusSaveLabel);
 
     // QStatusBar 没有 addStretch 方法，用一个空 QWidget 作为弹簧
@@ -232,11 +242,13 @@ void ReportEditorWindow::createStatusBar()
     bar->addWidget(spacer, 1);
 
     m_statusWordLabel = new QLabel(tr("字数: 0"), this);
-    m_statusWordLabel->setStyleSheet("color: #666; padding: 0 8px;");
+    m_statusWordLabel->setStyleSheet(
+        QString("color: %1; %2").arg(AppTheme::Color::Gray666, statusPadding));
     bar->addPermanentWidget(m_statusWordLabel);
 
     m_statusPositionLabel = new QLabel(this);
-    m_statusPositionLabel->setStyleSheet("color: #666; padding: 0 8px;");
+    m_statusPositionLabel->setStyleSheet(
+        QString("color: %1; %2").arg(AppTheme::Color::Gray666, statusPadding));
     bar->addPermanentWidget(m_statusPositionLabel);
 }
 
@@ -256,6 +268,12 @@ void ReportEditorWindow::connectSignals()
             this, &ReportEditorWindow::onSaveTriggered);
     connect(m_editor, &ReportEditor::saveStateChanged,
             this, &ReportEditorWindow::onSaveStateChanged);
+
+    // 工具菜单
+    connect(m_actionVersionHistory, &QAction::triggered,
+            this, &ReportEditorWindow::onVersionHistory);
+    connect(m_actionManageAttachments, &QAction::triggered,
+            this, &ReportEditorWindow::onManageAttachments);
 }
 
 // ===========================================================================
@@ -273,7 +291,9 @@ void ReportEditorWindow::onSave()
 {
     if (saveReport()) {
         m_statusSaveLabel->setText(tr("已保存"));
-        m_statusSaveLabel->setStyleSheet("color: #67C23A; padding: 0 8px;");
+        m_statusSaveLabel->setStyleSheet(
+            QString("color: %1; padding: 0 %2px;")
+                .arg(AppTheme::Color::Success).arg(AppTheme::Spacing::Normal));
         // 保存成功弹出提示框
         QMessageBox::information(this, tr("保存成功"),
             tr("报告「%1」已成功保存。").arg(m_report->title().isEmpty() ? tr("未命名报告") : m_report->title()));
@@ -379,63 +399,25 @@ void ReportEditorWindow::onPageSetup()
 
 void ReportEditorWindow::onVersionHistory()
 {
+    // 确保报告已保存（版本历史需要报告ID）
     if (!m_report || m_report->id() <= 0) {
-        QMessageBox::information(this, tr("版本历史"), tr("请先保存报告后再查看版本历史"));
-        return;
+        if (!saveReport()) {
+            QMessageBox::warning(this, tr("提示"), tr("请先保存报告"));
+            return;
+        }
     }
 
     VersionHistoryDialog dialog(m_report->id(), this);
-    connect(&dialog, &VersionHistoryDialog::versionRestored,
-            this, [this](qint64 reportId, qint64 versionId) {
-                Q_UNUSED(versionId);
-                // 重新加载报告
-                Report::Ptr restored = ReportRepository::findById(reportId);
-                if (restored) {
-                    m_report = restored;
-                    m_editor->loadReport(m_report);
-                    updateWindowTitle();
-                    showStatusMessage(tr("已恢复到历史版本"));
-                }
-            });
-
-    dialog.exec();
-}
-
-void ReportEditorWindow::onEditTags()
-{
-    if (!m_report || m_report->id() <= 0) {
-        // 先保存报告
-        if (!saveReport()) {
-            QMessageBox::warning(this, tr("提示"), tr("请先保存报告"));
-            return;
-        }
-    }
-
-    ReportTagDialog dialog(m_report->id(), this);
     if (dialog.exec() == QDialog::Accepted) {
-        const QList<qint64> tagIds = dialog.selectedTagIds();
-        TagRepository::setReportTags(m_report->id(), tagIds);
-        showStatusMessage(tr("标签已更新: %1 个").arg(tagIds.size()));
-    }
-}
-
-void ReportEditorWindow::onManageTags()
-{
-    TagManagerDialog dialog(this);
-    dialog.exec();
-}
-
-void ReportEditorWindow::onManageAttachments()
-{
-    if (!m_report || m_report->id() <= 0) {
-        if (!saveReport()) {
-            QMessageBox::warning(this, tr("提示"), tr("请先保存报告"));
-            return;
+        // 版本恢复后重新加载报告
+        Report::Ptr updated = ReportRepository::findById(m_report->id());
+        if (updated) {
+            m_report = updated;
+            m_editor->loadReport(m_report);
+            updateWindowTitle();
+            showStatusMessage(tr("版本已恢复"));
         }
     }
-
-    AttachmentManagerDialog dialog(m_report->id(), this);
-    dialog.exec();
 }
 
 // ===========================================================================
@@ -455,6 +437,20 @@ void ReportEditorWindow::onFind()
 {
     QMessageBox::information(this, tr("查找"),
         tr("查找功能将在后续版本中实现。"));
+}
+
+void ReportEditorWindow::onManageAttachments()
+{
+    // 确保报告已保存（附件管理需要报告ID）
+    if (!m_report || m_report->id() <= 0) {
+        if (!saveReport()) {
+            QMessageBox::warning(this, tr("提示"), tr("请先保存报告"));
+            return;
+        }
+    }
+
+    AttachmentManagerDialog dialog(m_report->id(), this);
+    dialog.exec();
 }
 
 // ===========================================================================
@@ -587,12 +583,19 @@ void ReportEditorWindow::onSaveTriggered()
 
 void ReportEditorWindow::onSaveStateChanged(bool saved)
 {
+    const QString savedStyle =
+        QString("color: %1; padding: 0 %2px;")
+            .arg(AppTheme::Color::Success).arg(AppTheme::Spacing::Normal);
+    const QString unsavedStyle =
+        QString("color: %1; padding: 0 %2px;")
+            .arg(AppTheme::Color::Warning).arg(AppTheme::Spacing::Normal);
+
     if (saved) {
         m_statusSaveLabel->setText(tr("已保存"));
-        m_statusSaveLabel->setStyleSheet("color: #67C23A; padding: 0 8px;");
+        m_statusSaveLabel->setStyleSheet(savedStyle);
     } else {
         m_statusSaveLabel->setText(tr("未保存"));
-        m_statusSaveLabel->setStyleSheet("color: #E6A23C; padding: 0 8px;");
+        m_statusSaveLabel->setStyleSheet(unsavedStyle);
     }
     updateWindowTitle();
 }

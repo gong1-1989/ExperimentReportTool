@@ -188,6 +188,7 @@ private slots:
     void onTitleChanged(const QString& title);
     void onStatusChanged(int index);
     void onDateChanged(const QDate& date);
+    void on_m_tagCombo_currentIndexChanged(int index);
 
     // -----------------------------------------------------------------------
     // 工具栏
@@ -227,6 +228,9 @@ private:
 
     /// 更新空提示标签的显示状态（有块时隐藏，无块时显示）
     void updateEmptyLabelVisibility();
+
+    /// 更新标签显示
+    void updateTagDisplay();
 
     // -----------------------------------------------------------------------
     // 成员变量

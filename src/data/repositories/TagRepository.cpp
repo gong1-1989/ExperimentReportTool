@@ -111,7 +111,7 @@ Tag::Ptr TagRepository::findByName(const QString& name)
  * - 使用 LEFT JOIN 关联 report_tags 表，确保没有使用的标签也会返回
  * - 使用 COUNT(rt.report_id) 统计使用次数（COUNT 不统计 NULL）
  * - 使用 GROUP BY t.id 按标签分组
- * - 使用 ORDER BY usage_count DESC, t.name ASC 排序
+ * - 使用 ORDER BY t.name ASC 排序（按标签名称排序，不按使用次数）
  *
  * 使用场景：
  * - 标签管理界面显示所有标签
@@ -130,7 +130,7 @@ Tag::List TagRepository::findAll()
         FROM tags t
         LEFT JOIN report_tags rt ON rt.tag_id = t.id
         GROUP BY t.id
-        ORDER BY usage_count DESC, t.name ASC;
+        ORDER BY t.name ASC;
     )");
 
     // 遍历所有结果行
@@ -174,7 +174,7 @@ Tag::List TagRepository::search(const QString& keyword)
         LEFT JOIN report_tags rt ON rt.tag_id = t.id
         WHERE t.name LIKE :keyword
         GROUP BY t.id
-        ORDER BY usage_count DESC, t.name ASC;
+        ORDER BY t.name ASC;
     )");
     // 使用 %keyword% 进行前后模糊匹配
     query.bindValue(":keyword", "%" + keyword + "%");

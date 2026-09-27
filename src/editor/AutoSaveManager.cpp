@@ -6,6 +6,8 @@
 #include "AutoSaveManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
+#include "core/utils/AppConfig.h"
+#include "core/utils/AppDimensions.h"
 
 // ===========================================================================
 // 构造与析构
@@ -14,8 +16,8 @@
 AutoSaveManager::AutoSaveManager(QObject* parent)
     : QObject(parent)
     , m_autoSaveTimer(nullptr)
-    , m_autoSaveInterval(AppConstants::AUTO_SAVE_INTERVAL_MS)
-    , m_enabled(true)
+    , m_autoSaveInterval(AppConfig::instance().autoSaveInterval())
+    , m_enabled(AppConfig::instance().autoSaveEnabled())
     , m_versionSnapshot(false)
     , m_saveState(SaveState::Idle)
     , m_saveRetryCount(0)
@@ -77,7 +79,7 @@ void AutoSaveManager::markSaveFailed(const QString& error)
 
     // 如果未超过最大重试次数，延迟后重试
     if (m_saveRetryCount < MAX_RETRY) {
-        QTimer::singleShot(2000, this, &AutoSaveManager::saveNow);
+        QTimer::singleShot(AppDimensions::Delay::AutoSave, this, &AutoSaveManager::saveNow);
     }
 }
 

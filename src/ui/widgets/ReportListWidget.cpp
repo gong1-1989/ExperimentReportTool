@@ -6,7 +6,11 @@
 #include "ReportListWidget.h"
 #include "data/repositories/ReportRepository.h"
 #include "data/repositories/ProjectRepository.h"
+#include "data/repositories/TagRepository.h"
+#include "core/models/Tag.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
 
 #include <QHeaderView>
 #include <QMessageBox>
@@ -31,20 +35,21 @@ ReportListWidget::ReportListWidget(QWidget* parent)
 void ReportListWidget::setupUi()
 {
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(8, 8, 8, 8);
-    mainLayout->setSpacing(8);
+    mainLayout->setContentsMargins(AppTheme::Spacing::Normal, AppTheme::Spacing::Normal,
+                                   AppTheme::Spacing::Normal, AppTheme::Spacing::Normal);
+    mainLayout->setSpacing(AppTheme::Spacing::Normal);
 
     // -----------------------------------------------------------------------
     // 顶部工具栏
     // -----------------------------------------------------------------------
     QHBoxLayout* toolbarLayout = new QHBoxLayout();
-    toolbarLayout->setSpacing(8);
+    toolbarLayout->setSpacing(AppTheme::Spacing::Normal);
 
     // 搜索框
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText(tr("搜索报告标题..."));
     m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setMaximumWidth(250);
+    m_searchEdit->setMaximumWidth(AppDimensions::Widget::ReportSearchMaxWidth);
     connect(m_searchEdit, &QLineEdit::textChanged,
             this, &ReportListWidget::onSearchTextChanged);
     toolbarLayout->addWidget(m_searchEdit);
@@ -63,7 +68,9 @@ void ReportListWidget::setupUi()
 
     // 数量标签
     m_countLabel = new QLabel(tr("共 0 份报告"), this);
-    m_countLabel->setStyleSheet("color: #666; font-size: 12px;");
+    m_countLabel->setStyleSheet(
+        QString("color: %1; font-size: %2px;")
+            .arg(AppTheme::Color::Gray666).arg(AppTheme::FontSize::Small));
     toolbarLayout->addWidget(m_countLabel);
 
     // 视图切换按钮
@@ -76,9 +83,14 @@ void ReportListWidget::setupUi()
     // 新建按钮
     m_newButton = new QPushButton(tr("新建报告"), this);
     m_newButton->setStyleSheet(
-        "QPushButton { background-color: #4A90D9; color: white; padding: 6px 16px; "
-        "border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background-color: #357ABD; }");
+        QString("QPushButton { background-color: %1; color: white; "
+                "padding: %2px %3px; border-radius: %4px; font-weight: bold; }"
+                "QPushButton:hover { background-color: %5; }")
+            .arg(AppTheme::Color::Primary)
+            .arg(AppTheme::Spacing::Medium)
+            .arg(AppTheme::Spacing::ExtraLarge)
+            .arg(AppTheme::Radius::Medium)
+            .arg(AppTheme::Color::PrimaryHover));
     connect(m_newButton, &QPushButton::clicked,
             this, &ReportListWidget::onNewReport);
     toolbarLayout->addWidget(m_newButton);
@@ -92,10 +104,10 @@ void ReportListWidget::setupUi()
 
     // 表格视图
     m_tableWidget = new QTableWidget(this);
-    m_tableWidget->setColumnCount(6);
+    m_tableWidget->setColumnCount(7);
     m_tableWidget->setHorizontalHeaderLabels({
         tr("标题"), tr("状态"), tr("作者"),
-        tr("实验日期"), tr("更新时间"), tr("字数")
+        tr("实验日期"), tr("更新时间"), tr("字数"), tr("标签")
     });
     m_tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -301,14 +313,8 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
 
         // 状态列
         QTableWidgetItem* statusItem = new QTableWidgetItem(statusDisplayName(report->status()));
-        // 根据状态设置颜色
-        QColor statusColor;
-        switch (report->status()) {
-        case ReportStatus::Draft:     statusColor = QColor("#888888"); break;
-        case ReportStatus::Submitted: statusColor = QColor("#E6A23C"); break;
-        case ReportStatus::Reviewed:  statusColor = QColor("#67C23A"); break;
-        }
-        statusItem->setForeground(statusColor);
+        // 根据状态设置颜色（使用 AppTheme 统一管理）
+        statusItem->setForeground(AppTheme::statusColor(report->status()));
         m_tableWidget->setItem(row, 1, statusItem);
 
         // 作者列
@@ -327,6 +333,24 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
         // 字数列
         m_tableWidget->setItem(row, 5,
             new QTableWidgetItem(QString::number(report->wordCount())));
+
+        // 标签列（显示颜色方块 + 标签名）
+        const Tag::List tags = TagRepository::findByReport(report->id());
+        if (!tags.isEmpty()) {
+            QString tagText;
+            for (int i = 0; i < tags.size(); ++i) {
+                const QColor color = tags[i]->effectiveColor();
+                if (i > 0) tagText += " ";
+                tagText += QString("■ %1").arg(tags[i]->name());
+            }
+            QTableWidgetItem* tagItem = new QTableWidgetItem(tagText);
+            // 用第一个标签的颜色作为文字颜色
+            tagItem->setForeground(tags.first()->effectiveColor());
+            tagItem->setToolTip(tagText);
+            m_tableWidget->setItem(row, 6, tagItem);
+        } else {
+            m_tableWidget->setItem(row, 6, new QTableWidgetItem("-"));
+        }
     }
 
     m_tableWidget->setSortingEnabled(true);

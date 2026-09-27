@@ -30,6 +30,7 @@
 #include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
+#include "core/utils/AppConfig.h"
 
 #include <QSqlQuery>
 #include <QSqlError>
@@ -395,7 +396,7 @@ bool ReportRepository::update(const Report::Ptr& report)
 
     // 绑定参数值
     query.bindValue(":project_id", report->projectId());
-    query.bindValue(":template_id", report->templateId() > 0 ? report->templateId() : QVariant(QVariant::LongLong));
+    query.bindValue(":template_id", report->templateId() > 0 ? report->templateId() : QVariant());
     query.bindValue(":title", report->title());
     query.bindValue(":content", report->contentToJson());
     query.bindValue(":status", report->statusToString());
@@ -631,7 +632,39 @@ qint64 ReportRepository::saveVersion(qint64 reportId, const QString& snapshotNam
     }
 
     // 返回新创建的版本 ID
-    return query.lastInsertId().toLongLong();
+    const qint64 newVersionId = query.lastInsertId().toLongLong();
+
+    // 版本数限制：超过最大版本数时删除最旧的版本
+    const int maxVersions = AppConfig::instance().maxVersions();
+    if (maxVersions > 0) {
+        QSqlQuery countQuery(db);
+        countQuery.prepare("SELECT COUNT(*) FROM report_versions WHERE report_id = :report_id;");
+        countQuery.bindValue(":report_id", reportId);
+        if (countQuery.exec() && countQuery.next()) {
+            const int total = countQuery.value(0).toInt();
+            if (total > maxVersions) {
+                // 删除最旧的 (total - maxVersions) 个版本
+                QSqlQuery deleteQuery(db);
+                deleteQuery.prepare(R"(
+                    DELETE FROM report_versions
+                    WHERE report_id = :report_id
+                    AND id IN (
+                        SELECT id FROM report_versions
+                        WHERE report_id = :report_id
+                        ORDER BY created_at ASC
+                        LIMIT :limit
+                    );
+                )");
+                deleteQuery.bindValue(":report_id", reportId);
+                deleteQuery.bindValue(":limit", total - maxVersions);
+                if (!deleteQuery.exec()) {
+                    LOG_WARNING(QString("清理旧版本失败: %1").arg(deleteQuery.lastError().text()));
+                }
+            }
+        }
+    }
+
+    return newVersionId;
 }
 
 /**

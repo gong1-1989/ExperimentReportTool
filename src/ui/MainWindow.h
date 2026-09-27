@@ -38,6 +38,7 @@ class MainWindow;
 class ProjectTreeWidget;
 class ReportListWidget;
 class ReportEditorWindow;
+class PluginManager;
 
 /**
  * @brief 主窗口类
@@ -50,6 +51,12 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+    /**
+     * @brief 设置插件管理器（用于插件管理对话框）
+     * @param manager 插件管理器指针
+     */
+    void setPluginManager(PluginManager* manager) { m_pluginManager = manager; }
+
 protected:
     /// 窗口关闭事件（保存窗口状态）
     void closeEvent(QCloseEvent* event) override;
@@ -61,7 +68,8 @@ private slots:
     void onNewProject();
     void onNewReport();
     void onOpenReport();
-    void onExportReport();
+    void onImportData();
+    void onExportProject();
     void onExit();
 
     // -----------------------------------------------------------------------
@@ -96,6 +104,7 @@ private slots:
     void onAbout();
     void onAboutQt();
     void onCheckUpdate();
+    void onPluginManager();
 
     // -----------------------------------------------------------------------
     // 项目树信号
@@ -153,7 +162,7 @@ private:
     // -----------------------------------------------------------------------
     // 辅助方法
     // -----------------------------------------------------------------------
-    void showStatusMessage(const QString& message, int timeout = 3000);
+    void showStatusMessage(const QString& message, int timeout = 0);
     void updateStatusBar();  ///< 更新状态栏显示
     void updatePropertyPanel();  ///< 更新属性面板显示
     void refreshAll();
@@ -187,6 +196,7 @@ private:
     QAction* m_actionNewProject;
     QAction* m_actionNewReport;
     QAction* m_actionOpenReport;
+    QAction* m_actionImportData;
     QAction* m_actionExportReport;
     QAction* m_actionExit;
 
@@ -214,6 +224,7 @@ private:
     QAction* m_actionAbout;
     QAction* m_actionAboutQt;
     QAction* m_actionCheckUpdate;
+    QAction* m_actionPluginManager;
 
     // -----------------------------------------------------------------------
     // 成员变量 - 数据
@@ -222,6 +233,7 @@ private:
     qint64 m_currentProjectId;  ///< 当前选中的项目 ID
     qint64 m_currentReportId;   ///< 当前打开的报告 ID
     double m_zoomFactor;        ///< 缩放因子
+    PluginManager* m_pluginManager;  ///< 插件管理器（用于插件管理对话框）
 
     /// 打开的报告编辑器窗口列表（使用 QPointer 安全管理，自动检测对象是否已删除）
     QList<QPointer<ReportEditorWindow>> m_editorWindows;

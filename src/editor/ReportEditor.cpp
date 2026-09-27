@@ -10,8 +10,13 @@
 #include "editor/AutoSaveManager.h"
 #include "editor/DataTableEditorDialog.h"
 #include "data/repositories/DataTableRepository.h"
+#include "data/repositories/TagRepository.h"
 #include "core/models/DataTable.h"
+#include "core/models/Tag.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
+#include "core/utils/AppConfig.h"
 
 #include <QScrollBar>
 #include <QMenu>
@@ -34,6 +39,19 @@ ReportEditor::ReportEditor(QWidget* parent)
     , m_autoSave(nullptr)
 {
     ui->setupUi(this);  // 从 .ui 文件加载界面
+
+    // 初始化标签下拉列表（单选）
+    ui->m_tagCombo->addItem(tr("无标签"), -1);
+    {
+        const Tag::List allTags = TagRepository::findAll();
+        for (const Tag::Ptr& tag : allTags) {
+            ui->m_tagCombo->addItem(
+                QString("■ %1").arg(tag->name()),
+                tag->id());
+        }
+    }
+    connect(ui->m_tagCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &ReportEditor::on_m_tagCombo_currentIndexChanged);
 
     // 布局设置（.ui 文件中已经是正确的结构：scrollArea > scrollAreaWidgetContents > m_blocksLayout）
     ui->scrollArea->setWidgetResizable(true);
@@ -94,6 +112,9 @@ void ReportEditor::loadReport(const Report::Ptr& report)
 
     // 重建块编辑器
     rebuildBlocks();
+
+    // 设置标签下拉列表的勾选状态
+    updateTagDisplay();
 
     m_modified = false;
     m_loading = false;
@@ -333,10 +354,14 @@ void ReportEditor::setModified(bool modified)
 
     if (modified) {
         ui->m_saveStatusLabel->setText(tr("未保存"));
-        ui->m_saveStatusLabel->setStyleSheet("color: #E6A23C; font-size: 12px;");
+        ui->m_saveStatusLabel->setStyleSheet(
+            QString("color: %1; font-size: %2px;")
+                .arg(AppTheme::Color::Warning).arg(AppTheme::FontSize::Small));
     } else {
         ui->m_saveStatusLabel->setText(tr("已保存"));
-        ui->m_saveStatusLabel->setStyleSheet("color: #67C23A; font-size: 12px;");
+        ui->m_saveStatusLabel->setStyleSheet(
+            QString("color: %1; font-size: %2px;")
+                .arg(AppTheme::Color::Success).arg(AppTheme::FontSize::Small));
     }
 
     emit saveStateChanged(!modified);
@@ -671,4 +696,46 @@ void ReportEditor::updateChartBlockReportId()
                                        Q_ARG(qint64, reportId));
         }
     }
+}
+
+// ===========================================================================
+// 标签下拉列表（单选）
+// ===========================================================================
+
+void ReportEditor::updateTagDisplay()
+{
+    if (!m_report || m_report->id() <= 0) {
+        ui->m_tagCombo->setCurrentIndex(0);  // 无标签
+        return;
+    }
+
+    // 获取当前报告的标签（取第一个，单选模式）
+    const Tag::List tags = TagRepository::findByReport(m_report->id());
+    if (tags.isEmpty()) {
+        ui->m_tagCombo->setCurrentIndex(0);  // 无标签
+        return;
+    }
+
+    // 在下拉列表中找到对应标签并选中
+    const qint64 tagId = tags.first()->id();
+    for (int i = 1; i < ui->m_tagCombo->count(); ++i) {
+        if (ui->m_tagCombo->itemData(i).toLongLong() == tagId) {
+            ui->m_tagCombo->setCurrentIndex(i);
+            return;
+        }
+    }
+    ui->m_tagCombo->setCurrentIndex(0);  // 没找到则显示无标签
+}
+
+void ReportEditor::on_m_tagCombo_currentIndexChanged(int index)
+{
+    if (m_loading) return;  // 加载期间不保存
+    if (!m_report || m_report->id() <= 0) return;
+
+    const qint64 tagId = ui->m_tagCombo->itemData(index).toLongLong();
+    QList<qint64> tagIds;
+    if (tagId > 0) {
+        tagIds.append(tagId);
+    }
+    TagRepository::setReportTags(m_report->id(), tagIds);
 }

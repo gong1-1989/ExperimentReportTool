@@ -5,8 +5,10 @@
 
 #include "DataTableEditorDialog.h"
 #include "ui_DataTableEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
-#include "DataImportDialog.h"
+#include "ui/dialogs/DataImportDialog.h"
 #include "core/utils/Logger.h"
+#include "core/utils/AppDimensions.h"
+#include "core/utils/AppTheme.h"
 
 #include <QHeaderView>
 #include <QMessageBox>
@@ -41,7 +43,11 @@ void ColumnPropertyPanel::setupUi()
     layout->setSpacing(8);
 
     QLabel* title = new QLabel(tr("列属性"), this);
-    title->setStyleSheet("font-weight: bold; font-size: 14px; padding-bottom: 8px; border-bottom: 1px solid #ddd;");
+    title->setStyleSheet(
+        QString("font-weight: bold; font-size: %1px; padding-bottom: %2px; border-bottom: 1px solid %3;")
+            .arg(AppTheme::FontSize::Normal)
+            .arg(AppTheme::Spacing::Normal)
+            .arg(AppTheme::Color::BorderLight));
     layout->addWidget(title);
 
     QFormLayout* form = new QFormLayout();
@@ -218,7 +224,8 @@ DataTableEditorDialog::DataTableEditorDialog(const DataTable::Ptr& table, QWidge
 
     loadTable();
     setWindowTitle(tr("数据表编辑器: %1").arg(m_table->name()));
-    resize(1000, 600);
+    resize(AppDimensions::Window::DialogXLargeWidth,
+           AppDimensions::Window::DialogXLargeHeight);
 }
 
 // ===========================================================================
@@ -541,13 +548,17 @@ void DataTableEditorDialog::onValidate()
     if (errors.isEmpty()) {
         QMessageBox::information(this, tr("校验通过"), tr("所有数据均符合要求"));
         ui->m_statusLabel->setText(tr("校验通过"));
-        ui->m_statusLabel->setStyleSheet("color: #67C23A; font-size: 12px;");
+        ui->m_statusLabel->setStyleSheet(
+            QString("color: %1; font-size: %2px;")
+                .arg(AppTheme::Color::Success).arg(AppTheme::FontSize::Small));
     } else {
         const QString errorText = errors.join("\n");
         QMessageBox::warning(this, tr("校验失败"),
             tr("发现 %1 个问题:\n\n%2").arg(errors.size()).arg(errorText));
         ui->m_statusLabel->setText(tr("校验失败: %1 个问题").arg(errors.size()));
-        ui->m_statusLabel->setStyleSheet("color: #F56C6C; font-size: 12px;");
+        ui->m_statusLabel->setStyleSheet(
+            QString("color: %1; font-size: %2px;")
+                .arg(AppTheme::Color::Danger).arg(AppTheme::FontSize::Small));
     }
 }
 
@@ -564,5 +575,7 @@ void DataTableEditorDialog::onAccept()
 void DataTableEditorDialog::updateStatus()
 {
     ui->m_statusLabel->setText(tr("%1 行 × %2 列").arg(m_table->rowCount()).arg(m_table->columnCount()));
-    ui->m_statusLabel->setStyleSheet("color: #666; font-size: 12px;");
+    ui->m_statusLabel->setStyleSheet(
+        QString("color: %1; font-size: %2px;")
+            .arg(AppTheme::Color::Gray666).arg(AppTheme::FontSize::Small));
 }

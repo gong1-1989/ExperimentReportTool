@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QUuid>
 #include <QRegularExpression>
+#include <QTextDocument>
 
 // ===========================================================================
 // ContentBlock 实现
@@ -235,10 +236,20 @@ QString Report::toPlainText() const
         case BlockType::Heading2:
         case BlockType::Heading3:
         case BlockType::Paragraph:
-        case BlockType::Quote:
-            // 这些块的文本都在 data["text"] 中
-            texts.append(block.data.value("text").toString());
+        case BlockType::Quote: {
+            // 这些块的文本在 data["text"] 中，但存储的是完整 HTML 文档
+            // 需要用 QTextDocument 解析 HTML，提取纯文本
+            const QString html = block.data.value("text").toString();
+            if (!html.isEmpty()) {
+                QTextDocument doc;
+                doc.setHtml(html);
+                const QString plain = doc.toPlainText().trimmed();
+                if (!plain.isEmpty()) {
+                    texts.append(plain);
+                }
+            }
             break;
+        }
 
         case BlockType::BulletList:
         case BlockType::NumberedList:
