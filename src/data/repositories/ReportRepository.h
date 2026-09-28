@@ -11,6 +11,7 @@
 #include <QList>
 #include <QString>
 #include <QDate>
+#include <QDateTime>
 #include <QSqlQuery>
 
 #include "core/models/Report.h"
@@ -51,6 +52,19 @@ struct SearchResult {
     double score;           ///< 匹配分数
 
     SearchResult() : score(0.0) {}
+};
+
+/**
+ * @brief 版本信息结构体
+ */
+struct VersionInfo {
+    qint64 versionId;       ///< 版本 ID
+    qint64 reportId;        ///< 报告 ID
+    QString snapshotName;    ///< 版本名称/备注
+    QDateTime createdAt;     ///< 创建时间
+    QString content;         ///< 版本内容（JSON）
+
+    VersionInfo() : versionId(-1), reportId(-1) {}
 };
 
 /**

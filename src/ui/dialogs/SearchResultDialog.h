@@ -8,7 +8,7 @@
 #ifndef SEARCH_RESULT_DIALOG_H
 #define SEARCH_RESULT_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
@@ -31,7 +31,7 @@ class SearchResultDialog;
 /**
  * @brief 搜索结果对话框
  */
-class SearchResultDialog : public QDialog
+class SearchResultDialog : public BaseDialog
 {
     Q_OBJECT
 

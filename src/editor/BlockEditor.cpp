@@ -61,8 +61,8 @@ void BlockEditor::setupEditor()
 {
     // 主布局：左侧手柄 + 右侧内容
     m_mainLayout = new QHBoxLayout(this);
-    m_mainLayout->setContentsMargins(0, 2, 0, 2);
-    m_mainLayout->setSpacing(4);
+    m_mainLayout->setContentsMargins(0, AppTheme::Spacing::Tiny, 0, AppTheme::Spacing::Tiny);
+    m_mainLayout->setSpacing(AppTheme::Spacing::Small);
 
     // 左侧操作手柄
     createHandle();
@@ -73,7 +73,7 @@ void BlockEditor::setupEditor()
     // 关键：内容容器高度由内容决定（Minimum），不被拉伸
     contentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     m_contentLayout = new QVBoxLayout(contentWidget);
-    m_contentLayout->setContentsMargins(4, 0, 4, 0);
+    m_contentLayout->setContentsMargins(AppTheme::Spacing::Small, 0, AppTheme::Spacing::Small, 0);
     m_contentLayout->setSpacing(0);
     m_mainLayout->addWidget(contentWidget, 1);  // 内容区占剩余空间
 

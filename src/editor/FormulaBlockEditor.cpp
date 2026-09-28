@@ -56,8 +56,9 @@ void FormulaBlockEditor::setupFormulaArea()
             .arg(AppTheme::Color::Primary));
 
     QVBoxLayout* layout = new QVBoxLayout(container);
-    layout->setContentsMargins(16, 12, 16, 12);
-    layout->setSpacing(4);
+    layout->setContentsMargins(AppTheme::Spacing::ExtraLarge, AppTheme::Spacing::Large,
+                               AppTheme::Spacing::ExtraLarge, AppTheme::Spacing::Large);
+    layout->setSpacing(AppTheme::Spacing::Small);
 
     // 公式显示区域
     m_formulaBrowser = new QTextBrowser(container);

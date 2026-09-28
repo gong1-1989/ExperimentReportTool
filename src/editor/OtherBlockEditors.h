@@ -55,23 +55,15 @@ private:
 // 块编辑器工厂
 // ===========================================================================
 
-// 前向声明
-class PluginManager;
-
 /**
  * @brief 块编辑器工厂
  *
- * 根据块类型创建对应的 BlockEditor 实例。
- * 优先通过插件创建，插件未提供时使用内置实现。
+ * 根据块类型创建对应的 BlockEditor 实例（框架内置实现）。
+ * 所有块编辑器均已并入框架，无需插件参与。
  */
 class BlockEditorFactory
 {
 public:
-    /**
-     * @brief 设置插件管理器
-     */
-    static void setPluginManager(PluginManager* manager) { s_pluginManager = manager; }
-
     /**
      * @brief 创建块编辑器
      */
@@ -86,9 +78,6 @@ public:
      * @brief 获取块类型的显示名称
      */
     static QString typeDisplayName(BlockType type);
-
-private:
-    static PluginManager* s_pluginManager;
 };
 
 #endif // OTHER_BLOCK_EDITORS_H

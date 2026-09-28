@@ -9,7 +9,7 @@
 #ifndef DATA_IMPORT_DIALOG_H
 #define DATA_IMPORT_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTableWidget>
@@ -43,7 +43,7 @@ enum class ImportMode {
 /**
  * @brief 数据导入对话框
  */
-class DataImportDialog : public QDialog
+class DataImportDialog : public BaseDialog
 {
     Q_OBJECT
 

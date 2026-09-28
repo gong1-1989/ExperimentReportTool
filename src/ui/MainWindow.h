@@ -141,7 +141,6 @@ private:
     // 初始化方法
     // -----------------------------------------------------------------------
     void createActions();
-    void createMenus();
     void createToolBar();
     void createStatusBar();
     void createDockWidgets();

@@ -7,8 +7,8 @@
   <property name="minimumSize"><size><width>700</width><height>500</height></size></property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing"><number>8</number></property>
-   <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
-   <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+   <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property>
+   <property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
    <item>
     <layout class="QHBoxLayout" name="buttonLayout">
      <item><widget class="QPushButton" name="m_uploadBtn"><property name="text"><string>上传附件</string></property></widget></item>

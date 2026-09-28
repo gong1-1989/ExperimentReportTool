@@ -45,7 +45,7 @@ const QStringList FormulaEditorDialog::s_templates = {
 // ===========================================================================
 
 FormulaEditorDialog::FormulaEditorDialog(const QString& initialLatex, QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::FormulaEditorDialog)
 {
     ui->setupUi(this);

@@ -24,6 +24,10 @@
 
 #include "core/models/Report.h"
 
+namespace Ui {
+class ReportListWidget;
+}
+
 /**
  * @brief 报告列表组件
  *
@@ -36,6 +40,7 @@ class ReportListWidget : public QWidget
 
 public:
     explicit ReportListWidget(QWidget* parent = nullptr);
+    ~ReportListWidget() override;
 
     /**
      * @brief 设置当前项目 ID，刷新报告列表
@@ -92,26 +97,22 @@ signals:
 
 private slots:
     /// 搜索框文本变化
-    void onSearchTextChanged(const QString& text);
+    void on_searchEdit_textChanged(const QString& text);
     /// 状态筛选变化
-    void onStatusFilterChanged(int index);
+    void on_statusFilter_currentIndexChanged(int index);
     /// 表格双击
-    void onTableDoubleClicked(int row, int column);
+    void on_tableWidget_cellDoubleClicked(int row, int column);
     /// 表格右键菜单
-    void onTableCustomContextMenu(const QPoint& pos);
+    void on_tableWidget_customContextMenuRequested(const QPoint& pos);
     /// 选中变化
-    void onSelectionChanged();
+    void on_tableWidget_itemSelectionChanged();
     /// 新建报告
-    void onNewReport();
-    /// 编辑报告
-    void onEditReport();
-    /// 删除报告
-    void onDeleteReport();
+    void on_newButton_clicked();
     /// 切换视图
-    void onToggleView();
+    void on_viewToggleButton_clicked();
 
 private:
-    /// 初始化 UI
+    /// 初始化 UI 行为配置
     void setupUi();
 
     /// 加载报告到表格
@@ -123,21 +124,7 @@ private:
     /// 状态显示名称
     QString statusDisplayName(ReportStatus status) const;
 
-    // -----------------------------------------------------------------------
-    // UI 控件
-    // -----------------------------------------------------------------------
-
-    // 顶部工具栏
-    QLineEdit* m_searchEdit;       ///< 搜索框
-    QComboBox* m_statusFilter;     ///< 状态筛选
-    QPushButton* m_newButton;      ///< 新建按钮
-    QPushButton* m_viewToggleButton; ///< 视图切换按钮
-    QLabel* m_countLabel;          ///< 数量标签
-
-    // 列表区域
-    QStackedWidget* m_stackWidget; ///< 视图切换容器
-    QTableWidget* m_tableWidget;   ///< 表格视图
-    QListWidget* m_cardWidget;     ///< 卡片视图（占位，后续实现）
+    Ui::ReportListWidget* ui;
 
     // -----------------------------------------------------------------------
     // 数据

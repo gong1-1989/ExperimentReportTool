@@ -6,9 +6,9 @@
  */
 
 #include "SearchService.h"
-#include "data/repositories/ProjectRepository.h"
-#include "data/repositories/ReportRepository.h"
-#include "data/repositories/TagRepository.h"
+#include "service/ReportService.h"
+#include "service/TagService.h"
+#include "service/ProjectService.h"
 #include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
 
@@ -115,9 +115,9 @@ QList<SearchResultItem> SearchService::metadataSearch(const SearchQuery& query)
     }
 
     while (sqlQuery.next()) {
-        // 用 ReportRepository::findById 加载完整报告（包含内容块）
+        // 用 ReportService::getById 加载完整报告（包含内容块）
         const qint64 reportId = sqlQuery.value("id").toLongLong();
-        Report::Ptr report = ReportRepository::findById(reportId);
+        Report::Ptr report = ReportService::getById(reportId);
         if (!report) continue;
 
         SearchResultItem item;
@@ -156,21 +156,14 @@ QString SearchService::buildMatchDescription(const Report::Ptr& report,
         matchedFields.append(tr("作者"));
     }
 
-    // 检查状态
-    const QString statusStr = [](ReportStatus s) {
-        switch (s) {
-            case ReportStatus::Draft:     return QStringLiteral("草稿");
-            case ReportStatus::Submitted: return QStringLiteral("已提交");
-            case ReportStatus::Reviewed:  return QStringLiteral("已审核");
-            default:                       return QStringLiteral("未知");
-        }
-    }(report->status());
+    // 检查状态（统一走模型方法，避免重复 switch）
+    const QString statusStr = report->statusDisplayName();
     if (statusStr.toLower().contains(kw)) {
         matchedFields.append(tr("状态"));
     }
 
     // 检查标签
-    const Tag::List tags = TagRepository::findByReport(report->id());
+    const Tag::List tags = TagService::findByReport(report->id());
     for (const Tag::Ptr& tag : tags) {
         if (tag->name().toLower().contains(kw)) {
             matchedFields.append(tr("标签"));
@@ -193,7 +186,7 @@ void SearchService::enrichResults(QList<SearchResultItem>& results)
 {
     for (SearchResultItem& item : results) {
         if (item.report && item.report->projectId() > 0) {
-            Project::Ptr project = ProjectRepository::findById(item.report->projectId());
+            Project::Ptr project = ProjectService::getById(item.report->projectId());
             if (project) {
                 item.projectName = project->name();
             }

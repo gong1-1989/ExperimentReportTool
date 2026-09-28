@@ -6,7 +6,9 @@
 #include "ChartBlockEditor.h"
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
+#include "service/DataTableService.h"
 #include "data/repositories/DataTableRepository.h"
+#include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
 #include "editor/DataTableEditorDialog.h"
 #include "core/models/Report.h"
@@ -18,6 +20,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QChartView>
 
 // ===========================================================================
@@ -74,8 +77,9 @@ void ChartBlockEditor::setupChartArea()
         QString("QWidget { background: white; border: 1px solid %1; border-radius: %2px; }")
             .arg(AppTheme::Color::Border).arg(AppTheme::Radius::Medium));
     QVBoxLayout* containerLayout = new QVBoxLayout(m_chartContainer);
-    containerLayout->setContentsMargins(8, 8, 8, 8);
-    containerLayout->setSpacing(8);
+    containerLayout->setContentsMargins(AppTheme::Spacing::Normal, AppTheme::Spacing::Normal,
+                                        AppTheme::Spacing::Normal, AppTheme::Spacing::Normal);
+    containerLayout->setSpacing(AppTheme::Spacing::Normal);
 
     // 工具栏
     QHBoxLayout* toolbar = new QHBoxLayout();
@@ -186,11 +190,11 @@ DataTable::Ptr ChartBlockEditor::tableBlockToDataTable(const ContentBlock& block
 DataTable::Ptr ChartBlockEditor::getDataTableById(qint64 id) const
 {
     if (id > 0) {
-        return DataTableRepository::findById(id);
+        return DataTableService::getById(id);
     } else if (id < 0) {
         if (m_reportId <= 0) return nullptr;
 
-        Report::Ptr report = ReportRepository::findById(m_reportId);
+        Report::Ptr report = ReportService::getById(m_reportId);
         if (!report) return nullptr;
 
         const int targetIndex = -id - 1;
@@ -261,16 +265,16 @@ void ChartBlockEditor::onConfigureChart()
 {
     DataTable::List allDataSources;
 
-    DataTable::List globalTables = DataTableRepository::findGlobal();
+    DataTable::List globalTables = DataTableService::findGlobal();
     allDataSources.append(globalTables);
 
     if (m_reportId > 0) {
-        DataTable::List dbTables = DataTableRepository::findByReport(m_reportId);
+        DataTable::List dbTables = DataTableService::findByReport(m_reportId);
         allDataSources.append(dbTables);
     }
 
     if (m_reportId > 0) {
-        Report::Ptr report = ReportRepository::findById(m_reportId);
+        Report::Ptr report = ReportService::getById(m_reportId);
         if (report) {
             int tableBlockIndex = 0;
             for (const ContentBlock& block : report->blocks()) {
@@ -284,7 +288,7 @@ void ChartBlockEditor::onConfigureChart()
     }
 
     if (allDataSources.isEmpty()) {
-        QMessageBox::information(this, tr("提示"),
+        UiHelper::info(this, tr("提示"),
             tr("当前报告还没有可用的数据源。\n请先在报告中添加表格块，或创建数据表。"));
         return;
     }
@@ -300,25 +304,25 @@ void ChartBlockEditor::onConfigureChart()
 void ChartBlockEditor::onEditData()
 {
     if (m_config.dataTableId == 0) {
-        QMessageBox::information(this, tr("提示"), tr("请先配置图表，选择数据源"));
+        UiHelper::info(this, tr("提示"), tr("请先配置图表，选择数据源"));
         return;
     }
 
     if (m_config.dataTableId > 0) {
-        DataTable::Ptr table = DataTableRepository::findById(m_config.dataTableId);
+        DataTable::Ptr table = DataTableService::getById(m_config.dataTableId);
         if (!table) {
-            QMessageBox::warning(this, tr("错误"), tr("数据表不存在"));
+            UiHelper::warning(this, tr("错误"), tr("数据表不存在"));
             return;
         }
 
         DataTableEditorDialog dialog(table, this);
         if (dialog.exec() == QDialog::Accepted) {
-            DataTableRepository::update(table);
+            DataTableService::save(table);
             renderChart();
             notifyContentChanged();
         }
     } else {
-        QMessageBox::information(this, tr("提示"),
+        UiHelper::info(this, tr("提示"),
             tr("当前图表引用的是报告中的表格块。\n请直接在报告中编辑对应的表格块，图表会自动更新。"));
     }
 }

@@ -14,7 +14,7 @@
 #ifndef SETTINGS_DIALOG_H
 #define SETTINGS_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QString>
 
 class QLabel;
@@ -35,7 +35,7 @@ class SettingsDialog;
  *   }
  * @endcode
  */
-class SettingsDialog : public QDialog
+class SettingsDialog : public BaseDialog
 {
     Q_OBJECT
 
@@ -103,6 +103,18 @@ private slots:
 
     /// 点击数据库路径浏览按钮
     void on_dbPathBrowseBtn_clicked();
+
+    /// 主色输入框文本变化（实时更新预览）
+    void on_primaryColorEdit_textChanged(const QString& color);
+
+    /// 成功色输入框文本变化（实时更新预览）
+    void on_successColorEdit_textChanged(const QString& color);
+
+    /// 警告色输入框文本变化（实时更新预览）
+    void on_warningColorEdit_textChanged(const QString& color);
+
+    /// 危险色输入框文本变化（实时更新预览）
+    void on_dangerColorEdit_textChanged(const QString& color);
 
 private:
     // ========================================================================

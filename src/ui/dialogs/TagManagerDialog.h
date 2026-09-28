@@ -9,7 +9,7 @@
 #ifndef TAG_MANAGER_DIALOG_H
 #define TAG_MANAGER_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QLineEdit>
@@ -32,7 +32,7 @@ class TagManagerDialog;
 /**
  * @brief 标签管理对话框
  */
-class TagManagerDialog : public QDialog
+class TagManagerDialog : public BaseDialog
 {
     Q_OBJECT
 

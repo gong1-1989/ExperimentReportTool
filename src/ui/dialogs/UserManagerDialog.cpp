@@ -4,15 +4,14 @@
  */
 
 #include "UserManagerDialog.h"
+#include "ui_UserManagerDialog.h"
+#include "service/UserService.h"
 #include "data/repositories/UserRepository.h"
 #include "core/utils/UserSession.h"
-#include "core/utils/AppTheme.h"
+#include "core/utils/AppDimensions.h"
 
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QHeaderView>
-#include <QMessageBox>
-#include <QInputDialog>
+#include "ui/UiHelper.h"
 #include <QComboBox>
 #include <QLineEdit>
 #include <QDialogButtonBox>
@@ -20,103 +19,72 @@
 #include <QFormLayout>
 
 UserManagerDialog::UserManagerDialog(QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
+    , ui(new Ui::UserManagerDialog)
 {
-    setWindowTitle(tr("用户管理"));
-    resize(600, 400);
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+    ui->setupUi(this);
+    resize(AppDimensions::Window::DialogSmallWidth, AppDimensions::Window::DialogSmallHeight);
 
-    setupUi();
+    // 表格列配置（.ui 定义结构，行为属性在此细化）
+    ui->userTable->setColumnCount(5);
+    ui->userTable->setHorizontalHeaderLabels(
+        {tr("用户名"), tr("显示名称"), tr("角色"), tr("最后登录"), tr("需改密码")});
+    ui->userTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->userTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->userTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    ui->userTable->horizontalHeader()->setStretchLastSection(true);
+    ui->userTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
     loadUsers();
 }
 
-UserManagerDialog::~UserManagerDialog() = default;
-
-void UserManagerDialog::setupUi()
+UserManagerDialog::~UserManagerDialog()
 {
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-
-    // 用户表格
-    m_userTable = new QTableWidget(this);
-    m_userTable->setColumnCount(5);
-    m_userTable->setHorizontalHeaderLabels(
-        {tr("用户名"), tr("显示名称"), tr("角色"), tr("最后登录"), tr("需改密码")});
-    m_userTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_userTable->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_userTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_userTable->horizontalHeader()->setStretchLastSection(true);
-    m_userTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    mainLayout->addWidget(m_userTable);
-
-    connect(m_userTable, &QTableWidget::itemSelectionChanged,
-            this, &UserManagerDialog::onItemSelectionChanged);
-
-    // 按钮栏
-    QHBoxLayout* btnLayout = new QHBoxLayout();
-    m_btnAdd = new QPushButton(tr("新建用户"), this);
-    m_btnEdit = new QPushButton(tr("编辑"), this);
-    m_btnDelete = new QPushButton(tr("删除"), this);
-    m_btnResetPassword = new QPushButton(tr("重置密码"), this);
-    m_btnRefresh = new QPushButton(tr("刷新"), this);
-    m_btnClose = new QPushButton(tr("关闭"), this);
-
-    btnLayout->addWidget(m_btnAdd);
-    btnLayout->addWidget(m_btnEdit);
-    btnLayout->addWidget(m_btnDelete);
-    btnLayout->addWidget(m_btnResetPassword);
-    btnLayout->addStretch();
-    btnLayout->addWidget(m_btnRefresh);
-    btnLayout->addWidget(m_btnClose);
-
-    mainLayout->addLayout(btnLayout);
-
-    connect(m_btnAdd, &QPushButton::clicked, this, &UserManagerDialog::onAddUser);
-    connect(m_btnEdit, &QPushButton::clicked, this, &UserManagerDialog::onEditUser);
-    connect(m_btnDelete, &QPushButton::clicked, this, &UserManagerDialog::onDeleteUser);
-    connect(m_btnResetPassword, &QPushButton::clicked, this, &UserManagerDialog::onResetPassword);
-    connect(m_btnRefresh, &QPushButton::clicked, this, &UserManagerDialog::onRefresh);
-    connect(m_btnClose, &QPushButton::clicked, this, &QDialog::accept);
-
-    onItemSelectionChanged();
+    delete ui;
 }
 
 void UserManagerDialog::loadUsers()
 {
-    m_users = UserRepository::findAll();
-    m_userTable->setRowCount(m_users.size());
+    m_users = UserService::listAll();
+    ui->userTable->setRowCount(m_users.size());
 
     for (int row = 0; row < m_users.size(); ++row) {
         const User::Ptr& user = m_users[row];
-        m_userTable->setItem(row, 0, new QTableWidgetItem(user->username()));
-        m_userTable->setItem(row, 1, new QTableWidgetItem(user->displayNameOrUsername()));
-        m_userTable->setItem(row, 2, new QTableWidgetItem(user->roleName()));
-        m_userTable->setItem(row, 3, new QTableWidgetItem(
+        ui->userTable->setItem(row, 0, new QTableWidgetItem(user->username()));
+        ui->userTable->setItem(row, 1, new QTableWidgetItem(user->displayNameOrUsername()));
+        ui->userTable->setItem(row, 2, new QTableWidgetItem(user->roleName()));
+        ui->userTable->setItem(row, 3, new QTableWidgetItem(
             user->lastLoginAt().isValid()
                 ? user->lastLoginAt().toString("yyyy-MM-dd HH:mm")
                 : tr("从未登录")));
-        m_userTable->setItem(row, 4, new QTableWidgetItem(
+        ui->userTable->setItem(row, 4, new QTableWidgetItem(
             user->mustChangePassword() ? tr("是") : tr("否")));
     }
 }
 
 User::Ptr UserManagerDialog::currentUser() const
 {
-    const int row = m_userTable->currentRow();
+    const int row = ui->userTable->currentRow();
     if (row >= 0 && row < m_users.size()) {
         return m_users[row];
     }
     return nullptr;
 }
 
-void UserManagerDialog::onItemSelectionChanged()
+void UserManagerDialog::on_userTable_itemSelectionChanged()
 {
     const bool hasSelection = currentUser() != nullptr;
-    m_btnEdit->setEnabled(hasSelection);
-    m_btnDelete->setEnabled(hasSelection);
-    m_btnResetPassword->setEnabled(hasSelection);
+    ui->btnEdit->setEnabled(hasSelection);
+    ui->btnDelete->setEnabled(hasSelection);
+    ui->btnResetPassword->setEnabled(hasSelection);
 }
 
-void UserManagerDialog::onAddUser()
+void UserManagerDialog::on_btnClose_clicked()
+{
+    accept();
+}
+
+void UserManagerDialog::on_btnAdd_clicked()
 {
     // 简单的新建用户对话框
     QDialog dlg(this);
@@ -148,18 +116,18 @@ void UserManagerDialog::onAddUser()
 
     const QString username = usernameEdit->text().trimmed();
     if (username.isEmpty()) {
-        QMessageBox::warning(this, tr("错误"), tr("用户名不能为空"));
+        UiHelper::warning(this, tr("错误"), tr("用户名不能为空"));
         return;
     }
 
-    if (UserRepository::exists(username)) {
-        QMessageBox::warning(this, tr("错误"), tr("用户名已存在"));
+    if (UserService::exists(username)) {
+        UiHelper::warning(this, tr("错误"), tr("用户名已存在"));
         return;
     }
 
     const QString password = passwordEdit->text();
     if (password.length() < 6) {
-        QMessageBox::warning(this, tr("错误"), tr("密码至少6位"));
+        UiHelper::warning(this, tr("错误"), tr("密码至少6位"));
         return;
     }
 
@@ -171,22 +139,22 @@ void UserManagerDialog::onAddUser()
     user->setMustChangePassword(true);  // 新建用户首次登录必须改密码
     user->setCreatedAt(QDateTime::currentDateTime());
 
-    if (UserRepository::save(user)) {
-        QMessageBox::information(this, tr("成功"), tr("用户已创建"));
+    if (UserService::save(user)) {
+        UiHelper::info(this, tr("成功"), tr("用户已创建"));
         loadUsers();
     } else {
-        QMessageBox::critical(this, tr("错误"), tr("创建用户失败"));
+        UiHelper::error(this, tr("错误"), tr("创建用户失败"));
     }
 }
 
-void UserManagerDialog::onEditUser()
+void UserManagerDialog::on_btnEdit_clicked()
 {
     User::Ptr user = currentUser();
     if (!user) return;
 
     // 不能删除/修改自己
     if (user->id() == UserSession::instance().userId()) {
-        QMessageBox::information(this, tr("提示"), tr("不能修改当前登录用户"));
+        UiHelper::info(this, tr("提示"), tr("不能修改当前登录用户"));
         return;
     }
 
@@ -217,62 +185,56 @@ void UserManagerDialog::onEditUser()
     user->setDisplayName(displayNameEdit->text().trimmed());
     user->setRole(static_cast<UserRole>(roleCombo->currentData().toInt()));
 
-    if (UserRepository::save(user)) {
-        QMessageBox::information(this, tr("成功"), tr("用户已更新"));
+    if (UserService::save(user)) {
+        UiHelper::info(this, tr("成功"), tr("用户已更新"));
         loadUsers();
     } else {
-        QMessageBox::critical(this, tr("错误"), tr("更新用户失败"));
+        UiHelper::error(this, tr("错误"), tr("更新用户失败"));
     }
 }
 
-void UserManagerDialog::onDeleteUser()
+void UserManagerDialog::on_btnDelete_clicked()
 {
     User::Ptr user = currentUser();
     if (!user) return;
 
     if (user->id() == UserSession::instance().userId()) {
-        QMessageBox::warning(this, tr("错误"), tr("不能删除当前登录用户"));
+        UiHelper::warning(this, tr("错误"), tr("不能删除当前登录用户"));
         return;
     }
 
-    const auto ret = QMessageBox::warning(
-        this, tr("确认删除"),
-        tr("确定要删除用户「%1」吗？\n该用户创建的数据不会被删除。")
-            .arg(user->username()),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (!UiHelper::confirm(this,
+                           tr("确认删除"),
+                           tr("确定要删除用户「%1」吗？\n该用户创建的数据不会被删除。")
+                               .arg(user->username()))) return;
 
-    if (ret != QMessageBox::Yes) return;
-
-    if (UserRepository::remove(user->id())) {
-        QMessageBox::information(this, tr("成功"), tr("用户已删除"));
+    if (UserService::remove(user->id())) {
+        UiHelper::info(this, tr("成功"), tr("用户已删除"));
         loadUsers();
     } else {
-        QMessageBox::critical(this, tr("错误"), tr("删除用户失败"));
+        UiHelper::error(this, tr("错误"), tr("删除用户失败"));
     }
 }
 
-void UserManagerDialog::onResetPassword()
+void UserManagerDialog::on_btnResetPassword_clicked()
 {
     User::Ptr user = currentUser();
     if (!user) return;
 
-    const auto ret = QMessageBox::question(
-        this, tr("重置密码"),
-        tr("确定要将用户「%1」的密码重置为 123456 吗？\n重置后该用户首次登录必须修改密码。")
-            .arg(user->username()),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (!UiHelper::confirm(this,
+                           tr("重置密码"),
+                           tr("确定要将用户「%1」的密码重置为 123456 吗？\n重置后该用户首次登录必须修改密码。")
+                               .arg(user->username()))) return;
 
-    if (ret != QMessageBox::Yes) return;
-
-    if (UserRepository::resetPassword(user->id())) {
-        QMessageBox::information(this, tr("成功"), tr("密码已重置为 123456"));
+    if (UserService::resetPassword(user->id())) {
+        UiHelper::info(this, tr("成功"), tr("密码已重置为 123456"));
         loadUsers();
     } else {
-        QMessageBox::critical(this, tr("错误"), tr("重置密码失败"));
+        UiHelper::error(this, tr("错误"), tr("重置密码失败"));
     }
 }
 
-void UserManagerDialog::onRefresh()
+void UserManagerDialog::on_btnRefresh_clicked()
 {
     loadUsers();
 }

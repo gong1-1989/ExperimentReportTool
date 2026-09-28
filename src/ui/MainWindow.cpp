@@ -4,9 +4,11 @@
  */
 
 #include "MainWindow.h"
+#include <QStyle>
 #include "ui_MainWindow.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "ui/widgets/ProjectTreeWidget.h"
 #include "ui/widgets/ReportListWidget.h"
+#include "ui/widgets/PropertyPanelHelper.h"
 #include "ui/ReportEditorWindow.h"
 #include "ui/dialogs/ProjectDialog.h"
 #include "ui/dialogs/SettingsDialog.h"
@@ -17,12 +19,19 @@
 #include "ui/dialogs/PluginManagerDialog.h"
 #include "ui/dialogs/UserManagerDialog.h"
 #include "core/plugin/PluginManager.h"
-#include "core/plugin/ImportPluginInterface.h"
+#include "service/ReportService.h"
+#include "service/ProjectService.h"
+#include "service/TagService.h"
+#include "service/UserService.h"
+#include "service/TemplateService.h"
+#include "service/DataTableService.h"
+#include "utils/CsvImporter.h"
 #include "data/repositories/ProjectRepository.h"
 #include "data/repositories/ReportRepository.h"
 #include "data/repositories/TemplateRepository.h"
 #include "data/repositories/TagRepository.h"
 #include "data/repositories/DataTableRepository.h"
+#include "data/repositories/UserRepository.h"
 #include "core/models/Tag.h"
 #include "core/models/DataTable.h"
 #include "export/ExportManager.h"
@@ -32,13 +41,13 @@
 #include "core/utils/AppDimensions.h"
 #include "core/utils/AppConfig.h"
 #include "core/utils/UserSession.h"
-#include "data/repositories/UserRepository.h"
 
 #include <QMenuBar>
 #include <QToolBar>
 #include <QStatusBar>
 #include <QDockWidget>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QInputDialog>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -85,7 +94,6 @@ MainWindow::MainWindow(QWidget* parent)
     setupUi();
 
     createActions();
-    createMenus();
     createToolBar();
     createStatusBar();
     connectSignals();
@@ -118,86 +126,19 @@ void MainWindow::setupUi()
            AppConfig::instance().mainWindowHeight());
     setMinimumSize(800, 600);
 
-    // -----------------------------------------------------------------------
-    // 主分割器（左-中-右三栏布局）
-    // -----------------------------------------------------------------------
-    m_mainSplitter = new QSplitter(Qt::Horizontal, this);
-    m_mainSplitter->setHandleWidth(AppTheme::Spacing::Medium);
-    m_mainSplitter->setChildrenCollapsible(false);
+    // 中央三栏布局已在 MainWindow.ui 中定义（含 ProjectTreeWidget/ReportListWidget 提升），
+    // 此处仅取出成员引用，不再动态创建
+    m_mainSplitter = ui->m_mainSplitter;
+    m_projectTree = ui->m_projectTree;
+    m_reportList = ui->m_reportList;
+    m_propertyPanel = ui->m_propertyPanel;
+    m_propertyContentLabel = ui->m_propertyContentLabel;
 
-    // 左侧：项目树
-    QWidget* leftPanel = new QWidget(this);
-    QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
-    leftLayout->setContentsMargins(AppTheme::Spacing::Small, AppTheme::Spacing::Small,
-                                   AppTheme::Spacing::Small, AppTheme::Spacing::Small);
-    leftLayout->setSpacing(AppTheme::Spacing::Small);
-
-    QLabel* projectTitle = new QLabel(tr("📁 项目树"), leftPanel);
-    projectTitle->setStyleSheet(
-        QString("font-weight: bold; padding: %1px; color: %2;")
-            .arg(AppTheme::Spacing::Small).arg(AppTheme::Color::Gray333));
-    leftLayout->addWidget(projectTitle);
-
-    m_projectTree = new ProjectTreeWidget(leftPanel);
-    m_projectTree->setHeaderHidden(true);
-    leftLayout->addWidget(m_projectTree);
-
-    m_mainSplitter->addWidget(leftPanel);
-
-    // 中间：报告列表 + 编辑器占位（垂直分割）
-    // 中间：报告列表面板（直接占满中间区域，移除多余的编辑器占位区）
-    QWidget* reportListPanel = new QWidget(this);
-    QVBoxLayout* reportListLayout = new QVBoxLayout(reportListPanel);
-    reportListLayout->setContentsMargins(AppTheme::Spacing::Small, AppTheme::Spacing::Small,
-                                         AppTheme::Spacing::Small, AppTheme::Spacing::Small);
-    reportListLayout->setSpacing(AppTheme::Spacing::Small);
-
-    QLabel* reportListTitle = new QLabel(tr("📝 报告列表"), reportListPanel);
-    reportListTitle->setStyleSheet(
-        QString("font-weight: bold; padding: %1px; color: %2;")
-            .arg(AppTheme::Spacing::Small).arg(AppTheme::Color::Gray333));
-    reportListLayout->addWidget(reportListTitle);
-
-    m_reportList = new ReportListWidget(reportListPanel);
-    reportListLayout->addWidget(m_reportList);
-
-    m_mainSplitter->addWidget(reportListPanel);
-
-    // 右侧：属性面板
-    m_propertyPanel = new QWidget(this);
-    m_propertyPanel->setMinimumWidth(AppDimensions::Widget::PropertyPanelMinWidth);
-    QVBoxLayout* propLayout = new QVBoxLayout(m_propertyPanel);
-    propLayout->setContentsMargins(AppTheme::Spacing::Large, AppTheme::Spacing::Large,
-                                   AppTheme::Spacing::Large, AppTheme::Spacing::Large);
-    QLabel* propTitle = new QLabel(tr("属性面板"), m_propertyPanel);
-    propTitle->setStyleSheet(
-        QString("font-weight: bold; font-size: %1px; padding-bottom: %2px; "
-                "border-bottom: 1px solid %3;")
-            .arg(AppTheme::FontSize::Normal)
-            .arg(AppTheme::Spacing::Normal)
-            .arg(AppTheme::Color::GrayDDD));
-    propLayout->addWidget(propTitle);
-    m_propertyContentLabel = new QLabel(m_propertyPanel);
-    m_propertyContentLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    m_propertyContentLabel->setWordWrap(true);
-    m_propertyContentLabel->setText(
-        QString("<div style='color: %1; font-size: %2px; margin-top: %3px;'>"
-                "选择项目或报告后，<br>此处将显示其属性信息。"
-                "</div>")
-            .arg(AppTheme::Color::Gray999)
-            .arg(AppTheme::FontSize::Small)
-            .arg(AppTheme::Spacing::Large));
-    propLayout->addWidget(m_propertyContentLabel);
-    propLayout->addStretch();
-    m_mainSplitter->addWidget(m_propertyPanel);
-
-    // 设置主分割器比例
+    // 设置主分割器比例（.ui 无法表达 splitter 初始比例，保留代码设置）
     m_mainSplitter->setStretchFactor(0, 1);  // 项目树
     m_mainSplitter->setStretchFactor(1, 3);  // 中间区域
     m_mainSplitter->setStretchFactor(2, 1);  // 属性面板
     m_mainSplitter->setSizes({250, 600, 250});
-
-    setCentralWidget(m_mainSplitter);
 }
 
 void MainWindow::createActions()
@@ -205,184 +146,98 @@ void MainWindow::createActions()
     // -----------------------------------------------------------------------
     // 文件菜单动作
     // -----------------------------------------------------------------------
-    m_actionNewProject = new QAction(tr("新建项目(&N)..."), this);
-    m_actionNewProject->setShortcut(QKeySequence("Ctrl+Shift+N"));
-    m_actionNewProject->setStatusTip(tr("创建新的实验项目"));
+    m_actionNewProject = ui->m_actionNewProject;
+    m_actionNewProject->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
 
-    m_actionNewReport = new QAction(tr("新建报告(&R)..."), this);
-    m_actionNewReport->setShortcut(QKeySequence("Ctrl+N"));
-    m_actionNewReport->setStatusTip(tr("创建新的实验报告"));
+    m_actionNewReport = ui->m_actionNewReport;
+    m_actionNewReport->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
 
-    m_actionOpenReport = new QAction(tr("打开报告(&O)..."), this);
-    m_actionOpenReport->setShortcut(QKeySequence("Ctrl+O"));
-    m_actionOpenReport->setStatusTip(tr("打开已有报告"));
+    m_actionOpenReport = ui->m_actionOpenReport;
+    m_actionOpenReport->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
 
-    m_actionImportData = new QAction(tr("导入数据(&I)..."), this);
-    m_actionImportData->setShortcut(QKeySequence("Ctrl+I"));
-    m_actionImportData->setStatusTip(tr("从外部文件导入数据表（CSV等）"));
+    m_actionImportData = ui->m_actionImportData;
+    m_actionImportData->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
 
-    m_actionExportReport = new QAction(tr("导出项目(&E)..."), this);
-    m_actionExportReport->setShortcut(QKeySequence("Ctrl+E"));
-    m_actionExportReport->setStatusTip(tr("批量导出当前项目下的所有报告"));
-    m_actionExportReport->setEnabled(false);
+    m_actionExportReport = ui->m_actionExportReport;
+    m_actionExportReport->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
 
-    m_actionExit = new QAction(tr("退出(&X)"), this);
-    m_actionExit->setShortcut(QKeySequence("Ctrl+Q"));
-    m_actionExit->setStatusTip(tr("退出应用程序"));
-
+    m_actionExit = ui->m_actionExit;
+    m_actionExit->setIcon(style()->standardIcon(QStyle::SP_DialogCloseButton));
     // -----------------------------------------------------------------------
     // 编辑菜单动作
     // -----------------------------------------------------------------------
-    m_actionEditProject = new QAction(tr("编辑项目(&P)..."), this);
-    m_actionEditProject->setShortcut(QKeySequence("F2"));
-    m_actionEditProject->setStatusTip(tr("编辑当前选中的项目"));
-    m_actionEditProject->setEnabled(false);
+    m_actionEditProject = ui->m_actionEditProject;
+    m_actionEditProject->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
 
-    m_actionDeleteProject = new QAction(tr("删除项目(&D)"), this);
-    m_actionDeleteProject->setShortcut(QKeySequence("Ctrl+Delete"));
-    m_actionDeleteProject->setStatusTip(tr("删除当前选中的项目"));
-    m_actionDeleteProject->setEnabled(false);
+    m_actionDeleteProject = ui->m_actionDeleteProject;
+    m_actionDeleteProject->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
 
-    m_actionDeleteReport = new QAction(tr("删除报告"), this);
-    m_actionDeleteReport->setStatusTip(tr("删除当前选中的报告"));
-    m_actionDeleteReport->setEnabled(false);
+    m_actionDeleteReport = ui->m_actionDeleteReport;
+    m_actionDeleteReport->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
 
-    m_actionFind = new QAction(tr("查找(&F)..."), this);
-    m_actionFind->setShortcut(QKeySequence("Ctrl+F"));
-    m_actionFind->setStatusTip(tr("全文搜索报告"));
-
+    m_actionFind = ui->m_actionFind;
+    m_actionFind->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
     // -----------------------------------------------------------------------
     // 视图菜单动作
     // -----------------------------------------------------------------------
-    m_actionToggleProjectPanel = new QAction(tr("项目面板"), this);
-    m_actionToggleProjectPanel->setCheckable(true);
-    m_actionToggleProjectPanel->setChecked(true);
-    m_actionToggleProjectPanel->setStatusTip(tr("显示/隐藏项目面板"));
+    m_actionToggleProjectPanel = ui->m_actionToggleProjectPanel;
+    m_actionToggleProjectPanel->setIcon(style()->standardIcon(QStyle::SP_FileDialogListView));
 
-    m_actionTogglePropertyPanel = new QAction(tr("属性面板"), this);
-    m_actionTogglePropertyPanel->setCheckable(true);
-    m_actionTogglePropertyPanel->setChecked(true);
-    m_actionTogglePropertyPanel->setStatusTip(tr("显示/隐藏属性面板"));
+    m_actionTogglePropertyPanel = ui->m_actionTogglePropertyPanel;
+    m_actionTogglePropertyPanel->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
 
-    m_actionFullscreen = new QAction(tr("全屏模式"), this);
-    m_actionFullscreen->setShortcut(QKeySequence("F11"));
-    m_actionFullscreen->setCheckable(true);
-    m_actionFullscreen->setStatusTip(tr("切换全屏模式"));
+    m_actionFullscreen = ui->m_actionFullscreen;
+    m_actionFullscreen->setIcon(style()->standardIcon(QStyle::SP_DesktopIcon));
 
-    m_actionZoomIn = new QAction(tr("放大"), this);
-    m_actionZoomIn->setShortcut(QKeySequence("Ctrl+="));
-    m_actionZoomIn->setStatusTip(tr("放大界面"));
+    m_actionZoomIn = ui->m_actionZoomIn;
+    m_actionZoomIn->setIcon(style()->standardIcon(QStyle::SP_ArrowUp));
 
-    m_actionZoomOut = new QAction(tr("缩小"), this);
-    m_actionZoomOut->setShortcut(QKeySequence("Ctrl+-"));
-    m_actionZoomOut->setStatusTip(tr("缩小界面"));
+    m_actionZoomOut = ui->m_actionZoomOut;
+    m_actionZoomOut->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
 
-    m_actionResetZoom = new QAction(tr("重置缩放"), this);
-    m_actionResetZoom->setShortcut(QKeySequence("Ctrl+0"));
-    m_actionResetZoom->setStatusTip(tr("重置缩放为 100%"));
-
+    m_actionResetZoom = ui->m_actionResetZoom;
+    m_actionResetZoom->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
     // -----------------------------------------------------------------------
     // 工具菜单动作
     // -----------------------------------------------------------------------
-    m_actionTemplateManager = new QAction(tr("模板管理器(&T)..."), this);
-    m_actionTemplateManager->setStatusTip(tr("管理报告模板"));
+    m_actionTemplateManager = ui->m_actionTemplateManager;
+    m_actionTemplateManager->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
 
-    m_actionTagManager = new QAction(tr("标签管理(&G)..."), this);
-    m_actionTagManager->setStatusTip(tr("管理报告标签"));
+    m_actionTagManager = ui->m_actionTagManager;
+    m_actionTagManager->setIcon(style()->standardIcon(QStyle::SP_DialogApplyButton));
 
-    m_actionChangePassword = new QAction(tr("修改密码(&P)..."), this);
-    m_actionChangePassword->setStatusTip(tr("修改当前用户密码"));
+    m_actionChangePassword = ui->m_actionChangePassword;
+    m_actionChangePassword->setIcon(style()->standardIcon(QStyle::SP_DialogApplyButton));
 
-    m_actionBackup = new QAction(tr("数据备份(&B)..."), this);
-    m_actionBackup->setStatusTip(tr("备份所有数据到文件"));
+    m_actionBackup = ui->m_actionBackup;
+    m_actionBackup->setIcon(style()->standardIcon(QStyle::SP_DriveHDIcon));
 
-    m_actionRestore = new QAction(tr("数据恢复(&R)..."), this);
-    m_actionRestore->setStatusTip(tr("从备份文件恢复数据"));
+    m_actionRestore = ui->m_actionRestore;
+    m_actionRestore->setIcon(style()->standardIcon(QStyle::SP_DriveFDIcon));
 
-    m_actionSettings = new QAction(tr("设置(&S)..."), this);
-    m_actionSettings->setShortcut(QKeySequence("Ctrl+,"));
-    m_actionSettings->setStatusTip(tr("应用程序设置"));
-
+    m_actionSettings = ui->m_actionSettings;
+    m_actionSettings->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
     // -----------------------------------------------------------------------
     // 帮助菜单动作
     // -----------------------------------------------------------------------
-    m_actionAbout = new QAction(tr("关于(&A)..."), this);
-    m_actionAbout->setStatusTip(tr("关于本软件"));
+    m_actionAbout = ui->m_actionAbout;
+    m_actionAbout->setIcon(style()->standardIcon(QStyle::SP_DialogHelpButton));
 
-    m_actionAboutQt = new QAction(tr("关于 Qt"), this);
-    m_actionAboutQt->setStatusTip(tr("关于 Qt 框架"));
+    m_actionAboutQt = ui->m_actionAboutQt;
 
-    m_actionCheckUpdate = new QAction(tr("检查更新"), this);
-    m_actionCheckUpdate->setStatusTip(tr("检查软件更新"));
+    m_actionCheckUpdate = ui->m_actionCheckUpdate;
+    m_actionCheckUpdate->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
 
-    m_actionPluginManager = new QAction(tr("插件管理..."), this);
-    m_actionPluginManager->setStatusTip(tr("查看和管理已加载的插件"));
+    m_actionPluginManager = ui->m_actionPluginManager;
+    m_actionPluginManager->setIcon(style()->standardIcon(QStyle::SP_FileDialogListView));
 
-    m_actionUserManager = new QAction(tr("用户管理..."), this);
-    m_actionUserManager->setStatusTip(tr("管理系统用户（仅管理员）"));
-}
-
-void MainWindow::createMenus()
-{
-    QMenuBar* menuBar = this->menuBar();
-
-    // 文件菜单
-    QMenu* fileMenu = menuBar->addMenu(tr("文件(&F)"));
-    fileMenu->addAction(m_actionNewProject);
-    fileMenu->addAction(m_actionNewReport);
-    fileMenu->addSeparator();
-    fileMenu->addAction(m_actionOpenReport);
-    fileMenu->addAction(m_actionImportData);
-    fileMenu->addAction(m_actionExportReport);
-    fileMenu->addSeparator();
-    fileMenu->addAction(m_actionExit);
-
-    // 编辑菜单
-    QMenu* editMenu = menuBar->addMenu(tr("编辑(&E)"));
-    editMenu->addAction(m_actionEditProject);
-    editMenu->addAction(m_actionDeleteProject);
-    editMenu->addSeparator();
-    editMenu->addAction(m_actionDeleteReport);
-    editMenu->addSeparator();
-    editMenu->addAction(m_actionFind);
-
-    // 视图菜单
-    QMenu* viewMenu = menuBar->addMenu(tr("视图(&V)"));
-    viewMenu->addAction(m_actionToggleProjectPanel);
-    viewMenu->addAction(m_actionTogglePropertyPanel);
-    viewMenu->addSeparator();
-    viewMenu->addAction(m_actionFullscreen);
-    viewMenu->addSeparator();
-    viewMenu->addAction(m_actionZoomIn);
-    viewMenu->addAction(m_actionZoomOut);
-    viewMenu->addAction(m_actionResetZoom);
-
-    // 工具菜单
-    QMenu* toolsMenu = menuBar->addMenu(tr("工具(&T)"));
-    toolsMenu->addAction(m_actionTemplateManager);
-    toolsMenu->addAction(m_actionTagManager);
-    toolsMenu->addSeparator();
-    toolsMenu->addAction(m_actionChangePassword);
-    toolsMenu->addSeparator();
-    toolsMenu->addAction(m_actionBackup);
-    toolsMenu->addAction(m_actionRestore);
-    toolsMenu->addSeparator();
-    toolsMenu->addAction(m_actionUserManager);
-    toolsMenu->addAction(m_actionSettings);
-
-    // 帮助菜单
-    QMenu* helpMenu = menuBar->addMenu(tr("帮助(&H)"));
-    helpMenu->addAction(m_actionAbout);
-    helpMenu->addAction(m_actionAboutQt);
-    helpMenu->addSeparator();
-    helpMenu->addAction(m_actionPluginManager);
-    helpMenu->addSeparator();
-    helpMenu->addAction(m_actionCheckUpdate);
+    m_actionUserManager = ui->m_actionUserManager;
+    m_actionUserManager->setIcon(style()->standardIcon(QStyle::SP_DirHomeIcon));
 }
 
 void MainWindow::createToolBar()
 {
-    QToolBar* toolBar = addToolBar(tr("主工具栏"));
+    QToolBar* toolBar = ui->mainToolBar;  // 使用 .ui 中定义的工具栏，避免重复创建
     toolBar->setMovable(false);
     toolBar->setIconSize(QSize(20, 20));
     toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -397,12 +252,8 @@ void MainWindow::createToolBar()
     toolBar->addAction(m_actionExportReport);
     toolBar->addSeparator();
 
-    // 全局搜索框
-    m_globalSearchEdit = new QLineEdit(toolBar);
-    m_globalSearchEdit->setPlaceholderText(tr("🔍 全局搜索报告..."));
-    m_globalSearchEdit->setClearButtonEnabled(true);
-    m_globalSearchEdit->setMaximumWidth(AppDimensions::Widget::GlobalSearchMaxWidth);
-    toolBar->addWidget(m_globalSearchEdit);
+    // 全局搜索框（已在 MainWindow.ui 的工具栏中定义）
+    m_globalSearchEdit = ui->m_globalSearchEdit;
 
     toolBar->addSeparator();
     toolBar->addAction(m_actionSettings);
@@ -412,6 +263,8 @@ void MainWindow::createStatusBar()
 {
     QStatusBar* statusBar = this->statusBar();
 
+    // 状态栏标签用 addWidget/addPermanentWidget 显式添加
+    // （QStatusBar 子 widget 若仅写在 .ui 中，uic 不会生成 addWidget，导致控件堆叠重叠）
     const QString statusLabelStyle =
         QString("padding: 0 %1px;").arg(AppTheme::Spacing::Normal);
 
@@ -424,7 +277,6 @@ void MainWindow::createStatusBar()
     statusBar->addWidget(m_statusReportLabel);
 
     // QStatusBar 没有 addStretch 方法，用一个空 QWidget 作为弹簧
-    // 使后续的 permanent widget 靠右显示
     QWidget* spacer = new QWidget(this);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     statusBar->addWidget(spacer, 1);
@@ -440,6 +292,7 @@ void MainWindow::createStatusBar()
     // 根据配置显示或隐藏状态栏
     statusBar->setVisible(AppConfig::instance().showStatusBar());
 }
+
 
 void MainWindow::connectSignals()
 {
@@ -518,13 +371,13 @@ void MainWindow::onNewProject()
 
     if (dialog.exec() == QDialog::Accepted) {
         Project::Ptr project = dialog.projectData();
-        if (ProjectRepository::insert(project)) {
+        if (ProjectService::save(project)) {
             m_projectTree->refreshTree();
             m_projectTree->selectProject(project->id());
             showStatusMessage(tr("项目「%1」已创建").arg(project->name()));
             LOG_INFO(QString("项目已创建: %1").arg(project->toString()));
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("创建项目失败，请查看日志"));
+            UiHelper::error(this, tr("错误"), tr("创建项目失败，请查看日志"));
         }
     }
 }
@@ -533,14 +386,14 @@ void MainWindow::onNewReport()
 {
     const qint64 projectId = currentProjectId();
     if (projectId <= 0) {
-        QMessageBox::information(this, tr("提示"), tr("请先在左侧选择一个项目"));
+        UiHelper::info(this, tr("提示"), tr("请先在左侧选择一个项目"));
         return;
     }
 
     // 选择模板
-    const Template::List templates = TemplateRepository::findAll();
+    const Template::List templates = TemplateService::listAll();
     if (templates.isEmpty()) {
-        QMessageBox::warning(this, tr("提示"), tr("没有可用的报告模板"));
+        UiHelper::warning(this, tr("提示"), tr("没有可用的报告模板"));
         return;
     }
 
@@ -590,12 +443,12 @@ void MainWindow::onNewReport()
         report->appendBlock(block);
     }
 
-    if (ReportRepository::insert(report)) {
+    if (ReportService::save(report)) {
         m_reportList->refreshList();
         showStatusMessage(tr("报告「%1」已创建").arg(report->title()));
         LOG_INFO(QString("报告已创建: %1").arg(report->toString()));
     } else {
-        QMessageBox::critical(this, tr("错误"), tr("创建报告失败"));
+        UiHelper::error(this, tr("错误"), tr("创建报告失败"));
     }
 }
 
@@ -605,7 +458,7 @@ void MainWindow::onOpenReport()
     if (reportId > 0) {
         onReportOpenRequested(reportId);
     } else {
-        QMessageBox::information(this, tr("提示"), tr("请先在报告列表中选择一份报告"));
+        UiHelper::info(this, tr("提示"), tr("请先在报告列表中选择一份报告"));
     }
 }
 
@@ -615,30 +468,9 @@ void MainWindow::onOpenReport()
 
 void MainWindow::onImportData()
 {
-    // 获取所有导入插件
-    if (!m_pluginManager) {
-        QMessageBox::warning(this, tr("错误"), tr("插件管理器未初始化"));
-        return;
-    }
-
-    const QList<ImportPluginInterface*> importPlugins =
-        m_pluginManager->pluginsOfType<ImportPluginInterface>();
-
-    if (importPlugins.isEmpty()) {
-        QMessageBox::information(this, tr("提示"), tr("没有可用的导入插件"));
-        return;
-    }
-
-    // 构建文件过滤器
+    // 文件选择过滤器（内置 CSV 导入）
     QStringList filters;
-    QMap<QString, ImportPluginInterface*> filterToPlugin;
-    for (ImportPluginInterface* plugin : importPlugins) {
-        const QString filter = plugin->fileFilter();
-        if (!filter.isEmpty()) {
-            filters.append(filter);
-            filterToPlugin.insert(filter, plugin);
-        }
-    }
+    filters.append(CsvImporter::fileFilter());
     filters.append(tr("所有文件 (*.*)"));
 
     // 让用户选择文件
@@ -647,50 +479,27 @@ void MainWindow::onImportData()
 
     if (filePath.isEmpty()) return;
 
-    // 根据文件扩展名选择合适的导入插件
-    ImportPluginInterface* selectedPlugin = nullptr;
     const QFileInfo fileInfo(filePath);
     const QString suffix = fileInfo.suffix().toLower();
 
-    for (ImportPluginInterface* plugin : importPlugins) {
-        if (plugin->supportedFormats().contains(suffix)) {
-            selectedPlugin = plugin;
-            break;
-        }
-    }
-
-    // 如果没有匹配的插件，让用户选择
-    if (!selectedPlugin) {
-        QStringList pluginNames;
-        for (ImportPluginInterface* plugin : importPlugins) {
-            pluginNames.append(plugin->name());
-        }
-        bool ok = false;
-        const QString choice = QInputDialog::getItem(this, tr("选择导入插件"),
-            tr("无法自动识别文件格式，请选择导入插件："),
-            pluginNames, 0, false, &ok);
-        if (!ok || choice.isEmpty()) return;
-
-        for (ImportPluginInterface* plugin : importPlugins) {
-            if (plugin->name() == choice) {
-                selectedPlugin = plugin;
-                break;
-            }
-        }
-    }
-
-    if (!selectedPlugin) {
-        QMessageBox::warning(this, tr("错误"), tr("未选择导入插件"));
+    // 仅支持 csv / txt 格式
+    if (!CsvImporter::supportedFormats().contains(suffix)) {
+        UiHelper::warning(this, tr("错误"),
+            tr("不支持的文件格式：%1\n仅支持 %2 格式。")
+                .arg(suffix.isEmpty() ? tr("未知") : suffix)
+                .arg(CsvImporter::supportedFormats().join(", ")));
         return;
     }
 
     // 执行导入
+    QString errorMessage;
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    DataTable::Ptr table = selectedPlugin->importFromFile(filePath, this);
+    DataTable::Ptr table = CsvImporter::importFile(filePath, &errorMessage);
     QApplication::restoreOverrideCursor();
 
     if (!table) {
-        QMessageBox::warning(this, tr("导入失败"), tr("数据导入失败，请检查文件格式"));
+        UiHelper::warning(this, tr("导入失败"),
+            errorMessage.isEmpty() ? tr("数据导入失败，请检查文件格式") : errorMessage);
         return;
     }
 
@@ -702,12 +511,12 @@ void MainWindow::onImportData()
     table->setReportId(0);
 
     // 保存到数据库
-    if (!DataTableRepository::insert(table)) {
-        QMessageBox::warning(this, tr("保存失败"), tr("数据表保存到数据库失败"));
+    if (!DataTableService::save(table)) {
+        UiHelper::warning(this, tr("保存失败"), tr("数据表保存到数据库失败"));
         return;
     }
 
-    QMessageBox::information(this, tr("导入成功"),
+    UiHelper::info(this, tr("导入成功"),
         tr("数据导入成功！\n\n"
            "数据表名称：%1\n"
            "行数：%2\n"
@@ -726,31 +535,32 @@ void MainWindow::onExportProject()
 {
     const qint64 projectId = currentProjectId();
     if (projectId <= 0) {
-        QMessageBox::information(this, tr("提示"), tr("请先在左侧选择要导出的项目"));
+        UiHelper::info(this, tr("提示"), tr("请先在左侧选择要导出的项目"));
         return;
     }
 
     // 加载项目信息
-    Project::Ptr project = ProjectRepository::findById(projectId);
+    Project::Ptr project = ProjectService::getById(projectId);
     if (!project) {
-        QMessageBox::warning(this, tr("错误"), tr("无法加载项目信息"));
+        UiHelper::warning(this, tr("错误"), tr("无法加载项目信息"));
         return;
     }
 
     // 查询该项目下的所有报告
-    QList<Report::Ptr> reports = ReportRepository::findByProject(projectId);
+    QList<Report::Ptr> reports = ReportService::listByProject(projectId);
     if (reports.isEmpty()) {
-        QMessageBox::information(this, tr("提示"), tr("该项目下没有报告可导出"));
+        UiHelper::info(this, tr("提示"), tr("该项目下没有报告可导出"));
         return;
     }
 
-    // 让用户选择导出格式
+    // 让用户选择导出格式（传 &ok 准确区分"确定"与"取消"）
+    bool ok = false;
     const QString formatStr = QInputDialog::getItem(this, tr("导出项目"),
         tr("选择导出格式："),
         QStringList() << tr("PDF 文档") << tr("HTML 网页") << tr("Word 文档") << tr("纯文本"),
-        0, false);
+        0, false, &ok);
 
-    if (formatStr.isEmpty()) {
+    if (!ok || formatStr.isEmpty()) {
         return;  // 用户取消
     }
 
@@ -800,7 +610,7 @@ void MainWindow::onExportProject()
         }
         // 替换文件名中的非法字符
         fileName.replace(QRegularExpression("[\\\\/:*?\"<>|]"), "_");
-        const QString filePath = QDir(projectDir).filePath(QString("%1.%2").arg(fileName, ext));
+        const QString filePath = QDir(projectDir).filePath(QString("%1.%2").arg(fileName).arg(ext));
 
         // 执行导出
         ExportConfig config;
@@ -832,9 +642,9 @@ void MainWindow::onExportProject()
     showStatusMessage(tr("项目导出完成：成功 %1，失败 %2").arg(successCount).arg(failCount));
 
     if (failCount == 0) {
-        QMessageBox::information(this, tr("导出成功"), message);
+        UiHelper::info(this, tr("导出成功"), message);
     } else {
-        QMessageBox::warning(this, tr("导出完成（部分失败）"), message);
+        UiHelper::warning(this, tr("导出完成（部分失败）"), message);
     }
 }
 
@@ -852,7 +662,7 @@ void MainWindow::onEditProject()
     const qint64 projectId = currentProjectId();
     if (projectId <= 0) return;
 
-    Project::Ptr project = ProjectRepository::findById(projectId);
+    Project::Ptr project = ProjectService::getById(projectId);
     if (!project) return;
 
     ProjectDialog dialog(this);
@@ -862,12 +672,12 @@ void MainWindow::onEditProject()
     if (dialog.exec() == QDialog::Accepted) {
         Project::Ptr updated = dialog.projectData();
         updated->setId(projectId);
-        if (ProjectRepository::update(updated)) {
+        if (ProjectService::update(updated)) {
             m_projectTree->refreshTree();
             m_projectTree->selectProject(projectId);
             showStatusMessage(tr("项目已更新"));
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("更新项目失败"));
+            UiHelper::error(this, tr("错误"), tr("更新项目失败"));
         }
     }
 }
@@ -883,22 +693,18 @@ void MainWindow::onDeleteProject()
         return;
     }
 
-    Project::Ptr project = ProjectRepository::findById(projectId);
+    Project::Ptr project = ProjectService::getById(projectId);
     if (!project) return;
 
-    const auto ret = QMessageBox::warning(
-        this, tr("确认删除"),
-        tr("确定要删除项目「%1」吗？\n该项目下的所有报告将被同时删除，此操作不可恢复！")
-            .arg(project->name()),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-
-    if (ret == QMessageBox::Yes) {
-        if (ProjectRepository::remove(projectId)) {
+    if (UiHelper::confirm(this,
+                       tr("确认删除"),
+                       tr("确定要删除项目「%1」吗？\n该项目下的所有报告将被同时删除，此操作不可恢复！") .arg(project->name()))) {
+        if (ProjectService::remove(projectId)) {
             m_projectTree->refreshTree();
             m_reportList->setProjectId(-1);
             showStatusMessage(tr("项目已删除"));
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("删除项目失败"));
+            UiHelper::error(this, tr("错误"), tr("删除项目失败"));
         }
     }
 }
@@ -914,20 +720,17 @@ void MainWindow::onDeleteReport()
         return;
     }
 
-    Report::Ptr report = ReportRepository::findById(reportId);
+    Report::Ptr report = ReportService::getById(reportId);
     if (!report) return;
 
-    const auto ret = QMessageBox::warning(
-        this, tr("确认删除"),
-        tr("确定要删除报告「%1」吗？此操作不可恢复！").arg(report->title()),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-
-    if (ret == QMessageBox::Yes) {
-        if (ReportRepository::remove(reportId)) {
+    if (UiHelper::confirm(this,
+                       tr("确认删除"),
+                       tr("确定要删除报告「%1」吗？此操作不可恢复！").arg(report->title()))) {
+        if (ReportService::remove(reportId)) {
             m_reportList->refreshList();
             showStatusMessage(tr("报告已删除"));
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("删除报告失败"));
+            UiHelper::error(this, tr("错误"), tr("删除报告失败"));
         }
     }
 }
@@ -993,7 +796,7 @@ void MainWindow::onResetZoom()
 void MainWindow::onTemplateManager()
 {
     // 获取所有模板
-    const Template::List templates = TemplateRepository::findAll();
+    const Template::List templates = TemplateService::listAll();
 
     // 构建模板列表供用户选择
     QStringList items;
@@ -1024,12 +827,10 @@ void MainWindow::onTemplateManager()
 
             // 内置模板需要先复制才能编辑
             if (temp->isBuiltin()) {
-                const auto ret = QMessageBox::question(
-                    this, tr("内置模板"),
-                    tr("「%1」是内置模板，不能直接修改。\n是否创建一个副本进行编辑？")
-                        .arg(temp->name()),
-                    QMessageBox::Yes | QMessageBox::No);
-                if (ret != QMessageBox::Yes) return;
+                if (!UiHelper::confirm(this,
+                                       tr("内置模板"),
+                                       tr("「%1」是内置模板，不能直接修改。\n是否创建一个副本进行编辑？")
+                                           .arg(temp->name()))) return;
 
                 // 创建副本
                 Template::Ptr copy = Template::create();
@@ -1037,7 +838,7 @@ void MainWindow::onTemplateManager()
                 copy->setCategory(temp->category());
                 copy->setDescription(temp->description());
                 copy->setBlocks(temp->blocks());
-                TemplateRepository::insert(copy);
+                TemplateService::save(copy);
                 temp = copy;
             }
 
@@ -1065,17 +866,17 @@ void MainWindow::onChangePassword()
 
     // 验证原密码
     const QString username = UserSession::instance().username();
-    User::Ptr user = UserRepository::authenticate(username, dialog.oldPassword());
+    User::Ptr user = UserService::authenticate(username, dialog.oldPassword());
     if (!user) {
-        QMessageBox::warning(this, tr("修改失败"), tr("原密码不正确"));
+        UiHelper::warning(this, tr("修改失败"), tr("原密码不正确"));
         return;
     }
 
     // 修改密码
-    if (UserRepository::changePassword(user->id(), dialog.newPassword())) {
-        QMessageBox::information(this, tr("修改成功"), tr("密码已修改成功，下次登录请使用新密码"));
+    if (UserService::changePassword(user->id(), dialog.newPassword())) {
+        UiHelper::info(this, tr("修改成功"), tr("密码已修改成功，下次登录请使用新密码"));
     } else {
-        QMessageBox::critical(this, tr("修改失败"), tr("修改密码时发生错误"));
+        UiHelper::error(this, tr("修改失败"), tr("修改密码时发生错误"));
     }
 }
 
@@ -1094,18 +895,18 @@ void MainWindow::onDataBackup()
         + "/data/experiment_reports.db";
 
     if (QFile::copy(dbPath, filePath)) {
-        QMessageBox::information(this, tr("备份成功"),
+        UiHelper::info(this, tr("备份成功"),
             tr("数据已备份到:\n%1").arg(filePath));
         showStatusMessage(tr("数据备份完成"));
     } else {
-        QMessageBox::critical(this, tr("备份失败"),
+        UiHelper::error(this, tr("备份失败"),
             tr("无法复制数据库文件。\n请确保目标路径可写。"));
     }
 }
 
 void MainWindow::onDataRestore()
 {
-    QMessageBox::warning(this, tr("数据恢复"),
+    UiHelper::warning(this, tr("数据恢复"),
         tr("数据恢复功能将覆盖当前所有数据！\n\n"
            "此功能将在后续版本中实现，当前请手动替换数据库文件。"));
 }
@@ -1152,7 +953,7 @@ void MainWindow::onAboutQt()
 
 void MainWindow::onCheckUpdate()
 {
-    QMessageBox::information(this, tr("检查更新"),
+    UiHelper::info(this, tr("检查更新"),
         tr("当前已是最新版本: %1\n\n"
            "更新检查功能将在后续版本中实现。").arg(AppConstants::APP_VERSION));
 }
@@ -1160,7 +961,7 @@ void MainWindow::onCheckUpdate()
 void MainWindow::onPluginManager()
 {
     if (!m_pluginManager) {
-        QMessageBox::warning(this, tr("提示"), tr("插件管理器未初始化"));
+        UiHelper::warning(this, tr("提示"), tr("插件管理器未初始化"));
         return;
     }
 
@@ -1172,7 +973,7 @@ void MainWindow::onUserManager()
 {
     // 仅管理员可访问
     if (!UserSession::instance().isAdmin()) {
-        QMessageBox::warning(this, tr("权限不足"), tr("只有管理员可以管理用户"));
+        UiHelper::warning(this, tr("权限不足"), tr("只有管理员可以管理用户"));
         return;
     }
 
@@ -1206,9 +1007,9 @@ void MainWindow::onProjectTreeChanged()
 void MainWindow::onReportOpenRequested(qint64 reportId)
 {
     m_currentReportId = reportId;
-    Report::Ptr report = ReportRepository::findById(reportId);
+    Report::Ptr report = ReportService::getById(reportId);
     if (!report) {
-        QMessageBox::warning(this, tr("错误"), tr("未找到报告"));
+        UiHelper::warning(this, tr("错误"), tr("未找到报告"));
         return;
     }
 
@@ -1323,7 +1124,7 @@ bool MainWindow::canModifyReport(qint64 reportId) const
     // 管理员可以修改所有
     if (UserSession::instance().isAdmin()) return true;
 
-    Report::Ptr report = ReportRepository::findById(reportId);
+    Report::Ptr report = ReportService::getById(reportId);
     if (!report) return false;
 
     // 未分配创建者的旧数据，所有人都可以修改（兼容旧数据）
@@ -1338,7 +1139,7 @@ bool MainWindow::canModifyProject(qint64 projectId) const
     // 管理员可以修改所有
     if (UserSession::instance().isAdmin()) return true;
 
-    Project::Ptr project = ProjectRepository::findById(projectId);
+    Project::Ptr project = ProjectService::getById(projectId);
     if (!project) return false;
 
     // 未分配创建者的旧数据，所有人都可以修改（兼容旧数据）
@@ -1350,7 +1151,7 @@ bool MainWindow::canModifyProject(qint64 projectId) const
 
 void MainWindow::showPermissionDenied() const
 {
-    QMessageBox::warning(nullptr, tr("权限不足"),
+    UiHelper::warning(nullptr, tr("权限不足"),
         tr("您没有权限修改此数据。\n只有创建者或管理员可以修改。"));
 }
 
@@ -1384,7 +1185,7 @@ void MainWindow::updateWindowTitle()
     QString title = AppConstants::APP_DISPLAY_NAME;
 
     if (m_currentProjectId > 0) {
-        Project::Ptr project = ProjectRepository::findById(m_currentProjectId);
+        Project::Ptr project = ProjectService::getById(m_currentProjectId);
         if (project) {
             title += QString(" - %1").arg(project->name());
         }
@@ -1412,7 +1213,7 @@ void MainWindow::updateStatusBar()
 {
     // 当前项目
     if (m_currentProjectId > 0) {
-        Project::Ptr project = ProjectRepository::findById(m_currentProjectId);
+        Project::Ptr project = ProjectService::getById(m_currentProjectId);
         if (project) {
             m_statusProjectLabel->setText(tr("项目: %1").arg(project->name()));
         }
@@ -1421,8 +1222,8 @@ void MainWindow::updateStatusBar()
     }
 
     // 统计信息
-    const int projectCount = ProjectRepository::count();
-    const int reportCount = ReportRepository::count();
+    const int projectCount = ProjectService::count();
+    const int reportCount = ReportService::count();
     m_statusCountLabel->setText(
         tr("项目: %1 | 报告: %2").arg(projectCount).arg(reportCount));
 }
@@ -1434,114 +1235,25 @@ void MainWindow::updatePropertyPanel()
     // 优先显示当前选中的报告属性
     const qint64 reportId = currentReportId();
     if (reportId > 0) {
-        Report::Ptr report = ReportRepository::findById(reportId);
+        const Report::Ptr report = ReportService::getById(reportId);
         if (report) {
-            // 状态字符串
-            QString statusStr;
-            switch (report->status()) {
-                case ReportStatus::Draft:     statusStr = tr("草稿"); break;
-                case ReportStatus::Submitted: statusStr = tr("已提交"); break;
-                case ReportStatus::Reviewed:  statusStr = tr("已审核"); break;
-                default:                       statusStr = tr("未知"); break;
-            }
-
-            // 项目名称
-            QString projectName = tr("未分类");
-            if (report->projectId() > 0) {
-                Project::Ptr project = ProjectRepository::findById(report->projectId());
-                if (project) projectName = project->name();
-            }
-
-            // 标签
-            const Tag::List tags = TagRepository::findByReport(report->id());
-            QString tagsHtml;
-            if (tags.isEmpty()) {
-                tagsHtml = tr("无标签");
-            } else {
-                for (int i = 0; i < tags.size(); ++i) {
-                    const QColor color = tags[i]->effectiveColor();
-                    if (i > 0) tagsHtml += "&nbsp;&nbsp;";
-                    tagsHtml += QString("<span style='color: %1;'>■</span>&nbsp;%2")
-                                    .arg(color.name())
-                                    .arg(tags[i]->name().toHtmlEscaped());
-                }
-            }
-
-            // 创建者
-            QString creatorName = tr("未分配");
-            if (report->createdBy() > 0) {
-                User::Ptr creator = UserRepository::findById(report->createdBy());
-                if (creator) creatorName = creator->displayNameOrUsername();
-                else creatorName = tr("未知用户");
-            }
-
-            const QString html = QString(
-                "<div style='font-size: %1px; line-height: 1.8;'>"
-                "<p><b style='color: %2;'>报告属性</b></p>"
-                "<p><b>标题：</b>%3</p>"
-                "<p><b>状态：</b>%4</p>"
-                "<p><b>项目：</b>%5</p>"
-                "<p><b>创建者：</b>%6</p>"
-                "<p><b>实验日期：</b>%7</p>"
-                "<p><b>更新时间：</b>%8</p>"
-                "<p><b>字数：</b>%9 字</p>"
-                "<p><b>内容块：</b>%10 个</p>"
-                "<p><b>标签：</b>%11</p>"
-                "<p><b>报告ID：</b>%12</p>"
-                "</div>"
-            ).arg(AppTheme::FontSize::Small)
-             .arg(AppTheme::Color::Primary)
-             .arg(report->title().isEmpty() ? tr("未命名") : report->title().toHtmlEscaped())
-             .arg(statusStr)
-             .arg(projectName.toHtmlEscaped())
-             .arg(creatorName.toHtmlEscaped())
-             .arg(report->experimentDate().isValid() ? report->experimentDate().toString("yyyy-MM-dd") : tr("未设置"))
-             .arg(report->updatedAt().isValid() ? report->updatedAt().toString("yyyy-MM-dd HH:mm") : tr("未知"))
-             .arg(QString::number(report->wordCount()))
-             .arg(QString::number(report->blockCount()))
-             .arg(tagsHtml)
-             .arg(QString::number(report->id()));
-
-            m_propertyContentLabel->setText(html);
+            m_propertyContentLabel->setText(PropertyPanelHelper::reportHtml(report));
             return;
         }
     }
 
-    // 如果没有选中报告，显示当前项目属性
+    // 没有选中报告时，显示当前项目属性
     const qint64 projectId = currentProjectId();
     if (projectId > 0) {
-        Project::Ptr project = ProjectRepository::findById(projectId);
+        const Project::Ptr project = ProjectService::getById(projectId);
         if (project) {
-            const int reportCount = ReportRepository::countByProject(projectId);
-            const QString html = QString(
-                "<div style='font-size: %1px; line-height: 1.8;'>"
-                "<p><b style='color: %2;'>项目属性</b></p>"
-                "<p><b>名称：</b>%3</p>"
-                "<p><b>描述：</b>%4</p>"
-                "<p><b>报告数：</b>%5 份</p>"
-                "<p><b>创建时间：</b>%6</p>"
-                "<p><b>项目ID：</b>%7</p>"
-                "</div>"
-            ).arg(AppTheme::FontSize::Small)
-             .arg(AppTheme::Color::Success)
-             .arg(project->name().toHtmlEscaped())
-             .arg(project->description().isEmpty() ? tr("无描述") : project->description().toHtmlEscaped())
-             .arg(QString::number(reportCount))
-             .arg(project->createdAt().isValid() ? project->createdAt().toString("yyyy-MM-dd HH:mm") : tr("未知"))
-             .arg(QString::number(project->id()));
-
-            m_propertyContentLabel->setText(html);
+            m_propertyContentLabel->setText(PropertyPanelHelper::projectHtml(project));
             return;
         }
     }
 
-    // 都没有选中，显示提示
-    m_propertyContentLabel->setText(QString(
-        "<div style='color: %1; font-size: %2px; margin-top: %3px;'>"
-        "选择项目或报告后，<br>此处将显示其属性信息。"
-        "</div>").arg(AppTheme::Color::TextSecondary)
-                  .arg(AppTheme::FontSize::Small)
-                  .arg(AppTheme::Spacing::Large));
+    // 都没有选中，显示占位提示
+    m_propertyContentLabel->setText(PropertyPanelHelper::emptyHtml());
 }
 
 // ===========================================================================

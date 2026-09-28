@@ -7,8 +7,8 @@
   <property name="minimumSize"><size><width>800</width><height>600</height></size></property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing"><number>8</number></property>
-   <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
-   <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+   <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property>
+   <property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
    <item>
     <layout class="QHBoxLayout" name="topLayout">
      <item><widget class="QLabel" name="labelTemplate"><property name="text"><string>公式模板:</string></property></widget></item>
@@ -29,8 +29,8 @@
      <widget class="QWidget" name="inputPanel">
       <layout class="QVBoxLayout" name="inputLayout">
        <property name="spacing"><number>4</number></property>
-       <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
-       <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+       <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property>
+       <property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
        <item><widget class="QLabel" name="labelLatex"><property name="text"><string>LaTeX 输入:</string></property></widget></item>
        <item><widget class="QTextEdit" name="m_latexEdit"><property name="placeholderText"><string>输入 LaTeX 公式，例如：\frac{a}{b}</string></property></widget></item>
       </layout>
@@ -38,8 +38,8 @@
      <widget class="QWidget" name="previewPanel">
       <layout class="QVBoxLayout" name="previewLayout">
        <property name="spacing"><number>4</number></property>
-       <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
-       <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+       <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property>
+       <property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
        <item><widget class="QLabel" name="labelPreview"><property name="text"><string>预览:</string></property></widget></item>
        <item><widget class="QTextBrowser" name="m_previewBrowser"/></item>
       </layout>

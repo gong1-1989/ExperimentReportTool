@@ -46,9 +46,6 @@ public:
     QDateTime createdAt() const { return m_createdAt; }
     void setCreatedAt(const QDateTime& dt) { m_createdAt = dt; }
 
-    int usageCount() const { return m_usageCount; }
-    void setUsageCount(int count) { m_usageCount = count; }
-
     // -----------------------------------------------------------------------
     // 工具方法
     // -----------------------------------------------------------------------
@@ -74,7 +71,6 @@ private:
     QString m_color;         ///< 标签颜色（十六进制，如 "#FF5733"）
     QString m_description;   ///< 标签描述
     QDateTime m_createdAt;   ///< 创建时间
-    int m_usageCount;        ///< 使用次数（查询时填充）
 };
 
 #endif // TAG_H

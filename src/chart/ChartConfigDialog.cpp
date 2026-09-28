@@ -9,6 +9,7 @@
 #include "core/utils/AppDimensions.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QTabWidget>
 #include <QWidget>
 
@@ -96,7 +97,7 @@ ChartType ChartConfig::chartTypeFromString(const QString& str)
 ChartConfigDialog::ChartConfigDialog(const DataTable::List& tables,
                                        const ChartConfig& config,
                                        QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::ChartConfigDialog)  // 创建 UI 界面对象
     , m_tables(tables)
     , m_config(config)
@@ -243,11 +244,11 @@ void ChartConfigDialog::onAccept()
 bool ChartConfigDialog::validateConfig()
 {
     if (ui->m_tableCombo->currentIndex() < 0) {
-        QMessageBox::warning(this, tr("输入错误"), tr("请选择数据表"));
+        UiHelper::warning(this, tr("输入错误"), tr("请选择数据表"));
         return false;
     }
     if (ui->m_yAxisList->selectedItems().isEmpty()) {
-        QMessageBox::warning(this, tr("输入错误"), tr("请至少选择一个Y轴列"));
+        UiHelper::warning(this, tr("输入错误"), tr("请至少选择一个Y轴列"));
         return false;
     }
     return true;
@@ -256,5 +257,5 @@ bool ChartConfigDialog::validateConfig()
 void ChartConfigDialog::onPreview()
 {
     // 预览功能（后续实现）
-    QMessageBox::information(this, tr("预览"), tr("图表预览功能将在后续版本中实现"));
+    UiHelper::info(this, tr("预览"), tr("图表预览功能将在后续版本中实现"));
 }

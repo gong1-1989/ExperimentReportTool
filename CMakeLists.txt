@@ -1,10 +1,15 @@
 # ============================================================================
 # 实验报告记录工具 - CMake 构建配置
 #
-# 标准 Qt 插件架构：
-#   core_lib.dll      - 核心动态库（所有非插件代码）
-#   plugins/*.dll     - 18个独立动态库插件（每个有自己的 CMakeLists.txt）
+# 简化架构（单库部署）：
+#   core_lib.dll            - 核心动态库（框架 + 内置块编辑器/导入导出）
 #   ExperimentReportTool.exe - 主程序（只含 main.cpp）
+#
+# 插件体系（独立 .dll 插件）：
+#   PluginManager 启动时扫描 exe 同级 plugins/ 目录加载插件。
+#   - plugins/demo/     独立 .dll 示例插件（演示加载→查询→调用链路）
+#   - plugin_template/  插件脚手架模板（新建插件时复制该目录）
+#   插件只需继承 core/plugin/PluginInterface 抽象接口即可被加载。
 # ============================================================================
 
 cmake_minimum_required(VERSION 3.16)
@@ -50,7 +55,7 @@ endif()
 
 # ---------------------------------------------------------------------------
 # 核心动态库 core_lib
-# 包含 src/ 下除 plugins/ 和 main.cpp 之外的所有代码
+# 包含 src/ 下除 main.cpp 之外的所有代码
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/src/*.cpp"
@@ -61,10 +66,6 @@ file(GLOB_RECURSE CORE_QRC CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.qrc")
 
 # 排除 main.cpp
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
-# 排除 plugins/ 目录（插件有自己的 CMakeLists.txt）
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/src/plugins/.*")
-list(FILTER CORE_UI EXCLUDE REGEX ".*/src/plugins/.*")
-list(FILTER CORE_QRC EXCLUDE REGEX ".*/src/plugins/.*")
 
 add_library(core_lib SHARED ${CORE_SOURCES} ${CORE_UI} ${CORE_QRC})
 
@@ -78,25 +79,10 @@ set_target_properties(core_lib PROPERTIES
 )
 
 # ---------------------------------------------------------------------------
-# 插件（每个插件有独立的 CMakeLists.txt）
-# ---------------------------------------------------------------------------
-add_subdirectory(src/plugins)
-
-# ---------------------------------------------------------------------------
 # 主程序可执行文件
 # ---------------------------------------------------------------------------
 add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE core_lib)
-
-# 主程序依赖所有插件（确保编译顺序）
-add_dependencies(${PROJECT_NAME}
-    TextBlockPlugin TableBlockPlugin ChartBlockPlugin
-    FormulaBlockPlugin ImageBlockPlugin CodeBlockPlugin
-    PdfExportPlugin HtmlExportPlugin WordExportPlugin TextExportPlugin
-    SearchPlugin TagManagerPlugin AttachmentManagerPlugin
-    VersionManagerPlugin TemplateManagerPlugin PluginManagerPlugin
-    CsvImportPlugin SamplePlugin
-)
 
 if(WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
@@ -135,11 +121,9 @@ install(TARGETS ${PROJECT_NAME} core_lib
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION bin
 )
-install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/plugins/ DESTINATION bin/plugins
-    FILES_MATCHING PATTERN "*.dll" PATTERN "*.so" PATTERN "*.dylib")
 
 # ---------------------------------------------------------------------------
-# 单元测试
+# 单元测试（tests/ 目录尚未建立，预留开关；建立后放入 tests/CMakeLists.txt）
 # ---------------------------------------------------------------------------
 option(BUILD_TESTS "构建单元测试" OFF)
 if(BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/tests/CMakeLists.txt")
@@ -147,10 +131,20 @@ if(BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
 
+# ---------------------------------------------------------------------------
+# 插件（独立动态库）
+# ---------------------------------------------------------------------------
+# 示例插件：演示独立 .dll 插件的加载链路
+add_subdirectory(plugins/demo)
+
+# 以后新增插件时，在此添加：
+# add_subdirectory(plugins/<你的插件目录>)
+
 message(STATUS "==================================================")
 message(STATUS "项目: ${PROJECT_NAME} v${PROJECT_VERSION}")
 message(STATUS "Qt 版本: Qt${QT_VERSION_MAJOR}")
 message(STATUS "构建类型: ${CMAKE_BUILD_TYPE}")
-message(STATUS "架构: core_lib.dll + 18个独立插件.dll + 主程序")
-message(STATUS "每个插件有独立的 CMakeLists.txt")
+message(STATUS "架构: core_lib.dll + 主程序（单库部署）")
+message(STATUS "插件: 独立 .dll 示例插件 plugins/demo（输出到 bin/plugins/）")
+message(STATUS "插件模板: plugin_template/（新建插件时复制）")
 message(STATUS "==================================================")

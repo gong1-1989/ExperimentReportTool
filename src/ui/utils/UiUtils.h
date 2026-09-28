@@ -16,6 +16,8 @@
 #include <QColor>
 #include <QSize>
 
+#include "core/utils/AppTheme.h"
+
 /**
  * @brief UI 工具类
  *
@@ -71,8 +73,8 @@ public:
      */
     static QString listItemHtml(const QString& title,
                                  const QString& subtitle = QString(),
-                                 const QColor& titleColor = QColor("#303133"),
-                                 const QColor& subtitleColor = QColor("#909399"));
+                                 const QColor& titleColor = QColor(AppTheme::Color::TextPrimary),
+                                 const QColor& subtitleColor = QColor(AppTheme::Color::TextSecondary));
 
     /**
      * @brief 生成带状态标签的列表项 HTML

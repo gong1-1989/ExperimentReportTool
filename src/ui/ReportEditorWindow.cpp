@@ -4,12 +4,14 @@
  */
 
 #include "ReportEditorWindow.h"
+#include <QStyle>
 #include "ui_ReportEditorWindow.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/ReportEditor.h"
 #include "editor/TextBlockEditor.h"
 #include "export/ExportManager.h"
 #include "print/PrintManager.h"
 #include "data/repositories/TagRepository.h"
+#include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
 #include "core/plugin/PluginManager.h"
 #include "core/utils/Logger.h"
@@ -25,6 +27,7 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QFileDialog>
 #include <QCloseEvent>
 #include <QApplication>
@@ -66,8 +69,6 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
 
     m_printManager = new PrintManager(this);
     createActions();
-    createMenus();
-    createToolBar();
     connectSignals();
 
     // 初始化状态栏
@@ -104,155 +105,87 @@ ReportEditorWindow::~ReportEditorWindow()
 
 void ReportEditorWindow::createActions()
 {
-    // 文件
-    m_actionSave = new QAction(tr("保存(&S)"), this);
-    m_actionSave->setShortcut(QKeySequence::Save);
+    // 动作已在 ReportEditorWindow.ui 中定义（含菜单/工具栏引用与快捷键），
+    // 此处仅取出指针、设置图标并连接信号
+    m_actionSave = ui->m_actionSave;
+    m_actionUndo = ui->m_actionUndo;
+    m_actionRedo = ui->m_actionRedo;
+    m_actionBold = ui->m_actionBold;
+    m_actionItalic = ui->m_actionItalic;
+    m_actionUnderline = ui->m_actionUnderline;
+    m_actionVersionHistory = ui->m_actionVersionHistory;
+    m_actionManageAttachments = ui->m_actionManageAttachments;
+
+    m_actionSave->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    m_actionUndo->setIcon(style()->standardIcon(QStyle::SP_ArrowBack));
+    m_actionRedo->setIcon(style()->standardIcon(QStyle::SP_ArrowForward));
+    m_actionVersionHistory->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    m_actionManageAttachments->setIcon(style()->standardIcon(QStyle::SP_DirLinkIcon));
+
+    // 成员动作连接
     connect(m_actionSave, &QAction::triggered, this, &ReportEditorWindow::onSave);
-
-    // 编辑
-    m_actionUndo = new QAction(tr("撤销(&U)"), this);
-    m_actionUndo->setShortcut(QKeySequence::Undo);
-    m_actionUndo->setEnabled(false);
-
-    m_actionRedo = new QAction(tr("重做(&R)"), this);
-    m_actionRedo->setShortcut(QKeySequence::Redo);
-    m_actionRedo->setEnabled(false);
-
-    // 格式
-    m_actionBold = new QAction(tr("加粗"), this);
-    m_actionBold->setShortcut(QKeySequence::Bold);
     connect(m_actionBold, &QAction::triggered, this, &ReportEditorWindow::onBold);
-
-    m_actionItalic = new QAction(tr("斜体"), this);
-    m_actionItalic->setShortcut(QKeySequence::Italic);
     connect(m_actionItalic, &QAction::triggered, this, &ReportEditorWindow::onItalic);
-
-    m_actionUnderline = new QAction(tr("下划线"), this);
-    m_actionUnderline->setShortcut(QKeySequence::Underline);
     connect(m_actionUnderline, &QAction::triggered, this, &ReportEditorWindow::onUnderline);
 
-    // 工具
-    m_actionVersionHistory = new QAction(tr("版本历史(&V)..."), this);
-    m_actionVersionHistory->setStatusTip(tr("查看报告的版本历史"));
+    // 一次性动作连接（原 createMenus 中的 addAction(tr(...), this, &Xxx) 移至此）
+    connect(ui->actionNew, &QAction::triggered, this, &ReportEditorWindow::onNew);
+    connect(ui->actionSaveAs, &QAction::triggered, this, &ReportEditorWindow::onSaveAs);
+    connect(ui->actionExport, &QAction::triggered, this, &ReportEditorWindow::onExport);
+    connect(ui->actionPrintPreview, &QAction::triggered, this, &ReportEditorWindow::onPrintPreview);
+    connect(ui->actionPrint, &QAction::triggered, this, &ReportEditorWindow::onPrint);
+    connect(ui->actionPageSetup, &QAction::triggered, this, &ReportEditorWindow::onPageSetup);
+    connect(ui->actionClose, &QAction::triggered, this, &QWidget::close);
+    connect(ui->actionFind, &QAction::triggered, this, &ReportEditorWindow::onFind);
+    connect(ui->actionInsertTable, &QAction::triggered, this, &ReportEditorWindow::onInsertTable);
+    connect(ui->actionInsertImage, &QAction::triggered, this, &ReportEditorWindow::onInsertImage);
+    connect(ui->actionInsertDivider, &QAction::triggered, this, &ReportEditorWindow::onInsertDivider);
+    connect(ui->actionCodeBlock, &QAction::triggered, this, &ReportEditorWindow::onCodeBlock);
+    connect(ui->actionHeading1, &QAction::triggered, this, [this]() { onHeading(1); });
+    connect(ui->actionHeading2, &QAction::triggered, this, [this]() { onHeading(2); });
+    connect(ui->actionHeading3, &QAction::triggered, this, [this]() { onHeading(3); });
+    connect(ui->actionBulletList, &QAction::triggered, this, [this]() { onList(false); });
+    connect(ui->actionNumberedList, &QAction::triggered, this, [this]() { onList(true); });
+    connect(ui->actionQuote, &QAction::triggered, this, &ReportEditorWindow::onQuote);
+    connect(ui->actionFullscreen, &QAction::triggered, this, &ReportEditorWindow::onToggleFullscreen);
+    connect(ui->actionZoomIn, &QAction::triggered, this, &ReportEditorWindow::onZoomIn);
+    connect(ui->actionZoomOut, &QAction::triggered, this, &ReportEditorWindow::onZoomOut);
+    connect(ui->actionResetZoom, &QAction::triggered, this, &ReportEditorWindow::onResetZoom);
 
-    m_actionManageAttachments = new QAction(tr("附件管理(&M)..."), this);
-    m_actionManageAttachments->setStatusTip(tr("管理报告的附件"));
-}
-
-void ReportEditorWindow::createMenus()
-{
-    QMenuBar* bar = menuBar();
-
-    // 文件菜单
-    QMenu* fileMenu = bar->addMenu(tr("文件(&F)"));
-    fileMenu->addAction(tr("新建(&N)"), QKeySequence::New, this, &ReportEditorWindow::onNew);
-    fileMenu->addAction(m_actionSave);
-    fileMenu->addAction(tr("另存为(&A)..."), this, &ReportEditorWindow::onSaveAs);
-    fileMenu->addSeparator();
-    fileMenu->addAction(tr("导出(&E)..."), this, &ReportEditorWindow::onExport);
-    fileMenu->addSeparator();
-    fileMenu->addAction(tr("打印预览(&V)..."), this, &ReportEditorWindow::onPrintPreview);
-    fileMenu->addAction(tr("打印(&P)..."), QKeySequence::Print, this, &ReportEditorWindow::onPrint);
-    fileMenu->addAction(tr("页面设置(&G)..."), this, &ReportEditorWindow::onPageSetup);
-    fileMenu->addSeparator();
-    fileMenu->addAction(m_actionVersionHistory);
-    fileMenu->addSeparator();
-    fileMenu->addAction(tr("关闭(&C)"), QKeySequence::Close, this, &QWidget::close);
-
-    // 编辑菜单
-    QMenu* editMenu = bar->addMenu(tr("编辑(&E)"));
-    editMenu->addAction(m_actionUndo);
-    editMenu->addAction(m_actionRedo);
-    editMenu->addSeparator();
-    editMenu->addAction(tr("查找(&F)..."), QKeySequence::Find, this, &ReportEditorWindow::onFind);
-    editMenu->addSeparator();
-    editMenu->addAction(m_actionManageAttachments);
-
-    // 插入菜单
-    QMenu* insertMenu = bar->addMenu(tr("插入(&I)"));
-    insertMenu->addAction(tr("表格"), this, &ReportEditorWindow::onInsertTable);
-    insertMenu->addAction(tr("图片"), this, &ReportEditorWindow::onInsertImage);
-    insertMenu->addSeparator();
-    insertMenu->addAction(tr("分割线"), this, &ReportEditorWindow::onInsertDivider);
-    insertMenu->addAction(tr("代码块"), this, &ReportEditorWindow::onCodeBlock);
-
-    // 格式菜单
-    QMenu* formatMenu = bar->addMenu(tr("格式(&O)"));
-    formatMenu->addAction(m_actionBold);
-    formatMenu->addAction(m_actionItalic);
-    formatMenu->addAction(m_actionUnderline);
-    formatMenu->addSeparator();
-    QMenu* headingMenu = formatMenu->addMenu(tr("标题"));
-    headingMenu->addAction(tr("一级标题"), QKeySequence("Ctrl+1"), this, [this]() { onHeading(1); });
-    headingMenu->addAction(tr("二级标题"), QKeySequence("Ctrl+2"), this, [this]() { onHeading(2); });
-    headingMenu->addAction(tr("三级标题"), QKeySequence("Ctrl+3"), this, [this]() { onHeading(3); });
-    formatMenu->addSeparator();
-    formatMenu->addAction(tr("无序列表"), this, [this]() { onList(false); });
-    formatMenu->addAction(tr("有序列表"), this, [this]() { onList(true); });
-    formatMenu->addAction(tr("引用"), this, &ReportEditorWindow::onQuote);
-
-    // 视图菜单
-    QMenu* viewMenu = bar->addMenu(tr("视图(&V)"));
-    viewMenu->addAction(tr("全屏"), QKeySequence("F11"), this, &ReportEditorWindow::onToggleFullscreen);
-    viewMenu->addSeparator();
-    viewMenu->addAction(tr("放大"), QKeySequence("Ctrl++"), this, &ReportEditorWindow::onZoomIn);
-    viewMenu->addAction(tr("缩小"), QKeySequence("Ctrl+-"), this, &ReportEditorWindow::onZoomOut);
-    viewMenu->addAction(tr("重置缩放"), QKeySequence("Ctrl+0"), this, &ReportEditorWindow::onResetZoom);
-}
-
-void ReportEditorWindow::createToolBar()
-{
-    QToolBar* toolBar = addToolBar(tr("编辑工具栏"));
-    toolBar->setMovable(false);
-    toolBar->setIconSize(QSize(AppDimensions::Widget::ButtonIconSize, AppDimensions::Widget::ButtonIconSize));
-
-    toolBar->addAction(m_actionSave);
-    toolBar->addSeparator();
-    toolBar->addAction(m_actionUndo);
-    toolBar->addAction(m_actionRedo);
-    toolBar->addSeparator();
-    toolBar->addAction(m_actionBold);
-    toolBar->addAction(m_actionItalic);
-    toolBar->addAction(m_actionUnderline);
-    toolBar->addSeparator();
-
-    // 标题下拉
-    QComboBox* headingCombo = new QComboBox(toolBar);
-    headingCombo->addItems({tr("正文"), tr("H1"), tr("H2"), tr("H3")});
-    headingCombo->setToolTip(tr("段落样式"));
-    connect(headingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    // 工具栏标题下拉（已在 .ui 工具栏中定义）
+    connect(ui->headingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int idx) { onHeading(idx); });
-    toolBar->addWidget(headingCombo);
-
-    toolBar->addSeparator();
-    toolBar->addAction(tr("表格"), this, &ReportEditorWindow::onInsertTable);
-    toolBar->addAction(tr("图片"), this, &ReportEditorWindow::onInsertImage);
-    toolBar->addAction(tr("代码"), this, &ReportEditorWindow::onCodeBlock);
-    toolBar->addAction(tr("分割线"), this, &ReportEditorWindow::onInsertDivider);
 }
+
+
+
+
+
 
 void ReportEditorWindow::initStatusBar()
 {
     QStatusBar* bar = statusBar();
 
-    // 左侧：保存状态
+    // 状态栏标签用 addWidget/addPermanentWidget 显式添加
+    // （QStatusBar 子 widget 若仅写在 .ui 中，uic 不会生成 addWidget，导致控件堆叠重叠）
     m_statusSaveLabel = new QLabel(tr("已保存"), this);
-    m_statusSaveLabel->setStyleSheet("color: #67C23A; padding: 0 8px;");
+    m_statusSaveLabel->setStyleSheet(QString("color: %1; padding: 0 8px;").arg(AppTheme::Color::Success));
     bar->addWidget(m_statusSaveLabel);
 
-    // 右侧：块数、字数、光标位置
     m_statusBlockLabel = new QLabel(tr("块: 0"), this);
-    m_statusBlockLabel->setStyleSheet("color: #666; padding: 0 8px;");
+    m_statusBlockLabel->setStyleSheet(QString("color: %1; padding: 0 8px;").arg(AppTheme::Color::TextRegular));
     bar->addPermanentWidget(m_statusBlockLabel);
 
     m_statusWordLabel = new QLabel(tr("字数: 0"), this);
-    m_statusWordLabel->setStyleSheet("color: #666; padding: 0 8px;");
+    m_statusWordLabel->setStyleSheet(QString("color: %1; padding: 0 8px;").arg(AppTheme::Color::TextRegular));
     bar->addPermanentWidget(m_statusWordLabel);
 
     m_statusPositionLabel = new QLabel(this);
-    m_statusPositionLabel->setStyleSheet("color: #666; padding: 0 8px;");
+    m_statusPositionLabel->setStyleSheet(QString("color: %1; padding: 0 8px;").arg(AppTheme::Color::TextRegular));
     bar->addPermanentWidget(m_statusPositionLabel);
 }
+
+
 
 void ReportEditorWindow::showStatusMessage(const QString& message, int timeout)
 {
@@ -297,7 +230,7 @@ void ReportEditorWindow::onSave()
             QString("color: %1; padding: 0 %2px;")
                 .arg(AppTheme::Color::Success).arg(AppTheme::Spacing::Normal));
         // 保存成功弹出提示框
-        QMessageBox::information(this, tr("保存成功"),
+        UiHelper::info(this, tr("保存成功"),
             tr("报告「%1」已成功保存。").arg(m_report->title().isEmpty() ? tr("未命名报告") : m_report->title()));
     }
 }
@@ -322,8 +255,8 @@ void ReportEditorWindow::onSaveAs()
             copy->appendBlock(block);
         }
 
-        if (ReportRepository::insert(copy)) {
-            QMessageBox::information(this, tr("另存为"),
+        if (ReportService::save(copy)) {
+            UiHelper::info(this, tr("另存为"),
                 tr("报告已另存为「%1」").arg(copy->title()));
             emit reportSaved(copy->id());
         }
@@ -334,7 +267,7 @@ void ReportEditorWindow::onExport()
 {
     // 先保存当前报告
     if (!saveReport()) {
-        QMessageBox::warning(this, tr("导出失败"), tr("保存报告失败，无法导出"));
+        UiHelper::warning(this, tr("导出失败"), tr("保存报告失败，无法导出"));
         return;
     }
 
@@ -358,11 +291,11 @@ void ReportEditorWindow::onExport()
     QApplication::restoreOverrideCursor();
 
     if (success) {
-        QMessageBox::information(this, tr("导出成功"),
+        UiHelper::info(this, tr("导出成功"),
             tr("报告已导出到:\n%1").arg(result.first));
         showStatusMessage(tr("导出成功: %1").arg(result.first));
     } else {
-        QMessageBox::critical(this, tr("导出失败"),
+        UiHelper::error(this, tr("导出失败"),
             tr("导出报告时发生错误，请查看日志"));
     }
 }
@@ -373,7 +306,7 @@ void ReportEditorWindow::onPrint()
 
     // 先保存
     if (!saveReport()) {
-        QMessageBox::warning(this, tr("打印失败"), tr("保存报告失败，无法打印"));
+        UiHelper::warning(this, tr("打印失败"), tr("保存报告失败，无法打印"));
         return;
     }
 
@@ -385,7 +318,7 @@ void ReportEditorWindow::onPrintPreview()
     if (!m_report) return;
 
     if (!saveReport()) {
-        QMessageBox::warning(this, tr("打印预览失败"), tr("保存报告失败，无法预览"));
+        UiHelper::warning(this, tr("打印预览失败"), tr("保存报告失败，无法预览"));
         return;
     }
 
@@ -405,7 +338,7 @@ void ReportEditorWindow::onVersionHistory()
     // 确保报告已保存（版本历史需要报告ID）
     if (!m_report || m_report->id() <= 0) {
         if (!saveReport()) {
-            QMessageBox::warning(this, tr("提示"), tr("请先保存报告"));
+            UiHelper::warning(this, tr("提示"), tr("请先保存报告"));
             return;
         }
     }
@@ -413,7 +346,7 @@ void ReportEditorWindow::onVersionHistory()
     VersionHistoryDialog dialog(m_report->id(), this);
     if (dialog.exec() == QDialog::Accepted) {
         // 版本恢复后重新加载报告
-        Report::Ptr updated = ReportRepository::findById(m_report->id());
+        Report::Ptr updated = ReportService::getById(m_report->id());
         if (updated) {
             m_report = updated;
             m_editor->loadReport(m_report);
@@ -438,7 +371,7 @@ void ReportEditorWindow::onRedo()
 
 void ReportEditorWindow::onFind()
 {
-    QMessageBox::information(this, tr("查找"),
+    UiHelper::info(this, tr("查找"),
         tr("查找功能将在后续版本中实现。"));
 }
 
@@ -447,7 +380,7 @@ void ReportEditorWindow::onManageAttachments()
     // 确保报告已保存（附件管理需要报告ID）
     if (!m_report || m_report->id() <= 0) {
         if (!saveReport()) {
-            QMessageBox::warning(this, tr("提示"), tr("请先保存报告"));
+            UiHelper::warning(this, tr("提示"), tr("请先保存报告"));
             return;
         }
     }
@@ -614,7 +547,7 @@ bool ReportEditorWindow::saveReport()
 
     bool success = false;
     if (m_isNewReport) {
-        success = ReportRepository::insert(m_report);
+        success = ReportService::save(m_report);
         if (success) {
             m_isNewReport = false;
             LOG_INFO(QString("新报告已保存: id=%1").arg(m_report->id()));
@@ -624,18 +557,18 @@ bool ReportEditorWindow::saveReport()
         if (m_report->createdBy() > 0
             && m_report->createdBy() != UserSession::instance().userId()
             && !UserSession::instance().isAdmin()) {
-            QMessageBox::warning(this, tr("权限不足"),
+            UiHelper::warning(this, tr("权限不足"),
                 tr("您没有权限修改此报告。\n只有创建者或管理员可以修改。"));
             return false;
         }
-        success = ReportRepository::update(m_report);
+        success = ReportService::save(m_report);
     }
 
     if (success) {
         emit reportSaved(m_report->id());
         updateWindowTitle();
     } else {
-        QMessageBox::critical(this, tr("保存失败"),
+        UiHelper::error(this, tr("保存失败"),
             tr("保存报告时发生错误，请查看日志。"));
     }
 
@@ -651,7 +584,7 @@ void ReportEditorWindow::updateWindowTitle()
         title += " *";  // 未保存标记
     }
 
-    setWindowTitle(QString("%1 - %2").arg(title, AppConstants::APP_DISPLAY_NAME));
+    setWindowTitle(QString("%1 - %2").arg(title).arg(AppConstants::APP_DISPLAY_NAME));
 }
 
 void ReportEditorWindow::updateActionsState()
@@ -688,7 +621,7 @@ void ReportEditorWindow::applyFormatToCurrentBlock(const QString& format)
 void ReportEditorWindow::closeEvent(QCloseEvent* event)
 {
     if (m_editor->isModified()) {
-        const auto ret = QMessageBox::warning(
+        const auto ret = UiHelper::warning(
             this, tr("未保存的更改"),
             tr("报告「%1」有未保存的更改，是否保存？")
                 .arg(m_editor->reportTitle()),

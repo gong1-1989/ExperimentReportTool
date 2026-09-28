@@ -112,8 +112,6 @@ private slots:
 private:
     /// 初始化 UI
     void createActions();
-    void createMenus();
-    void createToolBar();
     void initStatusBar();
     void connectSignals();
 

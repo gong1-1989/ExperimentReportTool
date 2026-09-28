@@ -5,6 +5,7 @@
 
 #include "AttachmentManagerDialog.h"
 #include "ui_AttachmentManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
+#include "service/AttachmentService.h"
 #include "data/repositories/AttachmentRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
@@ -12,6 +13,7 @@
 
 #include <QFileDialog>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QApplication>
 #include <QDateTime>
 #include <QMenu>
@@ -22,7 +24,7 @@
 // ===========================================================================
 
 AttachmentManagerDialog::AttachmentManagerDialog(qint64 reportId, QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::AttachmentManagerDialog)
     , m_reportId(reportId)
 {
@@ -43,7 +45,7 @@ AttachmentManagerDialog::~AttachmentManagerDialog()
 
 void AttachmentManagerDialog::loadAttachments()
 {
-    m_attachments = AttachmentRepository::findByReport(m_reportId);
+    m_attachments = AttachmentService::findByReport(m_reportId);
     updateAttachmentList();
     updateButtons();
 }
@@ -141,7 +143,7 @@ Attachment::Ptr AttachmentManagerDialog::currentAttachment() const
 void AttachmentManagerDialog::showStatusMessage(const QString& message)
 {
     // 对话框没有状态栏，使用 QMessageBox 显示操作结果提示
-    QMessageBox::information(this, tr("提示"), message);
+    UiHelper::info(this, tr("提示"), message);
 }
 
 // ===========================================================================
@@ -166,7 +168,7 @@ void AttachmentManagerDialog::on_m_uploadBtn_clicked()
 
     int successCount = 0;
     for (int i = 0; i < filePaths.size(); ++i) {
-        Attachment::Ptr att = AttachmentRepository::uploadFile(m_reportId, filePaths.at(i));
+        Attachment::Ptr att = AttachmentService::uploadFile(m_reportId, filePaths.at(i));
         if (att) {
             ++successCount;
         }
@@ -180,10 +182,10 @@ void AttachmentManagerDialog::on_m_uploadBtn_clicked()
     loadAttachments();
 
     if (successCount > 0) {
-        QMessageBox::information(this, tr("上传完成"),
+        UiHelper::info(this, tr("上传完成"),
             tr("成功上传 %1 个文件").arg(successCount));
     } else {
-        QMessageBox::warning(this, tr("上传失败"), tr("没有文件成功上传"));
+        UiHelper::warning(this, tr("上传失败"), tr("没有文件成功上传"));
     }
 }
 
@@ -202,11 +204,11 @@ void AttachmentManagerDialog::on_m_downloadBtn_clicked()
 
     if (savePath.isEmpty()) return;
 
-    if (AttachmentRepository::downloadTo(att->id(), savePath)) {
-        QMessageBox::information(this, tr("下载成功"),
+    if (AttachmentService::downloadTo(att->id(), savePath)) {
+        UiHelper::info(this, tr("下载成功"),
             tr("附件已保存到:\n%1").arg(savePath));
     } else {
-        QMessageBox::critical(this, tr("下载失败"), tr("保存附件时发生错误"));
+        UiHelper::error(this, tr("下载失败"), tr("保存附件时发生错误"));
     }
 }
 
@@ -219,8 +221,8 @@ void AttachmentManagerDialog::on_m_openBtn_clicked()
     Attachment::Ptr att = currentAttachment();
     if (!att) return;
 
-    if (!AttachmentRepository::openWithDefaultApp(att->id())) {
-        QMessageBox::warning(this, tr("打开失败"),
+    if (!AttachmentService::openWithDefaultApp(att->id())) {
+        UiHelper::warning(this, tr("打开失败"),
             tr("无法打开文件，请尝试先下载再打开。"));
     }
 }
@@ -234,19 +236,16 @@ void AttachmentManagerDialog::on_m_deleteBtn_clicked()
     Attachment::Ptr att = currentAttachment();
     if (!att) return;
 
-    const auto result = QMessageBox::question(
-        this, tr("确认删除"),
-        tr("确定要删除附件「%1」吗？\n此操作不可撤销。").arg(att->fileName()),
-        QMessageBox::Yes | QMessageBox::No,
-        QMessageBox::No);
+    if (!UiHelper::confirm(this,
+                           tr("确认删除"),
+                           tr("确定要删除附件「%1」吗？\n此操作不可撤销。")
+                               .arg(att->fileName()))) return;
 
-    if (result != QMessageBox::Yes) return;
-
-    if (AttachmentRepository::remove(att->id())) {
+    if (AttachmentService::remove(att->id())) {
         loadAttachments();
         showStatusMessage(tr("附件已删除"));
     } else {
-        QMessageBox::critical(this, tr("删除失败"), tr("删除附件时发生错误"));
+        UiHelper::error(this, tr("删除失败"), tr("删除附件时发生错误"));
     }
 }
 

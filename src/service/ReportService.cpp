@@ -11,6 +11,7 @@
 
 #include <QDateTime>
 #include <QObject>
+#include <QtGlobal>
 
 // ============================================================================
 // 基础 CRUD
@@ -41,14 +42,30 @@ Report::Ptr ReportService::create(const QString& title, qint64 projectId,
 
 bool ReportService::update(const Report::Ptr& report)
 {
+    Q_ASSERT(report);
     if (!report) return false;
     report->setUpdatedAt(QDateTime::currentDateTime());
     return ReportRepository::update(report);
 }
 
+bool ReportService::save(const Report::Ptr& report)
+{
+    if (!report) return false;
+    if (report->id() > 0) {
+        return update(report);
+    }
+    report->setCreatedAt(QDateTime::currentDateTime());
+    report->setUpdatedAt(QDateTime::currentDateTime());
+    return ReportRepository::insert(report);
+}
+
 bool ReportService::remove(qint64 id)
 {
-    return ReportRepository::remove(id);
+    const bool ok = ReportRepository::remove(id);
+    if (!ok) {
+        LOG_ERROR(QString("删除报告失败: id=%1").arg(id));
+    }
+    return ok;
 }
 
 // ============================================================================
@@ -159,6 +176,7 @@ Report::Ptr ReportService::duplicate(qint64 id, const QString& newTitle)
     if (ReportRepository::insert(copy)) {
         return copy;
     }
+    LOG_ERROR(QString("复制报告失败: 源id=%1").arg(id));
     return nullptr;
 }
 
@@ -179,4 +197,33 @@ bool ReportService::updateTag(qint64 id, qint64 tagId)
         tagIds.append(tagId);
     }
     return TagRepository::setReportTags(id, tagIds);
+}
+
+// ============================================================================
+// 版本管理
+// ============================================================================
+
+QList<QPair<qint64, QString>> ReportService::getVersions(qint64 reportId)
+{
+    return ReportRepository::getVersions(reportId);
+}
+
+QString ReportService::getVersionContent(qint64 versionId)
+{
+    return ReportRepository::getVersionContent(versionId);
+}
+
+qint64 ReportService::saveVersion(qint64 reportId, const QString& name)
+{
+    return ReportRepository::saveVersion(reportId, name);
+}
+
+bool ReportService::restoreVersion(qint64 reportId, qint64 versionId)
+{
+    return ReportRepository::restoreVersion(reportId, versionId);
+}
+
+bool ReportService::deleteVersion(qint64 versionId)
+{
+    return ReportRepository::deleteVersion(versionId);
 }

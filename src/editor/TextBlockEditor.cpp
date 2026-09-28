@@ -371,21 +371,21 @@ void TextBlockEditor::updateStyleForType()
 
     switch (m_textType) {
     case BlockType::Heading1:
-        font.setPointSize(22);
+        font.setPointSize(AppTheme::Heading::H1);
         font.setBold(true);
         minHeight = 44;
         styleSheet = QString("QTextEdit { color: %1; padding: %2px 0; }")
                          .arg(AppTheme::Color::TextPrimary).arg(AppTheme::Spacing::Normal);
         break;
     case BlockType::Heading2:
-        font.setPointSize(18);
+        font.setPointSize(AppTheme::Heading::H2);
         font.setBold(true);
         minHeight = 38;
         styleSheet = QString("QTextEdit { color: %1; padding: %2px 0; }")
                          .arg(AppTheme::Color::TextPrimary).arg(AppTheme::Spacing::Medium);
         break;
     case BlockType::Heading3:
-        font.setPointSize(15);
+        font.setPointSize(AppTheme::Heading::H3);
         font.setBold(true);
         minHeight = 34;
         styleSheet = QString("QTextEdit { color: %1; padding: %2px 0; }")

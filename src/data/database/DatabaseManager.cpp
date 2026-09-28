@@ -684,12 +684,15 @@ void DatabaseManager::close()
     QMutexLocker locker(&m_mutex);
 
     if (m_initialized) {
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        if (db.isOpen()) {
-            // 确保所有数据写入磁盘
-            QSqlQuery pragmaQuery(db);
-            pragmaQuery.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-            db.close();
+        {
+            // 块作用域：确保 db/pragmaQuery 在 removeDatabase 前销毁，避免 "connection still in use"
+            QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+            if (db.isOpen()) {
+                QSqlQuery pragmaQuery(db);
+                pragmaQuery.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+                pragmaQuery.finish();
+                db.close();
+            }
         }
         QSqlDatabase::removeDatabase(m_connectionName);
         m_initialized = false;
@@ -728,7 +731,7 @@ bool DatabaseManager::executeSql(const QString& sql, QString* errorMsg)
 
         if (!query.exec(trimmed)) {
             const QString err = query.lastError().text();
-            LOG_ERROR(QString("SQL 执行失败: %1\n语句: %2").arg(err).arg(trimmed.left(200)));
+            LOG_ERROR(QString("SQL 执行失败: %1\n语句: %2").arg(err, trimmed.left(200)));
             if (errorMsg) *errorMsg = err;
             allOk = false;
             break;
@@ -740,17 +743,32 @@ bool DatabaseManager::executeSql(const QString& sql, QString* errorMsg)
 
 bool DatabaseManager::transaction()
 {
-    return database().transaction();
+    if (!database().transaction()) {
+        LOG_ERROR(QString("事务启动失败: %1").arg(database().lastError().text()));
+        return false;
+    }
+    LOG_DEBUG("事务已启动");
+    return true;
 }
 
 bool DatabaseManager::commit()
 {
-    return database().commit();
+    if (!database().commit()) {
+        LOG_ERROR(QString("事务提交失败: %1").arg(database().lastError().text()));
+        return false;
+    }
+    LOG_DEBUG("事务已提交");
+    return true;
 }
 
 bool DatabaseManager::rollback()
 {
-    return database().rollback();
+    if (!database().rollback()) {
+        LOG_ERROR(QString("事务回滚失败: %1").arg(database().lastError().text()));
+        return false;
+    }
+    LOG_DEBUG("事务已回滚");
+    return true;
 }
 
 QString DatabaseManager::lastError() const

@@ -14,9 +14,14 @@ public:
     static Project::Ptr getById(qint64 id);
     static Project::List listAll();
     static Project::Ptr create(const QString& name, qint64 parentId = 0);
+    static bool save(const Project::Ptr& project);
     static bool update(const Project::Ptr& project);
     static bool remove(qint64 id);
     static Project::List children(qint64 parentId);
+    static int countChildren(qint64 parentId);
+    static int count();
+    static int countByParent(qint64 parentId);
+    static bool existsByName(const QString& name, qint64 excludeId = -1);
 
 private:
     ProjectService() = delete;

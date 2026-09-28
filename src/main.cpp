@@ -14,6 +14,9 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QDebug>
+#include <QTranslator>
+#include <QLibraryInfo>
+#include <QCoreApplication>
 
 #include "ui/MainWindow.h"
 #include "ui/dialogs/LoginDialog.h"
@@ -21,10 +24,7 @@
 #include "core/utils/AppConstants.h"
 #include "core/utils/AppConfig.h"
 #include "data/database/DatabaseManager.h"
-#include "core/plugin/CoreServiceImpl.h"
 #include "core/plugin/PluginManager.h"
-#include "editor/OtherBlockEditors.h"  // BlockEditorFactory
-#include "export/ExportManager.h"
 
 /**
  * @brief 初始化应用程序的全局设置
@@ -94,6 +94,33 @@ int main(int argc, char *argv[])
     // 注意：QApplication 必须在创建任何 UI 元素之前创建
     QApplication app(argc, argv);
 
+    // 加载 Qt 自带的中文翻译（使 QMessageBox/QInputDialog/QFileDialog 的标准按钮
+    // OK/Cancel/Save/Discard 等显示为中文"确定/取消/保存/放弃"）
+    // 依次尝试：Qt 安装目录翻译目录 → 程序目录 translations → 程序目录
+    // （发布部署时需将 qtbase_zh_CN.qm 拷贝到程序目录或 translations 子目录）
+    {
+        auto* qtTranslator = new QTranslator(&app);  // 父对象管理生命周期，保持常驻
+        const QStringList candidates = {
+            QLibraryInfo::path(QLibraryInfo::TranslationsPath) + "/qtbase_zh_CN",
+            QLibraryInfo::path(QLibraryInfo::TranslationsPath) + "/qt_zh_CN",
+            QCoreApplication::applicationDirPath() + "/translations/qtbase_zh_CN",
+            QCoreApplication::applicationDirPath() + "/qtbase_zh_CN",
+        };
+        bool loaded = false;
+        for (const QString& path : candidates) {
+            if (qtTranslator->load(path)) {
+                app.installTranslator(qtTranslator);
+                Logger::instance().info(QString("Qt 中文翻译已加载: %1").arg(path));
+                loaded = true;
+                break;
+            }
+        }
+        if (!loaded) {
+            Logger::instance().warning(
+                "未找到 Qt 中文翻译文件（qtbase_zh_CN.qm），标准对话框按钮将显示英文");
+        }
+    }
+
     // 设置应用程序样式（Fusion 风格在各平台外观一致）
     // 可选值："Fusion", "Windows", "WindowsVista", "Macintosh" 等
     app.setStyle(QStyleFactory::create("Fusion"));
@@ -130,31 +157,18 @@ int main(int argc, char *argv[])
     // -----------------------------------------------------------------------
     // 初始化插件框架
     // -----------------------------------------------------------------------
-    const QString dataDir = QCoreApplication::applicationDirPath() + "/data";
 
-    // 初始化核心服务
-    CoreServiceImpl coreService;
-    coreService.initialize(dataDir);
-
-    // 创建插件管理器
+    // 创建插件管理器（独立插件管理器）
     PluginManager pluginManager;
-    pluginManager.setCoreService(&coreService);
 
-    // 添加插件搜索目录（可执行文件同级的 plugins 目录 + 数据目录下的 plugins）
+    // 添加插件搜索目录（可执行文件同级的 plugins 目录）
     pluginManager.addPluginDirectory(QCoreApplication::applicationDirPath() + "/plugins");
-    pluginManager.addPluginDirectory(coreService.pluginDirectory());
 
     // 动态加载所有插件（从 plugins/ 目录扫描 .dll/.so/.dylib）
     const int pluginCount = pluginManager.loadAllPlugins();
 
     Logger::instance().info(QString("插件框架初始化完成，共加载 %1 个插件")
         .arg(pluginCount));
-
-    // 设置块编辑器工厂的插件管理器，使编辑器能通过插件创建块编辑器
-    BlockEditorFactory::setPluginManager(&pluginManager);
-
-    // 设置导出管理器的插件管理器，使导出能优先使用插件渲染
-    ExportManager::setPluginManager(&pluginManager);
 
     // -----------------------------------------------------------------------
     // 用户登录验证
@@ -181,7 +195,6 @@ int main(int argc, char *argv[])
 
     // 清理资源
     pluginManager.unloadAllPlugins();
-    coreService.shutdown();
     DatabaseManager::instance().close();
     Logger::instance().info("应用程序正常退出");
 

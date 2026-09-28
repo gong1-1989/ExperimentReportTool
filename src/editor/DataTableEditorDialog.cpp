@@ -12,6 +12,7 @@
 
 #include <QHeaderView>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QFileDialog>
 #include <QFile>
 #include <QTextStream>
@@ -39,8 +40,9 @@ ColumnPropertyPanel::ColumnPropertyPanel(QWidget* parent)
 void ColumnPropertyPanel::setupUi()
 {
     QVBoxLayout* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(12, 12, 12, 12);
-    layout->setSpacing(8);
+    layout->setContentsMargins(AppTheme::Spacing::Large, AppTheme::Spacing::Large,
+                               AppTheme::Spacing::Large, AppTheme::Spacing::Large);
+    layout->setSpacing(AppTheme::Spacing::Normal);
 
     QLabel* title = new QLabel(tr("列属性"), this);
     title->setStyleSheet(
@@ -51,7 +53,7 @@ void ColumnPropertyPanel::setupUi()
     layout->addWidget(title);
 
     QFormLayout* form = new QFormLayout();
-    form->setSpacing(8);
+    form->setSpacing(AppTheme::Spacing::Normal);
 
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setPlaceholderText(tr("列名称"));
@@ -180,7 +182,7 @@ void ColumnPropertyPanel::onMaxChanged(double value)
 // ===========================================================================
 
 DataTableEditorDialog::DataTableEditorDialog(const DataTable::Ptr& table, QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::DataTableEditorDialog)  // 创建 UI 界面对象
     , m_table(table)
     , m_columnPanel(nullptr)
@@ -348,7 +350,7 @@ void DataTableEditorDialog::onRemoveRow()
     const int row = ui->m_tableWidget->currentRow();
     if (row < 0) return;
     if (m_table->rowCount() <= 1) {
-        QMessageBox::information(this, tr("提示"), tr("至少保留一行"));
+        UiHelper::info(this, tr("提示"), tr("至少保留一行"));
         return;
     }
     m_table->removeRow(row);
@@ -361,7 +363,7 @@ void DataTableEditorDialog::onRemoveColumn()
     const int col = ui->m_tableWidget->currentColumn();
     if (col < 0) return;
     if (m_table->columnCount() <= 1) {
-        QMessageBox::information(this, tr("提示"), tr("至少保留一列"));
+        UiHelper::info(this, tr("提示"), tr("至少保留一列"));
         return;
     }
     m_table->removeColumn(col);
@@ -443,7 +445,7 @@ void DataTableEditorDialog::onImportCsv()
 
     DataTable::Ptr imported = dialog.importedTable();
     if (!imported) {
-        QMessageBox::warning(this, tr("导入失败"), tr("没有导入数据"));
+        UiHelper::warning(this, tr("导入失败"), tr("没有导入数据"));
         return;
     }
 
@@ -499,7 +501,7 @@ void DataTableEditorDialog::onImportCsv()
     updateHeaders();
     updateStatus();
 
-    QMessageBox::information(this, tr("导入成功"),
+    UiHelper::info(this, tr("导入成功"),
         tr("已导入 %1 行数据").arg(imported->rowCount()));
 }
 
@@ -511,7 +513,7 @@ void DataTableEditorDialog::onExportCsv()
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, tr("错误"), tr("无法写入文件"));
+        UiHelper::error(this, tr("错误"), tr("无法写入文件"));
         return;
     }
 
@@ -535,7 +537,7 @@ void DataTableEditorDialog::onExportCsv()
     }
 
     file.close();
-    QMessageBox::information(this, tr("导出成功"), tr("数据已导出到:\n%1").arg(filePath));
+    UiHelper::info(this, tr("导出成功"), tr("数据已导出到:\n%1").arg(filePath));
 }
 
 // ===========================================================================
@@ -546,14 +548,14 @@ void DataTableEditorDialog::onValidate()
 {
     const QStringList errors = m_table->validate();
     if (errors.isEmpty()) {
-        QMessageBox::information(this, tr("校验通过"), tr("所有数据均符合要求"));
+        UiHelper::info(this, tr("校验通过"), tr("所有数据均符合要求"));
         ui->m_statusLabel->setText(tr("校验通过"));
         ui->m_statusLabel->setStyleSheet(
             QString("color: %1; font-size: %2px;")
                 .arg(AppTheme::Color::Success).arg(AppTheme::FontSize::Small));
     } else {
         const QString errorText = errors.join("\n");
-        QMessageBox::warning(this, tr("校验失败"),
+        UiHelper::warning(this, tr("校验失败"),
             tr("发现 %1 个问题:\n\n%2").arg(errors.size()).arg(errorText));
         ui->m_statusLabel->setText(tr("校验失败: %1 个问题").arg(errors.size()));
         ui->m_statusLabel->setStyleSheet(

@@ -17,7 +17,6 @@
 #include "PluginInterface.h"
 
 // 前向声明
-class CoreService;
 class QPluginLoader;
 
 /**
@@ -43,7 +42,6 @@ struct PluginInfo {
  * 使用方式：
  * @code
  *   PluginManager manager;
- *   manager.setCoreService(coreService);
  *   manager.addPluginDirectory("plugins");
  *   manager.loadAllPlugins();
  * @endcode
@@ -67,12 +65,6 @@ public:
     // ========================================================================
     // 配置
     // ========================================================================
-
-    /**
-     * @brief 设置核心服务
-     * @param core 核心服务接口
-     */
-    void setCoreService(CoreService* core);
 
     /**
      * @brief 添加插件搜索目录
@@ -198,7 +190,6 @@ private:
     // ========================================================================
     // 成员变量
     // ========================================================================
-    CoreService* m_core;                    ///< 核心服务
     QStringList m_pluginDirs;               ///< 插件搜索目录
     QList<PluginInterface*> m_plugins;      ///< 已加载的插件
     QList<QPluginLoader*> m_loaders;        ///< 插件加载器（动态库）

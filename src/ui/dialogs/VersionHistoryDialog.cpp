@@ -5,6 +5,7 @@
 
 #include "VersionHistoryDialog.h"
 #include "ui_VersionHistoryDialog.h"  // 由 uic 工具从 .ui 文件自动生成
+#include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppTheme.h"
@@ -12,6 +13,7 @@
 #include "core/utils/AppConfig.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -26,7 +28,7 @@
 // ===========================================================================
 
 VersionHistoryDialog::VersionHistoryDialog(qint64 reportId, QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::VersionHistoryDialog)
     , m_reportId(reportId)
 {
@@ -52,7 +54,7 @@ void VersionHistoryDialog::loadVersions()
     m_versions.clear();
 
     // 从数据库获取版本列表
-    const auto versions = ReportRepository::getVersions(m_reportId);
+    const auto versions = ReportService::getVersions(m_reportId);
 
     if (versions.isEmpty()) {
         ui->m_statusLabel->setText(tr("暂无历史版本"));
@@ -81,7 +83,7 @@ void VersionHistoryDialog::loadVersions()
         info.createdAt = QDateTime::currentDateTime();
 
         // 获取版本内容
-        info.content = ReportRepository::getVersionContent(info.versionId);
+        info.content = ReportService::getVersionContent(info.versionId);
 
         m_versions.append(info);
 
@@ -258,27 +260,23 @@ void VersionHistoryDialog::on_m_restoreBtn_clicked()
         ? tr("版本 #%1").arg(m_currentVersion.versionId)
         : m_currentVersion.snapshotName;
 
-    const auto result = QMessageBox::question(
-        this, tr("确认恢复"),
-        tr("确定要恢复到「%1」吗？\n\n"
-           "当前未保存的内容将被覆盖。\n"
-           "建议先保存当前版本。").arg(name),
-        QMessageBox::Yes | QMessageBox::No,
-        QMessageBox::No);
-
-    if (result != QMessageBox::Yes) return;
+    if (!UiHelper::confirm(this,
+                           tr("确认恢复"),
+                           tr("确定要恢复到「%1」吗？\n\n"
+                              "当前未保存的内容将被覆盖。\n"
+                              "建议先保存当前版本。").arg(name))) return;
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const bool success = ReportRepository::restoreVersion(m_reportId, m_currentVersion.versionId);
+    const bool success = ReportService::restoreVersion(m_reportId, m_currentVersion.versionId);
     QApplication::restoreOverrideCursor();
 
     if (success) {
-        QMessageBox::information(this, tr("恢复成功"),
+        UiHelper::info(this, tr("恢复成功"),
             tr("已恢复到「%1」").arg(name));
         emit versionRestored(m_reportId, m_currentVersion.versionId);
         accept();
     } else {
-        QMessageBox::critical(this, tr("恢复失败"),
+        UiHelper::error(this, tr("恢复失败"),
             tr("恢复版本时发生错误"));
     }
 }
@@ -295,20 +293,16 @@ void VersionHistoryDialog::on_m_deleteBtn_clicked()
         ? tr("版本 #%1").arg(m_currentVersion.versionId)
         : m_currentVersion.snapshotName;
 
-    const auto result = QMessageBox::question(
-        this, tr("确认删除"),
-        tr("确定要删除「%1」吗？\n此操作不可撤销。").arg(name),
-        QMessageBox::Yes | QMessageBox::No,
-        QMessageBox::No);
+    if (!UiHelper::confirm(this,
+                           tr("确认删除"),
+                           tr("确定要删除「%1」吗？\n此操作不可撤销。").arg(name))) return;
 
-    if (result != QMessageBox::Yes) return;
-
-    const bool success = ReportRepository::deleteVersion(m_currentVersion.versionId);
+    const bool success = ReportService::deleteVersion(m_currentVersion.versionId);
     if (success) {
         showStatusMessage(tr("版本已删除"));
         loadVersions();
     } else {
-        QMessageBox::critical(this, tr("删除失败"), tr("删除版本时发生错误"));
+        UiHelper::error(this, tr("删除失败"), tr("删除版本时发生错误"));
     }
 }
 
@@ -324,17 +318,17 @@ void VersionHistoryDialog::on_m_saveBtn_clicked()
     }
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const qint64 versionId = ReportRepository::saveVersion(m_reportId, name);
+    const qint64 versionId = ReportService::saveVersion(m_reportId, name);
     QApplication::restoreOverrideCursor();
 
     if (versionId > 0) {
-        QMessageBox::information(this, tr("保存成功"),
+        UiHelper::info(this, tr("保存成功"),
             tr("版本「%1」已保存").arg(name));
         ui->m_versionNameEdit->clear();
         emit versionSaved(m_reportId, versionId);
         loadVersions();
     } else {
-        QMessageBox::critical(this, tr("保存失败"), tr("保存版本时发生错误"));
+        UiHelper::error(this, tr("保存失败"), tr("保存版本时发生错误"));
     }
 }
 
@@ -345,7 +339,7 @@ void VersionHistoryDialog::on_m_saveBtn_clicked()
 void VersionHistoryDialog::on_m_compareBtn_clicked()
 {
     // 简化版本：显示提示，完整的 diff 对比需要额外实现
-    QMessageBox::information(this, tr("版本对比"),
+    UiHelper::info(this, tr("版本对比"),
         tr("版本对比功能将在后续版本中实现。\n\n"
            "当前可通过预览查看历史版本内容。"));
 }

@@ -4,8 +4,12 @@
  */
 
 #include "ProjectTreeWidget.h"
+#include <QStyle>
+#include "service/ProjectService.h"
 #include "data/repositories/ProjectRepository.h"
+#include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
+#include "service/UserService.h"
 #include "data/repositories/UserRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/UserSession.h"
@@ -13,6 +17,7 @@
 
 #include <QHeaderView>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QInputDialog>
 #include <QIcon>
 
@@ -86,7 +91,7 @@ void ProjectTreeWidget::refreshTree()
     m_userNodeCache.clear();
 
     // 获取所有根项目，按创建者分组
-    Project::List rootProjects = ProjectRepository::findChildren(-1);
+    Project::List rootProjects = ProjectService::children(-1);
 
     // 按 created_by 分组
     QMap<qint64, Project::List> grouped;
@@ -190,12 +195,12 @@ void ProjectTreeWidget::onNewProject()
         Project::Ptr project = dialog.projectData();
         // 自动设置创建者为当前登录用户
         project->setCreatedBy(UserSession::instance().userId());
-        if (ProjectRepository::insert(project)) {
+        if (ProjectService::save(project)) {
             refreshTree();
             selectProject(project->id());
             emit projectTreeChanged();
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("创建项目失败"));
+            UiHelper::error(this, tr("错误"), tr("创建项目失败"));
         }
     }
 }
@@ -213,12 +218,12 @@ void ProjectTreeWidget::onNewSubProject()
         project->setParentId(m_contextProjectId);
         // 自动设置创建者为当前登录用户
         project->setCreatedBy(UserSession::instance().userId());
-        if (ProjectRepository::insert(project)) {
+        if (ProjectService::save(project)) {
             refreshTree();
             selectProject(project->id());
             emit projectTreeChanged();
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("创建子项目失败"));
+            UiHelper::error(this, tr("错误"), tr("创建子项目失败"));
         }
     }
 }
@@ -228,7 +233,7 @@ void ProjectTreeWidget::onEditProject()
     const qint64 projectId = currentProjectId();
     if (projectId <= 0) return;
 
-    Project::Ptr project = ProjectRepository::findById(projectId);
+    Project::Ptr project = ProjectService::getById(projectId);
     if (!project) return;
 
     ProjectDialog dialog(this);
@@ -238,12 +243,12 @@ void ProjectTreeWidget::onEditProject()
     if (dialog.exec() == QDialog::Accepted) {
         Project::Ptr updated = dialog.projectData();
         updated->setId(projectId);
-        if (ProjectRepository::update(updated)) {
+        if (ProjectService::update(updated)) {
             refreshTree();
             selectProject(projectId);
             emit projectTreeChanged();
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("更新项目失败"));
+            UiHelper::error(this, tr("错误"), tr("更新项目失败"));
         }
     }
 }
@@ -253,12 +258,12 @@ void ProjectTreeWidget::onDeleteProject()
     const qint64 projectId = m_contextProjectId > 0 ? m_contextProjectId : currentProjectId();
     if (projectId <= 0) return;
 
-    Project::Ptr project = ProjectRepository::findById(projectId);
+    Project::Ptr project = ProjectService::getById(projectId);
     if (!project) return;
 
     // 检查是否有子项目
-    const int childCount = ProjectRepository::countChildren(projectId);
-    const int reportCount = ReportRepository::countByProject(projectId);
+    const int childCount = ProjectService::countChildren(projectId);
+    const int reportCount = ReportService::count(projectId);
 
     QString warningText = tr("确定要删除项目「%1」吗？").arg(project->name());
     if (childCount > 0 || reportCount > 0) {
@@ -266,16 +271,14 @@ void ProjectTreeWidget::onDeleteProject()
                           .arg(childCount).arg(reportCount);
     }
 
-    const auto ret = QMessageBox::warning(
-        this, tr("确认删除"), warningText,
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-
-    if (ret == QMessageBox::Yes) {
-        if (ProjectRepository::remove(projectId)) {
+    if (UiHelper::confirm(this,
+                       tr("确认删除"),
+                       warningText)) {
+        if (ProjectService::remove(projectId)) {
             refreshTree();
             emit projectTreeChanged();
         } else {
-            QMessageBox::critical(this, tr("错误"), tr("删除项目失败"));
+            UiHelper::error(this, tr("错误"), tr("删除项目失败"));
         }
     }
 }
@@ -296,7 +299,7 @@ void ProjectTreeWidget::onCollapseAll()
 
 void ProjectTreeWidget::buildTree(QTreeWidgetItem* parentItem, qint64 parentId)
 {
-    Project::List children = ProjectRepository::findChildren(parentId);
+    Project::List children = ProjectService::children(parentId);
 
     for (const Project::Ptr& project : children) {
         QTreeWidgetItem* item = createProjectItem(project);
@@ -317,7 +320,7 @@ QTreeWidgetItem* ProjectTreeWidget::createUserNode(qint64 userId)
         node->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
         node->setToolTip(0, tr("未分配创建者的项目（旧数据）"));
     } else {
-        User::Ptr user = UserRepository::findById(userId);
+        User::Ptr user = UserService::getById(userId);
         if (user) {
             node->setText(0, user->displayNameOrUsername());
             node->setToolTip(0, QString(tr("用户名: %1\n角色: %2"))

@@ -142,7 +142,7 @@ void Logger::logInternal(LogLevel level, const QString& message)
     const QString levelStr = levelToString(level);
     const QString logLine = QString("[%1] [%2] %3")
                                  .arg(timestamp)
-                                 .arg(levelStr, -8)  // 左对齐，占 8 个字符宽度
+                                 .arg(levelStr, -8)  // 左对齐，占 8 个字符宽度（fieldWidth 不消耗占位符）
                                  .arg(message);
 
     // 输出到控制台（使用 qDebug 等，方便在 IDE 中查看）

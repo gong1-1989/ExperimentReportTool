@@ -8,7 +8,7 @@
 #ifndef CHART_CONFIG_DIALOG_H
 #define CHART_CONFIG_DIALOG_H
 
-#include <QDialog>
+#include "ui/dialogs/BaseDialog.h"
 #include <QComboBox>
 #include <QLineEdit>
 #include <QCheckBox>
@@ -84,7 +84,7 @@ struct ChartConfig {
 /**
  * @brief 图表配置对话框
  */
-class ChartConfigDialog : public QDialog
+class ChartConfigDialog : public BaseDialog
 {
     Q_OBJECT
 

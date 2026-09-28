@@ -49,7 +49,7 @@ Project::Ptr ProjectRepository::findById(qint64 id)
     query.bindValue(":id", id);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("findById 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("findById 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return nullptr;
     }
 
@@ -142,7 +142,7 @@ Project::List ProjectRepository::findAll(const ProjectQuery& query)
     }
 
     if (!sqlQuery.exec()) {
-        LOG_ERROR(QString("findAll 失败: %1").arg(sqlQuery.lastError().text()));
+        LOG_ERROR(QString("findAll 失败: %1\nSQL: %2").arg(sqlQuery.lastError().text(), sqlQuery.lastQuery()));
         return result;
     }
 
@@ -209,7 +209,7 @@ bool ProjectRepository::insert(Project::Ptr project)
     query.bindValue(":updated_at", now);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("insert 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("insert 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
@@ -262,7 +262,7 @@ bool ProjectRepository::update(const Project::Ptr& project)
     query.bindValue(":id", project->id());
 
     if (!query.exec()) {
-        LOG_ERROR(QString("update 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("update 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
@@ -282,18 +282,25 @@ bool ProjectRepository::remove(qint64 id)
     QSqlQuery query(db);
 
     // 使用事务确保级联删除的原子性
-    DatabaseManager::instance().transaction();
+    if (!DatabaseManager::instance().transaction()) {
+        LOG_ERROR("级联删除事务启动失败，取消删除");
+        return false;
+    }
 
     query.prepare("DELETE FROM projects WHERE id = :id;");
     query.bindValue(":id", id);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("remove 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("remove 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         DatabaseManager::instance().rollback();
         return false;
     }
 
-    DatabaseManager::instance().commit();
+    if (!DatabaseManager::instance().commit()) {
+        LOG_ERROR("级联删除事务提交失败");
+        DatabaseManager::instance().rollback();
+        return false;
+    }
     LOG_INFO(QString("项目已删除: id=%1").arg(id));
     return true;
 }

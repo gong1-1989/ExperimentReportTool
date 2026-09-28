@@ -9,7 +9,9 @@
 #include "editor/OtherBlockEditors.h"
 #include "editor/AutoSaveManager.h"
 #include "editor/DataTableEditorDialog.h"
+#include "service/DataTableService.h"
 #include "data/repositories/DataTableRepository.h"
+#include "service/TagService.h"
 #include "data/repositories/TagRepository.h"
 #include "core/models/DataTable.h"
 #include "core/models/Tag.h"
@@ -22,6 +24,7 @@
 #include <QScrollBar>
 #include <QMenu>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QInputDialog>
@@ -44,7 +47,7 @@ ReportEditor::ReportEditor(QWidget* parent)
     // 初始化标签下拉列表（单选）
     ui->m_tagCombo->addItem(tr("无标签"), -1);
     {
-        const Tag::List allTags = TagRepository::findAll();
+        const Tag::List allTags = TagService::listAll();
         for (const Tag::Ptr& tag : allTags) {
             ui->m_tagCombo->addItem(
                 QString("■ %1").arg(tag->name()),
@@ -388,7 +391,7 @@ int ReportEditor::wordCount() const
     int count = 0;
 
     // 统计中文字符（CJK 统一表意文字范围）
-    QRegularExpression cjkRegex(QStringLiteral("[\\u4e00-\\u9fff]"));
+    QRegularExpression cjkRegex(QStringLiteral("[\u4e00-\u9fff]"));
     auto cjkIt = cjkRegex.globalMatch(allText);
     while (cjkIt.hasNext()) {
         cjkIt.next();
@@ -588,19 +591,19 @@ void ReportEditor::createNewDataTable()
     }
 
     // 保存到数据库
-    if (DataTableRepository::insert(table)) {
+    if (DataTableService::save(table)) {
         LOG_INFO(QString("数据表创建成功: %1 (ID=%2)").arg(tableName).arg(table->id()));
 
         // 打开数据表编辑器
         DataTableEditorDialog dialog(table, this);
         if (dialog.exec() == QDialog::Accepted) {
             // 更新数据表
-            DataTableRepository::update(dialog.tableData());
-            QMessageBox::information(this, tr("提示"),
+            DataTableService::save(dialog.tableData());
+            UiHelper::info(this, tr("提示"),
                 tr("数据表已创建！\n现在可以添加图表块并引用此数据表。"));
         }
     } else {
-        QMessageBox::warning(this, tr("错误"), tr("数据表创建失败！"));
+        UiHelper::warning(this, tr("错误"), tr("数据表创建失败！"));
     }
 }
 
@@ -731,7 +734,7 @@ void ReportEditor::updateTagDisplay()
     }
 
     // 获取当前报告的标签（取第一个，单选模式）
-    const Tag::List tags = TagRepository::findByReport(m_report->id());
+    const Tag::List tags = TagService::findByReport(m_report->id());
     if (tags.isEmpty()) {
         ui->m_tagCombo->setCurrentIndex(0);  // 无标签
         return;
@@ -758,5 +761,5 @@ void ReportEditor::on_m_tagCombo_currentIndexChanged(int index)
     if (tagId > 0) {
         tagIds.append(tagId);
     }
-    TagRepository::setReportTags(m_report->id(), tagIds);
+    TagService::setReportTags(m_report->id(), tagIds);
 }

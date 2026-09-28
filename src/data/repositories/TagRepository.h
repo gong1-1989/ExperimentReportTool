@@ -70,20 +70,6 @@ public:
 
     /// 获取报告的标签名称列表
     static QStringList findReportTagNames(qint64 reportId);
-
-    // -----------------------------------------------------------------------
-    // 统计
-    // -----------------------------------------------------------------------
-
-    /// 获取标签总数
-    static int count();
-
-    /// 获取标签使用次数
-    static int usageCount(qint64 tagId);
-
-    /// 更新标签使用次数统计
-    static void updateUsageCount(qint64 tagId);
-
 private:
     /// 从 SQL 查询结果创建 Tag 对象
     static Tag::Ptr createFromQuery(const class QSqlQuery& query);

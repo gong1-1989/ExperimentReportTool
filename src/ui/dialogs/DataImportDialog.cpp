@@ -10,6 +10,7 @@
 
 #include <QFileDialog>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QHeaderView>
 #include <QApplication>
 #include <QFileInfo>
@@ -19,7 +20,7 @@
 // ===========================================================================
 
 DataImportDialog::DataImportDialog(const DataTable::Ptr& table, QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::DataImportDialog)
     , m_targetTable(table)
     , m_importMode(ImportMode::Append)
@@ -58,7 +59,7 @@ void DataImportDialog::on_m_browseBtn_clicked()
 void DataImportDialog::on_m_previewBtn_clicked()
 {
     if (ui->m_filePathEdit->text().trimmed().isEmpty()) {
-        QMessageBox::information(this, tr("提示"), tr("请先选择 CSV 文件"));
+        UiHelper::info(this, tr("提示"), tr("请先选择 CSV 文件"));
         return;
     }
     m_currentFilePath = ui->m_filePathEdit->text().trimmed();
@@ -71,7 +72,7 @@ bool DataImportDialog::loadAndPreview()
 
     QFileInfo fileInfo(m_currentFilePath);
     if (!fileInfo.exists()) {
-        QMessageBox::warning(this, tr("错误"), tr("文件不存在: %1").arg(m_currentFilePath));
+        UiHelper::warning(this, tr("错误"), tr("文件不存在: %1").arg(m_currentFilePath));
         return false;
     }
 
@@ -92,7 +93,7 @@ bool DataImportDialog::loadAndPreview()
     QApplication::restoreOverrideCursor();
 
     if (!m_parseResult.success) {
-        QMessageBox::critical(this, tr("解析失败"),
+        UiHelper::error(this, tr("解析失败"),
             tr("错误: %1\n行号: %2").arg(m_parseResult.errorMessage)
                                         .arg(m_parseResult.errorLine));
         ui->m_infoLabel->setText(tr("解析失败"));
@@ -196,7 +197,7 @@ void DataImportDialog::on_m_replaceRadio_toggled(bool checked)
 void DataImportDialog::on_m_importBtn_clicked()
 {
     if (!m_parseResult.success || m_parseResult.rows.isEmpty()) {
-        QMessageBox::warning(this, tr("提示"), tr("没有可导入的数据"));
+        UiHelper::warning(this, tr("提示"), tr("没有可导入的数据"));
         return;
     }
 

@@ -197,7 +197,7 @@ QLabel#errorLabel {
       <item>
        <widget class="QLabel" name="hintLabel">
         <property name="text">
-         <string>&lt;div style='color: #aaa; font-size: 11px; text-align: center;'&gt;默认账号：admin / admin123&lt;/div&gt;</string>
+         <string>&lt;div style='color: #aaa; font-size: 11px; text-align: center;'&gt;默认账号：admin / admin123（管理员），test / 123456（测试）&lt;/div&gt;</string>
         </property>
         <property name="alignment">
          <set>Qt::AlignCenter</set>

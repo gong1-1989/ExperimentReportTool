@@ -1,84 +1,61 @@
-# This file is used to ignore files which are generated
-# ----------------------------------------------------------------------------
+# ============================================================================
+# 实验报告记录工具 - Git 忽略规则
+#
+# 原则：
+# - 忽略所有构建产物与运行时生成的数据（可随时重新生成）
+# - 保留全部源码，包括 plugins/demo（示例插件）与 plugin_template（脚手架模板）
+# ============================================================================
 
-*~
-*.autosave
-*.a
-*.core
-*.moc
+# ---------------------------------------------------------------------------
+# 构建产物
+# ---------------------------------------------------------------------------
+build/
+*/build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.ninja
+.ninja_*
+compile_commands.json
+
+# ---------------------------------------------------------------------------
+# 编译输出（可执行文件 / 动态库 / 静态库 / 目标文件）
+# ---------------------------------------------------------------------------
 *.o
 *.obj
-*.orig
-*.rej
-*.so
-*.so.*
-*_pch.h.cpp
-*_resource.rc
-*.qm
-.#*
-*.*#
-core
-!core/
-tags
-.DS_Store
-.directory
-*.debug
-Makefile*
-*.prl
-*.app
-moc_*.cpp
-ui_*.h
-qrc_*.cpp
-Thumbs.db
-*.res
-*.rc
-/.qmake.cache
-/.qmake.stash
-**/.qmlls.ini
-
-# qtcreator generated files
-*.pro.user*
-*.qbs.user*
-**/CMakeLists.txt.user
-
-# xemacs temporary files
-*.flc
-
-# Vim temporary files
-.*.swp
-
-# Visual Studio generated files
-*.ib_pdb_index
-*.idb
-*.ilk
-*.pdb
-*.sln
-*.suo
-*.vcproj
-*vcproj.*.*.user
-*.ncb
-*.sdf
-*.opensdf
-*.vcxproj
-*vcxproj.*
-
-# MinGW generated files
-*.Debug
-*.Release
-
-# Python byte code
-*.pyc
-
-# Binaries
-# --------
+*.a
+*.lib
 *.dll
+*.so
+*.dylib
 *.exe
+*.pdb
+*.ilk
+*.exp
+*.rsp
 
-# Directories with generated files
-.moc/
-.obj/
-.pch/
-.rcc/
-.uic/
-/build*/
-/.qtcreator/
+# ---------------------------------------------------------------------------
+# 运行时生成（程序启动后产生，不入库）
+# ---------------------------------------------------------------------------
+bin/
+data/
+*.ini.local
+
+# ---------------------------------------------------------------------------
+# Qt Creator / IDE 用户配置
+# ---------------------------------------------------------------------------
+*.user
+*.user.*
+*.autosave
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---------------------------------------------------------------------------
+# 系统文件
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db

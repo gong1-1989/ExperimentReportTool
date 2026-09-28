@@ -197,7 +197,7 @@ bool DataTableRepository::insert(DataTable::Ptr table)
 
     // 执行插入并检查结果
     if (!query.exec()) {
-        LOG_ERROR(QString("insert 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("insert 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
@@ -247,7 +247,7 @@ bool DataTableRepository::update(const DataTable::Ptr& table)
 
     // 执行更新
     if (!query.exec()) {
-        LOG_ERROR(QString("update 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("update 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 

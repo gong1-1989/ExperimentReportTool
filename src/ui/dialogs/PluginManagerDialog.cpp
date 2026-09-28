@@ -5,10 +5,7 @@
 
 #include "PluginManagerDialog.h"
 #include "ui_PluginManagerDialog.h"
-#include "core/plugin/EditorBlockPluginInterface.h"
-#include "core/plugin/ExportPluginInterface.h"
-#include "core/plugin/ToolPluginInterface.h"
-#include "core/plugin/ImportPluginInterface.h"
+#include "core/plugin/PluginInterface.h"
 
 #include <QHeaderView>
 #include <QTableWidgetItem>
@@ -18,7 +15,7 @@
 // ============================================================================
 
 PluginManagerDialog::PluginManagerDialog(PluginManager* pluginManager, QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::PluginManagerDialog)
     , m_pluginManager(pluginManager)
 {
@@ -113,9 +110,14 @@ void PluginManagerDialog::on_pluginTable_cellClicked(int row, int column)
 
 QString PluginManagerDialog::pluginTypeName(PluginInterface* plugin) const
 {
-    if (dynamic_cast<EditorBlockPluginInterface*>(plugin)) return tr("编辑器块");
-    if (dynamic_cast<ExportPluginInterface*>(plugin)) return tr("导出");
-    if (dynamic_cast<ToolPluginInterface*>(plugin)) return tr("工具");
-    if (dynamic_cast<ImportPluginInterface*>(plugin)) return tr("导入");
-    return tr("基础");
+    if (!plugin) return tr("未知");
+
+    // 使用插件元信息中的分类字段
+    const QString category = plugin->category();
+    if (category.compare("Editor", Qt::CaseInsensitive) == 0) return tr("编辑器块");
+    if (category.compare("Export", Qt::CaseInsensitive) == 0) return tr("导出");
+    if (category.compare("Import", Qt::CaseInsensitive) == 0) return tr("导入");
+    if (category.compare("Tool", Qt::CaseInsensitive) == 0) return tr("工具");
+    if (category.isEmpty() || category.compare("General", Qt::CaseInsensitive) == 0) return tr("基础");
+    return category;
 }

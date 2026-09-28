@@ -10,10 +10,12 @@
 #include "ui_LoginDialog.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/UserSession.h"
+#include "service/UserService.h"
 #include "data/repositories/UserRepository.h"
 #include "ui/dialogs/ChangePasswordDialog.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QTimer>
 
 // ============================================================================
@@ -21,14 +23,13 @@
 // ============================================================================
 
 LoginDialog::LoginDialog(QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::LoginDialog)
     , m_username()
 {
     ui->setupUi(this);
 
     // 去掉对话框标题栏的帮助按钮
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 }
 
 LoginDialog::~LoginDialog()
@@ -59,7 +60,7 @@ void LoginDialog::on_loginButton_clicked()
     }
 
     // 从数据库验证用户
-    User::Ptr user = UserRepository::authenticate(username, password);
+    User::Ptr user = UserService::authenticate(username, password);
     if (!user) {
         showError(tr("用户名或密码错误，请重试"));
         ui->passwordEdit->selectAll();
@@ -71,7 +72,7 @@ void LoginDialog::on_loginButton_clicked()
     m_username = username;
 
     // 更新最后登录时间
-    UserRepository::updateLastLogin(user->id());
+    UserService::updateLastLogin(user->id());
 
     // 保存到会话
     UserSession::instance().setCurrentUser(user);
@@ -80,15 +81,15 @@ void LoginDialog::on_loginButton_clicked()
     if (user->mustChangePassword()) {
         ChangePasswordDialog dlg(true, this);
         if (dlg.exec() == QDialog::Accepted) {
-            if (UserRepository::changePassword(user->id(), dlg.newPassword())) {
+            if (UserService::changePassword(user->id(), dlg.newPassword())) {
                 user->setMustChangePassword(false);
-                QMessageBox::information(this, tr("成功"), tr("密码修改成功，请重新登录"));
+                UiHelper::info(this, tr("成功"), tr("密码修改成功，请重新登录"));
                 // 清空密码框，让用户重新登录
                 ui->passwordEdit->clear();
                 ui->passwordEdit->setFocus();
                 return;
             } else {
-                QMessageBox::warning(this, tr("错误"), tr("密码修改失败，请重试"));
+                UiHelper::warning(this, tr("错误"), tr("密码修改失败，请重试"));
                 return;
             }
         }

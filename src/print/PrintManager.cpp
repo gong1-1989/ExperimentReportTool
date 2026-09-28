@@ -9,7 +9,7 @@
 #include "core/utils/AppTheme.h"
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
-#include "data/repositories/DataTableRepository.h"
+#include "service/DataTableService.h"
 #include "core/models/DataTable.h"
 
 #include <QPrintDialog>
@@ -19,6 +19,7 @@
 #include <QTextCursor>
 #include <QPainter>
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QApplication>
 #include <QSettings>
 #include <QFile>
@@ -67,7 +68,7 @@ PrintManager::~PrintManager()
 bool PrintManager::printPreview(const Report::Ptr& report, QWidget* parent)
 {
     if (!report) {
-        QMessageBox::critical(parent, tr("打印失败"), tr("报告为空"));
+        UiHelper::error(parent, tr("打印失败"), tr("报告为空"));
         return false;
     }
 
@@ -98,7 +99,7 @@ bool PrintManager::printPreview(const Report::Ptr& report, QWidget* parent)
 bool PrintManager::print(const Report::Ptr& report, QWidget* parent)
 {
     if (!report) {
-        QMessageBox::critical(parent, tr("打印失败"), tr("报告为空"));
+        UiHelper::error(parent, tr("打印失败"), tr("报告为空"));
         return false;
     }
 
@@ -280,7 +281,7 @@ static DataTable::Ptr getDataTableForPrint(qint64 id, const Report::Ptr& report)
 {
     if (id > 0) {
         // 正 ID：从数据库获取数据表
-        return DataTableRepository::findById(id);
+        return DataTableService::getById(id);
     } else if (id < 0 && report) {
         // 负 ID：从报告表格块获取
         const int targetIndex = -id - 1;

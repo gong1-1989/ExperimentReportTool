@@ -13,7 +13,7 @@
 #ifndef DATA_TABLE_EDITOR_DIALOG_H
 #define DATA_TABLE_EDITOR_DIALOG_H
 
-#include <QDialog>
+#include "ui/dialogs/BaseDialog.h"
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QPushButton>
@@ -92,7 +92,7 @@ private:
 /**
  * @brief 数据表编辑器对话框
  */
-class DataTableEditorDialog : public QDialog
+class DataTableEditorDialog : public BaseDialog
 {
     Q_OBJECT
 

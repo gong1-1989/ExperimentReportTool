@@ -9,7 +9,7 @@
 #ifndef PROJECT_DIALOG_H
 #define PROJECT_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include "core/models/Project.h"
 
 // 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
@@ -38,7 +38,7 @@ class ProjectDialog;
  *   }
  * @endcode
  */
-class ProjectDialog : public QDialog
+class ProjectDialog : public BaseDialog
 {
     Q_OBJECT
 

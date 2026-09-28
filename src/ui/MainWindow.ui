@@ -66,23 +66,14 @@
          </widget>
         </item>
         <item>
-         <widget class="QTreeWidget" name="m_projectTree">
+         <widget class="ProjectTreeWidget" name="m_projectTree">
           <property name="headerHidden">
            <bool>true</bool>
           </property>
-          <column>
-           <property name="text">
-            <string>项目</string>
-           </property>
-          </column>
          </widget>
         </item>
        </layout>
       </widget>
-      <widget class="QSplitter" name="m_centerSplitter">
-       <property name="orientation">
-        <enum>Qt::Vertical</enum>
-       </property>
        <widget class="QWidget" name="reportListPanel">
         <layout class="QVBoxLayout" name="reportListLayout">
          <property name="spacing">
@@ -111,69 +102,11 @@
           </widget>
          </item>
          <item>
-          <widget class="QTableWidget" name="m_reportList">
-           <property name="editTriggers">
-            <set>QAbstractItemView::NoEditTriggers</set>
-           </property>
-           <property name="selectionBehavior">
-            <enum>QAbstractItemView::SelectRows</enum>
-           </property>
-           <property name="selectionMode">
-            <enum>QAbstractItemView::SingleSelection</enum>
-           </property>
-           <property name="alternatingRowColors">
-            <bool>true</bool>
-           </property>
-           <column>
-            <property name="text">
-             <string>标题</string>
-            </property>
-           </column>
-           <column>
-            <property name="text">
-             <string>作者</string>
-            </property>
-           </column>
-           <column>
-            <property name="text">
-             <string>实验日期</string>
-            </property>
-           </column>
-           <column>
-            <property name="text">
-             <string>更新时间</string>
-            </property>
-           </column>
+          <widget class="ReportListWidget" name="m_reportList">
           </widget>
          </item>
         </layout>
        </widget>
-       <widget class="QStackedWidget" name="m_editorStack">
-        <property name="minimumSize">
-         <size>
-          <width>400</width>
-          <height>0</height>
-         </size>
-        </property>
-        <widget class="QWidget" name="pagePlaceholder">
-         <layout class="QVBoxLayout" name="verticalLayoutPlaceholder">
-          <item>
-           <widget class="QLabel" name="labelEditorPlaceholder">
-            <property name="text">
-             <string notr="true">&lt;div style='color: #999; font-size: 16px; text-align: center;'&gt;
-&lt;p&gt;📝 报告编辑器&lt;/p&gt;
-&lt;p style='font-size: 13px;'&gt;双击左侧报告列表中的报告以打开编辑&lt;/p&gt;
-&lt;/div&gt;</string>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignCenter</set>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
-       </widget>
-      </widget>
       <widget class="QWidget" name="m_propertyPanel">
        <property name="minimumSize">
         <size>
@@ -208,7 +141,13 @@
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="labelPropertyPlaceholder">
+         <widget class="QLabel" name="m_propertyContentLabel">
+          <property name="textFormat">
+           <enum>Qt::RichText</enum>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
           <property name="text">
            <string notr="true">&lt;div style='color: #999; font-size: 12px; margin-top: 12px;'&gt;
 选择项目或报告后，&lt;br&gt;此处将显示其属性信息。
@@ -238,6 +177,85 @@
     </item>
    </layout>
   </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1200</width>
+     <height>22</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>文件(&amp;F)</string>
+    </property>
+    <addaction name="m_actionNewProject"/>
+    <addaction name="m_actionNewReport"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionOpenReport"/>
+    <addaction name="m_actionImportData"/>
+    <addaction name="m_actionExportReport"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionExit"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>编辑(&amp;E)</string>
+    </property>
+    <addaction name="m_actionEditProject"/>
+    <addaction name="m_actionDeleteProject"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionDeleteReport"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionFind"/>
+   </widget>
+   <widget class="QMenu" name="menuView">
+    <property name="title">
+     <string>视图(&amp;V)</string>
+    </property>
+    <addaction name="m_actionToggleProjectPanel"/>
+    <addaction name="m_actionTogglePropertyPanel"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionFullscreen"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionZoomIn"/>
+    <addaction name="m_actionZoomOut"/>
+    <addaction name="m_actionResetZoom"/>
+   </widget>
+   <widget class="QMenu" name="menuTools">
+    <property name="title">
+     <string>工具(&amp;T)</string>
+    </property>
+    <addaction name="m_actionTemplateManager"/>
+    <addaction name="m_actionTagManager"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionChangePassword"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionBackup"/>
+    <addaction name="m_actionRestore"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionUserManager"/>
+    <addaction name="m_actionSettings"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>帮助(&amp;H)</string>
+    </property>
+    <addaction name="m_actionAbout"/>
+    <addaction name="m_actionAboutQt"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionPluginManager"/>
+    <addaction name="separator"/>
+    <addaction name="m_actionCheckUpdate"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuView"/>
+   <addaction name="menuTools"/>
+   <addaction name="menuHelp"/>
+
+  </widget>
   <widget class="QToolBar" name="mainToolBar">
    <property name="windowTitle">
     <string>主工具栏</string>
@@ -248,9 +266,305 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
+   <addaction name="m_actionNewProject"/>
+   <addaction name="m_actionNewReport"/>
+   <addaction name="separator"/>
+   <addaction name="m_actionExportReport"/>
+   <addaction name="separator"/>
+   <widget class="QLineEdit" name="m_globalSearchEdit">
+    <property name="placeholderText">
+     <string>🔍 全局搜索报告...</string>
+    </property>
+    <property name="clearButtonEnabled">
+     <bool>true</bool>
+    </property>
+    <property name="maximumSize">
+     <size>
+      <width>280</width>
+      <height>16777215</height>
+     </size>
+    </property>
+   </widget>
+   <addaction name="separator"/>
+   <addaction name="m_actionSettings"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="m_actionNewProject">
+   <property name="text">
+    <string>新建项目(&amp;N)...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+N</string>
+   </property>
+   <property name="statusTip">
+    <string>创建新的实验项目</string>
+   </property>
+  </action>
+  <action name="m_actionNewReport">
+   <property name="text">
+    <string>新建报告(&amp;R)...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
+   </property>
+   <property name="statusTip">
+    <string>创建新的实验报告</string>
+   </property>
+  </action>
+  <action name="m_actionOpenReport">
+   <property name="text">
+    <string>打开报告(&amp;O)...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+   <property name="statusTip">
+    <string>打开已有报告</string>
+   </property>
+  </action>
+  <action name="m_actionImportData">
+   <property name="text">
+    <string>导入数据(&amp;I)...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+I</string>
+   </property>
+  </action>
+  <action name="m_actionExportReport">
+   <property name="text">
+    <string>导出项目(&amp;E)...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+E</string>
+   </property>
+   <property name="enabled"><bool>false</bool></property>
+  </action>
+  <action name="m_actionExit">
+   <property name="text">
+    <string>退出(&amp;X)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Q</string>
+   </property>
+   <property name="statusTip">
+    <string>退出应用程序</string>
+   </property>
+  </action>
+  <action name="m_actionEditProject">
+   <property name="text">
+    <string>编辑项目(&amp;P)...</string>
+   </property>
+   <property name="shortcut">
+    <string>F2</string>
+   </property>
+   <property name="enabled"><bool>false</bool></property>
+   <property name="statusTip">
+    <string>编辑当前选中的项目</string>
+   </property>
+  </action>
+  <action name="m_actionDeleteProject">
+   <property name="text">
+    <string>删除项目(&amp;D)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Delete</string>
+   </property>
+   <property name="enabled"><bool>false</bool></property>
+   <property name="statusTip">
+    <string>删除当前选中的项目</string>
+   </property>
+  </action>
+  <action name="m_actionDeleteReport">
+   <property name="text">
+    <string>删除报告</string>
+   </property>
+   <property name="enabled"><bool>false</bool></property>
+   <property name="statusTip">
+    <string>删除当前选中的报告</string>
+   </property>
+  </action>
+  <action name="m_actionFind">
+   <property name="text">
+    <string>查找(&amp;F)...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F</string>
+   </property>
+   <property name="statusTip">
+    <string>全文搜索报告</string>
+   </property>
+  </action>
+  <action name="m_actionToggleProjectPanel">
+   <property name="text">
+    <string>项目面板</string>
+   </property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>true</bool></property>
+   <property name="statusTip">
+    <string>显示/隐藏项目面板</string>
+   </property>
+  </action>
+  <action name="m_actionTogglePropertyPanel">
+   <property name="text">
+    <string>属性面板</string>
+   </property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>true</bool></property>
+   <property name="statusTip">
+    <string>显示/隐藏属性面板</string>
+   </property>
+  </action>
+  <action name="m_actionFullscreen">
+   <property name="text">
+    <string>全屏模式</string>
+   </property>
+   <property name="shortcut">
+    <string>F11</string>
+   </property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="statusTip">
+    <string>切换全屏模式</string>
+   </property>
+  </action>
+  <action name="m_actionZoomIn">
+   <property name="text">
+    <string>放大</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+=</string>
+   </property>
+   <property name="statusTip">
+    <string>放大界面</string>
+   </property>
+  </action>
+  <action name="m_actionZoomOut">
+   <property name="text">
+    <string>缩小</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+-</string>
+   </property>
+   <property name="statusTip">
+    <string>缩小界面</string>
+   </property>
+  </action>
+  <action name="m_actionResetZoom">
+   <property name="text">
+    <string>重置缩放</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+0</string>
+   </property>
+   <property name="statusTip">
+    <string>重置缩放为 100%</string>
+   </property>
+  </action>
+  <action name="m_actionTemplateManager">
+   <property name="text">
+    <string>模板管理器(&amp;T)...</string>
+   </property>
+   <property name="statusTip">
+    <string>管理报告模板</string>
+   </property>
+  </action>
+  <action name="m_actionTagManager">
+   <property name="text">
+    <string>标签管理(&amp;G)...</string>
+   </property>
+   <property name="statusTip">
+    <string>管理报告标签</string>
+   </property>
+  </action>
+  <action name="m_actionChangePassword">
+   <property name="text">
+    <string>修改密码(&amp;P)...</string>
+   </property>
+   <property name="statusTip">
+    <string>修改当前用户密码</string>
+   </property>
+  </action>
+  <action name="m_actionBackup">
+   <property name="text">
+    <string>数据备份(&amp;B)...</string>
+   </property>
+   <property name="statusTip">
+    <string>备份所有数据到文件</string>
+   </property>
+  </action>
+  <action name="m_actionRestore">
+   <property name="text">
+    <string>数据恢复(&amp;R)...</string>
+   </property>
+   <property name="statusTip">
+    <string>从备份文件恢复数据</string>
+   </property>
+  </action>
+  <action name="m_actionSettings">
+   <property name="text">
+    <string>设置(&amp;S)...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+,</string>
+   </property>
+   <property name="statusTip">
+    <string>应用程序设置</string>
+   </property>
+  </action>
+  <action name="m_actionAbout">
+   <property name="text">
+    <string>关于(&amp;A)...</string>
+   </property>
+   <property name="statusTip">
+    <string>关于本软件</string>
+   </property>
+  </action>
+  <action name="m_actionAboutQt">
+   <property name="text">
+    <string>关于 Qt</string>
+   </property>
+   <property name="statusTip">
+    <string>关于 Qt 框架</string>
+   </property>
+  </action>
+  <action name="m_actionCheckUpdate">
+   <property name="text">
+    <string>检查更新</string>
+   </property>
+   <property name="statusTip">
+    <string>检查软件更新</string>
+   </property>
+  </action>
+  <action name="m_actionPluginManager">
+   <property name="text">
+    <string>插件管理...</string>
+   </property>
+   <property name="statusTip">
+    <string>查看和管理已加载的插件</string>
+   </property>
+  </action>
+  <action name="m_actionUserManager">
+   <property name="text">
+    <string>用户管理...</string>
+   </property>
+   <property name="statusTip">
+    <string>管理系统用户（仅管理员）</string>
+   </property>
+  </action>
  </widget>
+ 
+
+ <customwidgets>
+  <customwidget>
+   <class>ProjectTreeWidget</class>
+   <extends>QTreeWidget</extends>
+   <header>ui/widgets/ProjectTreeWidget.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ReportListWidget</class>
+   <extends>QTableWidget</extends>
+   <header>ui/widgets/ReportListWidget.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

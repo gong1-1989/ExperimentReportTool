@@ -309,7 +309,7 @@ int Report::wordCount() const
     int count = 0;
 
     // 统计中文字符（CJK 统一表意文字范围）
-    QRegularExpression cjkRegex(QStringLiteral("[\\u4e00-\\u9fff]"));
+    QRegularExpression cjkRegex(QStringLiteral("[\u4e00-\u9fff]"));
     auto cjkIt = cjkRegex.globalMatch(plainText);
     while (cjkIt.hasNext()) {
         cjkIt.next();

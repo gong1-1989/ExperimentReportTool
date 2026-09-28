@@ -4,9 +4,13 @@
  */
 
 #include "ReportListWidget.h"
+#include "ui_ReportListWidget.h"
+#include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
 #include "data/repositories/ProjectRepository.h"
+#include "service/TagService.h"
 #include "data/repositories/TagRepository.h"
+#include "service/UserService.h"
 #include "data/repositories/UserRepository.h"
 #include "core/models/Tag.h"
 #include "core/models/User.h"
@@ -15,7 +19,7 @@
 #include "core/utils/AppDimensions.h"
 
 #include <QHeaderView>
-#include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QDateTime>
 
 // ===========================================================================
@@ -24,10 +28,17 @@
 
 ReportListWidget::ReportListWidget(QWidget* parent)
     : QWidget(parent)
+    , ui(new Ui::ReportListWidget)
     , m_currentProjectId(-1)
     , m_statusFilterIndex(0)
 {
-    setupUi();
+    ui->setupUi(this);
+    setupUi();   // 行为与样式配置（结构已由 .ui 定义）
+}
+
+ReportListWidget::~ReportListWidget()
+{
+    delete ui;
 }
 
 // ===========================================================================
@@ -36,55 +47,18 @@ ReportListWidget::ReportListWidget(QWidget* parent)
 
 void ReportListWidget::setupUi()
 {
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(AppTheme::Spacing::Normal, AppTheme::Spacing::Normal,
-                                   AppTheme::Spacing::Normal, AppTheme::Spacing::Normal);
-    mainLayout->setSpacing(AppTheme::Spacing::Normal);
-
-    // -----------------------------------------------------------------------
-    // 顶部工具栏
-    // -----------------------------------------------------------------------
-    QHBoxLayout* toolbarLayout = new QHBoxLayout();
-    toolbarLayout->setSpacing(AppTheme::Spacing::Normal);
+    // 结构由 ReportListWidget.ui 定义，这里仅配置行为与样式
 
     // 搜索框
-    m_searchEdit = new QLineEdit(this);
-    m_searchEdit->setPlaceholderText(tr("搜索报告标题..."));
-    m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setMaximumWidth(AppDimensions::Widget::ReportSearchMaxWidth);
-    connect(m_searchEdit, &QLineEdit::textChanged,
-            this, &ReportListWidget::onSearchTextChanged);
-    toolbarLayout->addWidget(m_searchEdit);
-
-    // 状态筛选
-    m_statusFilter = new QComboBox(this);
-    m_statusFilter->addItem(tr("全部状态"));
-    m_statusFilter->addItem(tr("草稿"));
-    m_statusFilter->addItem(tr("已提交"));
-    m_statusFilter->addItem(tr("已审核"));
-    connect(m_statusFilter, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &ReportListWidget::onStatusFilterChanged);
-    toolbarLayout->addWidget(m_statusFilter);
-
-    toolbarLayout->addStretch();
+    ui->searchEdit->setMaximumWidth(AppDimensions::Widget::ReportSearchMaxWidth);
 
     // 数量标签
-    m_countLabel = new QLabel(tr("共 0 份报告"), this);
-    m_countLabel->setStyleSheet(
+    ui->countLabel->setStyleSheet(
         QString("color: %1; font-size: %2px;")
             .arg(AppTheme::Color::Gray666).arg(AppTheme::FontSize::Small));
-    toolbarLayout->addWidget(m_countLabel);
-
-    // 视图切换按钮
-    m_viewToggleButton = new QPushButton(tr("卡片视图"), this);
-    m_viewToggleButton->setCheckable(true);
-    connect(m_viewToggleButton, &QPushButton::clicked,
-            this, &ReportListWidget::onToggleView);
-    toolbarLayout->addWidget(m_viewToggleButton);
 
     // 新建按钮
-    m_newButton = new QPushButton(tr("新建报告"), this);
-    m_newButton->setStyleSheet(
+    ui->newButton->setStyleSheet(
         QString("QPushButton { background-color: %1; color: white; "
                 "padding: %2px %3px; border-radius: %4px; font-weight: bold; }"
                 "QPushButton:hover { background-color: %5; }")
@@ -93,56 +67,31 @@ void ReportListWidget::setupUi()
             .arg(AppTheme::Spacing::ExtraLarge)
             .arg(AppTheme::Radius::Medium)
             .arg(AppTheme::Color::PrimaryHover));
-    connect(m_newButton, &QPushButton::clicked,
-            this, &ReportListWidget::onNewReport);
-    toolbarLayout->addWidget(m_newButton);
-
-    mainLayout->addLayout(toolbarLayout);
-
-    // -----------------------------------------------------------------------
-    // 列表区域
-    // -----------------------------------------------------------------------
-    m_stackWidget = new QStackedWidget(this);
 
     // 表格视图
-    m_tableWidget = new QTableWidget(this);
-    m_tableWidget->setColumnCount(7);
-    m_tableWidget->setHorizontalHeaderLabels({
+    ui->tableWidget->setColumnCount(7);
+    ui->tableWidget->setHorizontalHeaderLabels({
         tr("标题"), tr("状态"), tr("创建者"),
         tr("实验日期"), tr("更新时间"), tr("字数"), tr("标签")
     });
-    m_tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_tableWidget->setAlternatingRowColors(true);
-    m_tableWidget->verticalHeader()->setVisible(false);
-    m_tableWidget->horizontalHeader()->setStretchLastSection(true);
-    m_tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_tableWidget->setSortingEnabled(true);
+    ui->tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    ui->tableWidget->setAlternatingRowColors(true);
+    ui->tableWidget->verticalHeader()->setVisible(false);
+    ui->tableWidget->horizontalHeader()->setStretchLastSection(true);
+    ui->tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    ui->tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    ui->tableWidget->setSortingEnabled(true);
 
-    connect(m_tableWidget, &QTableWidget::cellDoubleClicked,
-            this, &ReportListWidget::onTableDoubleClicked);
-    connect(m_tableWidget, &QTableWidget::customContextMenuRequested,
-            this, &ReportListWidget::onTableCustomContextMenu);
-    connect(m_tableWidget, &QTableWidget::itemSelectionChanged,
-            this, &ReportListWidget::onSelectionChanged);
+    // 卡片视图
+    ui->cardWidget->setViewMode(QListView::IconMode);
+    ui->cardWidget->setIconSize(QSize(120, 90));
+    ui->cardWidget->setGridSize(QSize(160, 140));
+    ui->cardWidget->setResizeMode(QListView::Adjust);
+    ui->cardWidget->setMovement(QListView::Static);
 
-    m_stackWidget->addWidget(m_tableWidget);
-
-    // 卡片视图（占位）
-    m_cardWidget = new QListWidget(this);
-    m_cardWidget->setViewMode(QListView::IconMode);
-    m_cardWidget->setIconSize(QSize(120, 90));
-    m_cardWidget->setGridSize(QSize(160, 140));
-    m_cardWidget->setResizeMode(QListView::Adjust);
-    m_cardWidget->setMovement(QListView::Static);
-    m_stackWidget->addWidget(m_cardWidget);
-
-    mainLayout->addWidget(m_stackWidget);
-
-    // 初始加载
-    refreshList();
+    // 信号由 .ui 自动连接（on_searchEdit_textChanged 等）
 }
 
 // ===========================================================================
@@ -159,21 +108,21 @@ void ReportListWidget::refreshList()
 {
     if (m_currentProjectId <= 0) {
         loadReportsToTable(Report::List());
-        m_countLabel->setText(tr("请在左侧选择一个项目"));
+        ui->countLabel->setText(tr("请在左侧选择一个项目"));
         return;
     }
 
     const Report::List reports = getFilteredReports();
     loadReportsToTable(reports);
-    m_countLabel->setText(tr("共 %1 份报告").arg(reports.size()));
+    ui->countLabel->setText(tr("共 %1 份报告").arg(reports.size()));
 }
 
 qint64 ReportListWidget::currentReportId() const
 {
-    const int row = m_tableWidget->currentRow();
+    const int row = ui->tableWidget->currentRow();
     if (row < 0) return -1;
 
-    QTableWidgetItem* item = m_tableWidget->item(row, 0);
+    QTableWidgetItem* item = ui->tableWidget->item(row, 0);
     if (!item) return -1;
 
     return item->data(Qt::UserRole).toLongLong();
@@ -183,33 +132,33 @@ qint64 ReportListWidget::currentReportId() const
 // 私有槽函数
 // ===========================================================================
 
-void ReportListWidget::onSearchTextChanged(const QString& text)
+void ReportListWidget::on_searchEdit_textChanged(const QString& text)
 {
     m_searchKeyword = text;
     refreshList();
 }
 
-void ReportListWidget::onStatusFilterChanged(int index)
+void ReportListWidget::on_statusFilter_currentIndexChanged(int index)
 {
     m_statusFilterIndex = index;
     refreshList();
 }
 
-void ReportListWidget::onTableDoubleClicked(int row, int column)
+void ReportListWidget::on_tableWidget_cellDoubleClicked(int row, int column)
 {
     Q_UNUSED(column);
     if (row < 0) return;
 
-    QTableWidgetItem* item = m_tableWidget->item(row, 0);
+    QTableWidgetItem* item = ui->tableWidget->item(row, 0);
     if (!item) return;
 
     const qint64 reportId = item->data(Qt::UserRole).toLongLong();
     emit reportOpenRequested(reportId);
 }
 
-void ReportListWidget::onTableCustomContextMenu(const QPoint& pos)
+void ReportListWidget::on_tableWidget_customContextMenuRequested(const QPoint& pos)
 {
-    QTableWidgetItem* item = m_tableWidget->itemAt(pos);
+    QTableWidgetItem* item = ui->tableWidget->itemAt(pos);
     if (!item) return;
 
     QMenu menu(this);
@@ -218,7 +167,7 @@ void ReportListWidget::onTableCustomContextMenu(const QPoint& pos)
     menu.addSeparator();
     QAction* actionDelete = menu.addAction(tr("删除报告"));
 
-    QAction* selected = menu.exec(m_tableWidget->viewport()->mapToGlobal(pos));
+    QAction* selected = menu.exec(ui->tableWidget->viewport()->mapToGlobal(pos));
 
     const qint64 reportId = item->data(Qt::UserRole).toLongLong();
 
@@ -231,44 +180,28 @@ void ReportListWidget::onTableCustomContextMenu(const QPoint& pos)
     }
 }
 
-void ReportListWidget::onSelectionChanged()
+void ReportListWidget::on_tableWidget_itemSelectionChanged()
 {
     emit reportSelected(currentReportId());
 }
 
-void ReportListWidget::onNewReport()
+void ReportListWidget::on_newButton_clicked()
 {
     if (m_currentProjectId <= 0) {
-        QMessageBox::information(this, tr("提示"), tr("请先在左侧选择一个项目"));
+        UiHelper::info(this, tr("提示"), tr("请先在左侧选择一个项目"));
         return;
     }
     emit reportNewRequested(m_currentProjectId);
 }
 
-void ReportListWidget::onEditReport()
+void ReportListWidget::on_viewToggleButton_clicked()
 {
-    const qint64 reportId = currentReportId();
-    if (reportId > 0) {
-        emit reportEditRequested(reportId);
-    }
-}
-
-void ReportListWidget::onDeleteReport()
-{
-    const qint64 reportId = currentReportId();
-    if (reportId > 0) {
-        emit reportDeleteRequested(reportId);
-    }
-}
-
-void ReportListWidget::onToggleView()
-{
-    if (m_stackWidget->currentIndex() == 0) {
-        m_stackWidget->setCurrentIndex(1);
-        m_viewToggleButton->setText(tr("表格视图"));
+    if (ui->stackWidget->currentIndex() == 0) {
+        ui->stackWidget->setCurrentIndex(1);
+        ui->viewToggleButton->setText(tr("表格视图"));
     } else {
-        m_stackWidget->setCurrentIndex(0);
-        m_viewToggleButton->setText(tr("卡片视图"));
+        ui->stackWidget->setCurrentIndex(0);
+        ui->viewToggleButton->setText(tr("卡片视图"));
     }
 }
 
@@ -293,7 +226,7 @@ Report::List ReportListWidget::getFilteredReports()
     else if (m_statusFilterIndex == 2) query.status = ReportStatus::Submitted;
     else if (m_statusFilterIndex == 3) query.status = ReportStatus::Reviewed;
 
-    Report::List reports = ReportRepository::findAll(query);
+    Report::List reports = ReportService::query(query);
 
     // 关键词筛选（在内存中过滤，因为 FTS 搜索是独立接口）
     if (!m_searchKeyword.isEmpty()) {
@@ -312,8 +245,8 @@ Report::List ReportListWidget::getFilteredReports()
 void ReportListWidget::loadReportsToTable(const Report::List& reports)
 {
     // 暂时禁用排序，避免插入时排序出错
-    m_tableWidget->setSortingEnabled(false);
-    m_tableWidget->setRowCount(reports.size());
+    ui->tableWidget->setSortingEnabled(false);
+    ui->tableWidget->setRowCount(reports.size());
 
     // 用户信息缓存（避免重复查询）
     QMap<qint64, QString> userNameCache;
@@ -325,12 +258,12 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
         QTableWidgetItem* titleItem = new QTableWidgetItem(report->title());
         titleItem->setData(Qt::UserRole, report->id());
         titleItem->setToolTip(report->title());
-        m_tableWidget->setItem(row, 0, titleItem);
+        ui->tableWidget->setItem(row, 0, titleItem);
 
         // 状态列
         QTableWidgetItem* statusItem = new QTableWidgetItem(statusDisplayName(report->status()));
         statusItem->setForeground(AppTheme::statusColor(report->status()));
-        m_tableWidget->setItem(row, 1, statusItem);
+        ui->tableWidget->setItem(row, 1, statusItem);
 
         // 创建者列
         QString creatorName = tr("未分配");
@@ -338,7 +271,7 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
             if (userNameCache.contains(report->createdBy())) {
                 creatorName = userNameCache.value(report->createdBy());
             } else {
-                User::Ptr user = UserRepository::findById(report->createdBy());
+                User::Ptr user = UserService::getById(report->createdBy());
                 if (user) {
                     creatorName = user->displayNameOrUsername();
                     userNameCache.insert(report->createdBy(), creatorName);
@@ -347,24 +280,24 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
                 }
             }
         }
-        m_tableWidget->setItem(row, 2, new QTableWidgetItem(creatorName));
+        ui->tableWidget->setItem(row, 2, new QTableWidgetItem(creatorName));
 
         // 实验日期列
         const QString dateStr = report->experimentDate().isValid()
             ? report->experimentDate().toString("yyyy-MM-dd")
             : tr("未设置");
-        m_tableWidget->setItem(row, 3, new QTableWidgetItem(dateStr));
+        ui->tableWidget->setItem(row, 3, new QTableWidgetItem(dateStr));
 
         // 更新时间列
-        m_tableWidget->setItem(row, 4,
+        ui->tableWidget->setItem(row, 4,
             new QTableWidgetItem(report->updatedAt().toString("yyyy-MM-dd hh:mm")));
 
         // 字数列
-        m_tableWidget->setItem(row, 5,
+        ui->tableWidget->setItem(row, 5,
             new QTableWidgetItem(QString::number(report->wordCount())));
 
         // 标签列（显示颜色方块 + 标签名）
-        const Tag::List tags = TagRepository::findByReport(report->id());
+        const Tag::List tags = TagService::findByReport(report->id());
         if (!tags.isEmpty()) {
             QString tagText;
             for (int i = 0; i < tags.size(); ++i) {
@@ -374,13 +307,13 @@ void ReportListWidget::loadReportsToTable(const Report::List& reports)
             QTableWidgetItem* tagItem = new QTableWidgetItem(tagText);
             tagItem->setForeground(tags.first()->effectiveColor());
             tagItem->setToolTip(tagText);
-            m_tableWidget->setItem(row, 6, tagItem);
+            ui->tableWidget->setItem(row, 6, tagItem);
         } else {
-            m_tableWidget->setItem(row, 6, new QTableWidgetItem("-"));
+            ui->tableWidget->setItem(row, 6, new QTableWidgetItem("-"));
         }
     }
 
-    m_tableWidget->setSortingEnabled(true);
+    ui->tableWidget->setSortingEnabled(true);
 }
 
 QString ReportListWidget::statusDisplayName(ReportStatus status) const

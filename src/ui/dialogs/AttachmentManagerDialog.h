@@ -8,7 +8,7 @@
 #ifndef ATTACHMENT_MANAGER_DIALOG_H
 #define ATTACHMENT_MANAGER_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QPushButton>
@@ -27,7 +27,7 @@ class AttachmentManagerDialog;
 /**
  * @brief 附件管理对话框
  */
-class AttachmentManagerDialog : public QDialog
+class AttachmentManagerDialog : public BaseDialog
 {
     Q_OBJECT
 

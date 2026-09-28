@@ -6,6 +6,8 @@
 #include "TagService.h"
 #include "data/repositories/TagRepository.h"
 #include "core/utils/AppTheme.h"
+#include "core/utils/Logger.h"
+#include <QtGlobal>
 
 Tag::Ptr TagService::getById(qint64 id)
 {
@@ -29,11 +31,13 @@ Tag::Ptr TagService::create(const QString& name, const QString& color)
     if (TagRepository::save(tag)) {
         return tag;
     }
+    LOG_ERROR(QString("创建标签失败: %1").arg(name));
     return nullptr;
 }
 
 bool TagService::update(const Tag::Ptr& tag)
 {
+    Q_ASSERT(tag);
     if (!tag) return false;
     return TagRepository::save(tag);
 }
@@ -46,4 +50,24 @@ bool TagService::remove(qint64 id)
 bool TagService::exists(const QString& name)
 {
     return TagRepository::exists(name);
+}
+
+bool TagService::exists(const QString& name, qint64 excludeId)
+{
+    return TagRepository::exists(name, excludeId);
+}
+
+Tag::List TagService::search(const QString& keyword)
+{
+    return TagRepository::search(keyword);
+}
+
+Tag::List TagService::findByReport(qint64 reportId)
+{
+    return TagRepository::findByReport(reportId);
+}
+
+bool TagService::setReportTags(qint64 reportId, const QList<qint64>& tagIds)
+{
+    return TagRepository::setReportTags(reportId, tagIds);
 }

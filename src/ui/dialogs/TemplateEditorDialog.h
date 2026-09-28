@@ -9,7 +9,7 @@
 #ifndef TEMPLATE_EDITOR_DIALOG_H
 #define TEMPLATE_EDITOR_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QLineEdit>
 #include <QComboBox>
 #include <QTextEdit>
@@ -35,7 +35,7 @@ class ReportEditor;
 /**
  * @brief 模板编辑器对话框
  */
-class TemplateEditorDialog : public QDialog
+class TemplateEditorDialog : public BaseDialog
 {
     Q_OBJECT
 

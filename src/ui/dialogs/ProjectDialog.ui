@@ -24,16 +24,16 @@
     <number>12</number>
    </property>
    <property name="leftMargin">
-    <number>15</number>
+    <number>16</number>
    </property>
    <property name="topMargin">
-    <number>15</number>
+    <number>16</number>
    </property>
    <property name="rightMargin">
-    <number>15</number>
+    <number>16</number>
    </property>
    <property name="bottomMargin">
-    <number>15</number>
+    <number>16</number>
    </property>
    <item>
     <layout class="QFormLayout" name="formLayout">

@@ -10,7 +10,6 @@
  * - 标签搜索（按名称模糊匹配）
  * - 报告-标签关联管理（添加、移除、批量设置）
  * - 按标签名称自动创建新标签
- * - 标签使用次数统计
  * - 标签存在性检查
  *
  * 设计说明：
@@ -105,13 +104,11 @@ Tag::Ptr TagRepository::findByName(const QString& name)
  * 返回所有标签，并附带每个标签的使用次数（关联的报告数量）。
  * 结果按使用次数降序、名称升序排列。
  *
- * @return Tag::List 标签列表，按使用次数和名称排序
+ * @return Tag::List 标签列表，按名称排序
  *
  * SQL 说明：
- * - 使用 LEFT JOIN 关联 report_tags 表，确保没有使用的标签也会返回
- * - 使用 COUNT(rt.report_id) 统计使用次数（COUNT 不统计 NULL）
- * - 使用 GROUP BY t.id 按标签分组
- * - 使用 ORDER BY t.name ASC 排序（按标签名称排序，不按使用次数）
+ * - 使用 LIKE %keyword% 模糊匹配标签名称
+ * - 使用 ORDER BY t.name ASC 排序
  *
  * 使用场景：
  * - 标签管理界面显示所有标签
@@ -123,21 +120,16 @@ Tag::List TagRepository::findAll()
     QSqlDatabase db = DatabaseManager::instance().database();
     QSqlQuery query(db);
 
-    // 查询标签及其使用次数
-    // LEFT JOIN 确保没有使用的标签也会返回
+    // 查询所有标签（不再统计使用次数）
     query.exec(R"(
-        SELECT t.*, COUNT(rt.report_id) as usage_count
+        SELECT t.*
         FROM tags t
-        LEFT JOIN report_tags rt ON rt.tag_id = t.id
-        GROUP BY t.id
         ORDER BY t.name ASC;
     )");
 
     // 遍历所有结果行
     while (query.next()) {
         Tag::Ptr tag = createFromQuery(query);
-        // 设置使用次数（从聚合查询结果中获取）
-        tag->setUsageCount(query.value("usage_count").toInt());
         tags.append(tag);
     }
 
@@ -167,13 +159,11 @@ Tag::List TagRepository::search(const QString& keyword)
     QSqlDatabase db = DatabaseManager::instance().database();
     QSqlQuery query(db);
 
-    // 模糊搜索标签名称，同时统计使用次数
+    // 模糊搜索标签名称
     query.prepare(R"(
-        SELECT t.*, COUNT(rt.report_id) as usage_count
+        SELECT t.*
         FROM tags t
-        LEFT JOIN report_tags rt ON rt.tag_id = t.id
         WHERE t.name LIKE :keyword
-        GROUP BY t.id
         ORDER BY t.name ASC;
     )");
     // 使用 %keyword% 进行前后模糊匹配
@@ -183,7 +173,6 @@ Tag::List TagRepository::search(const QString& keyword)
     if (query.exec()) {
         while (query.next()) {
             Tag::Ptr tag = createFromQuery(query);
-            tag->setUsageCount(query.value("usage_count").toInt());
             tags.append(tag);
         }
     }
@@ -228,7 +217,7 @@ bool TagRepository::save(Tag::Ptr tag)
 
         // 执行插入
         if (!query.exec()) {
-            LOG_ERROR(QString("创建标签失败: %1").arg(query.lastError().text()));
+            LOG_ERROR(QString("创建标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
             return false;
         }
 
@@ -249,7 +238,7 @@ bool TagRepository::save(Tag::Ptr tag)
 
         // 执行更新
         if (!query.exec()) {
-            LOG_ERROR(QString("更新标签失败: %1").arg(query.lastError().text()));
+            LOG_ERROR(QString("更新标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
             return false;
         }
     }
@@ -297,7 +286,7 @@ bool TagRepository::remove(qint64 tagId)
     query.prepare("DELETE FROM report_tags WHERE tag_id = :tagId;");
     query.bindValue(":tagId", tagId);
     if (!query.exec()) {
-        LOG_ERROR(QString("删除标签关联失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("删除标签关联失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         db.rollback();
         return false;
     }
@@ -306,7 +295,7 @@ bool TagRepository::remove(qint64 tagId)
     query.prepare("DELETE FROM tags WHERE id = :id;");
     query.bindValue(":id", tagId);
     if (!query.exec()) {
-        LOG_ERROR(QString("删除标签失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("删除标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         db.rollback();
         return false;
     }
@@ -443,8 +432,6 @@ QList<qint64> TagRepository::findReportIdsByTag(qint64 tagId)
  * - 如果该报告已经关联了该标签，直接返回 true（不重复添加）
  * - 先查询是否已存在，再决定是否插入
  *
- * @note 添加后会调用 updateUsageCount() 更新使用次数（当前为空实现）
- * @note 使用次数实际是查询时动态计算的，不需要存储
  */
 bool TagRepository::addToReport(qint64 reportId, qint64 tagId)
 {
@@ -465,12 +452,10 @@ bool TagRepository::addToReport(qint64 reportId, qint64 tagId)
     query.bindValue(":tagId", tagId);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("添加报告标签失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("添加报告标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
-    // 更新使用次数（当前为空实现，使用次数动态计算）
-    updateUsageCount(tagId);
     return true;
 }
 
@@ -482,7 +467,6 @@ bool TagRepository::addToReport(qint64 reportId, qint64 tagId)
  * @return bool 移除成功返回 true，失败返回 false
  *
  * @note 如果该报告没有关联该标签，删除 0 行也视为成功
- * @note 移除后会调用 updateUsageCount() 更新使用次数
  */
 bool TagRepository::removeFromReport(qint64 reportId, qint64 tagId)
 {
@@ -495,12 +479,11 @@ bool TagRepository::removeFromReport(qint64 reportId, qint64 tagId)
     query.bindValue(":tagId", tagId);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("移除报告标签失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("移除报告标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
     // 更新使用次数
-    updateUsageCount(tagId);
     return true;
 }
 
@@ -529,7 +512,10 @@ bool TagRepository::setReportTags(qint64 reportId, const QList<qint64>& tagIds)
     QSqlDatabase db = DatabaseManager::instance().database();
 
     // 开启事务，保证清除和添加的原子性
-    db.transaction();
+    if (!db.transaction()) {
+        LOG_ERROR(QString("设置报告标签事务启动失败: %1").arg(db.lastError().text()));
+        return false;
+    }
 
     // 第一步：清除现有标签关联
     QSqlQuery query(db);
@@ -549,11 +535,14 @@ bool TagRepository::setReportTags(qint64 reportId, const QList<qint64>& tagIds)
             db.rollback();
             return false;
         }
-        updateUsageCount(tagId);
     }
 
     // 提交事务
-    db.commit();
+    if (!db.commit()) {
+        LOG_ERROR(QString("设置报告标签事务提交失败: %1").arg(db.lastError().text()));
+        db.rollback();
+        return false;
+    }
     return true;
 }
 
@@ -640,76 +629,6 @@ QStringList TagRepository::findReportTagNames(qint64 reportId)
 }
 
 // ===========================================================================
-// 统计操作
-// ===========================================================================
-
-/**
- * @brief 统计标签总数
- *
- * @return int 标签总数，查询失败时返回 0
- *
- * 使用场景：
- * - 标签管理界面显示总数
- * - 系统状态统计
- */
-int TagRepository::count()
-{
-    QSqlDatabase db = DatabaseManager::instance().database();
-    QSqlQuery query(db);
-
-    // 使用 COUNT(*) 聚合查询
-    query.exec("SELECT COUNT(*) FROM tags;");
-
-    // 读取第一行第一列的值
-    if (query.next()) {
-        return query.value(0).toInt();
-    }
-    return 0;
-}
-
-/**
- * @brief 统计标签的使用次数
- *
- * @param tagId 标签 ID
- * @return int 使用该标签的报告数量，查询失败时返回 0
- *
- * 使用场景：
- * - 标签详情页显示使用次数
- * - 标签列表显示使用次数徽标
- *
- * @note 使用次数是查询时动态计算的，不冗余存储
- */
-int TagRepository::usageCount(qint64 tagId)
-{
-    QSqlDatabase db = DatabaseManager::instance().database();
-    QSqlQuery query(db);
-
-    // 统计关联表中该标签的记录数
-    query.prepare("SELECT COUNT(*) FROM report_tags WHERE tag_id = :tagId;");
-    query.bindValue(":tagId", tagId);
-
-    // 执行查询并返回计数值
-    if (query.exec() && query.next()) {
-        return query.value(0).toInt();
-    }
-    return 0;
-}
-
-/**
- * @brief 更新标签使用次数
- *
- * @param tagId 标签 ID
- *
- * @note 当前为空实现，因为使用次数是查询时动态计算的，不需要存储
- * @note 保留此方法是为了接口完整性，未来如果改为冗余存储可在此实现
- */
-void TagRepository::updateUsageCount(qint64 tagId)
-{
-    // 使用次数是查询时动态计算的，不需要存储
-    Q_UNUSED(tagId);
-}
-
-// ===========================================================================
 // 内部辅助方法
 // ===========================================================================
 
@@ -720,7 +639,6 @@ void TagRepository::updateUsageCount(qint64 tagId)
  * @return Tag::Ptr 填充好的标签智能指针
  *
  * @note 调用前需确保 query.next() 已返回 true
- * @note 此方法不设置 usageCount，需要调用方单独设置
  */
 Tag::Ptr TagRepository::createFromQuery(const QSqlQuery& query)
 {

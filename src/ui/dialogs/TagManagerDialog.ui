@@ -7,8 +7,8 @@
   <property name="minimumSize"><size><width>750</width><height>550</height></size></property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing"><number>8</number></property>
-   <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
-   <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+   <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property>
+   <property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
    <item>
     <layout class="QHBoxLayout" name="searchLayout">
      <item><widget class="QLineEdit" name="m_searchEdit"><property name="placeholderText"><string>搜索标签...</string></property></widget></item>

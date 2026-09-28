@@ -7,8 +7,8 @@
   <property name="minimumSize"><size><width>850</width><height>600</height></size></property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing"><number>8</number></property>
-   <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
-   <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+   <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property>
+   <property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
    <item>
     <layout class="QHBoxLayout" name="topLayout">
      <item><widget class="QLabel" name="labelVersionName"><property name="text"><string>新版本名称:</string></property></widget></item>

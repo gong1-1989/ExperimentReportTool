@@ -8,15 +8,19 @@
 #ifndef USER_MANAGER_DIALOG_H
 #define USER_MANAGER_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QTableWidget>
 #include <QPushButton>
 #include "core/models/User.h"
 
+namespace Ui {
+class UserManagerDialog;
+}
+
 /**
  * @brief 用户管理对话框
  */
-class UserManagerDialog : public QDialog
+class UserManagerDialog : public BaseDialog
 {
     Q_OBJECT
 
@@ -25,25 +29,19 @@ public:
     ~UserManagerDialog() override;
 
 private slots:
-    void onAddUser();
-    void onEditUser();
-    void onDeleteUser();
-    void onResetPassword();
-    void onRefresh();
-    void onItemSelectionChanged();
+    void on_btnAdd_clicked();
+    void on_btnEdit_clicked();
+    void on_btnDelete_clicked();
+    void on_btnResetPassword_clicked();
+    void on_btnRefresh_clicked();
+    void on_btnClose_clicked();
+    void on_userTable_itemSelectionChanged();
 
 private:
-    void setupUi();
     void loadUsers();
     User::Ptr currentUser() const;
 
-    QTableWidget* m_userTable;
-    QPushButton* m_btnAdd;
-    QPushButton* m_btnEdit;
-    QPushButton* m_btnDelete;
-    QPushButton* m_btnResetPassword;
-    QPushButton* m_btnRefresh;
-    QPushButton* m_btnClose;
+    Ui::UserManagerDialog* ui;
 
     User::List m_users;
 };

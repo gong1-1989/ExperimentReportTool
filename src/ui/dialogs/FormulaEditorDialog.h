@@ -10,7 +10,7 @@
 #ifndef FORMULA_EDITOR_DIALOG_H
 #define FORMULA_EDITOR_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QTextEdit>
 #include <QTextBrowser>
 #include <QPushButton>
@@ -37,7 +37,7 @@ class FormulaEditorDialog;
  *   }
  * @endcode
  */
-class FormulaEditorDialog : public QDialog
+class FormulaEditorDialog : public BaseDialog
 {
     Q_OBJECT
 

@@ -12,6 +12,7 @@
 #include <QList>
 #include <QString>
 #include <QSharedPointer>
+#include <QPair>
 
 #include "core/models/Report.h"
 #include "data/repositories/ReportRepository.h"  // ReportQuery 结构体定义
@@ -55,6 +56,13 @@ public:
      * @return 是否成功
      */
     static bool update(const Report::Ptr& report);
+
+    /**
+     * @brief 保存报告（自动判断 insert 或 update）
+     * @param report 报告
+     * @return 是否成功
+     */
+    static bool save(const Report::Ptr& report);
 
     /**
      * @brief 删除报告
@@ -135,6 +143,25 @@ public:
      * @return 是否成功
      */
     static bool updateTag(qint64 id, qint64 tagId);
+
+    // ========================================================================
+    // 版本管理
+    // ========================================================================
+
+    /// 获取报告的所有版本（返回版本 ID 与名称）
+    static QList<QPair<qint64, QString>> getVersions(qint64 reportId);
+
+    /// 获取版本内容
+    static QString getVersionContent(qint64 versionId);
+
+    /// 保存新版本
+    static qint64 saveVersion(qint64 reportId, const QString& name);
+
+    /// 恢复版本
+    static bool restoreVersion(qint64 reportId, qint64 versionId);
+
+    /// 删除版本
+    static bool deleteVersion(qint64 versionId);
 
 private:
     ReportService() = delete;  ///< 禁止实例化

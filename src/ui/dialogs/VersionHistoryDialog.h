@@ -8,7 +8,7 @@
 #ifndef VERSION_HISTORY_DIALOG_H
 #define VERSION_HISTORY_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QTextBrowser>
@@ -23,29 +23,18 @@
 
 #include "core/models/Report.h"
 #include "print/PrintManager.h"
+#include "data/repositories/ReportRepository.h"
 
 
 // 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
 namespace Ui {
 class VersionHistoryDialog;
 }
-/**
- * @brief 版本信息结构体
- */
-struct VersionInfo {
-    qint64 versionId;       ///< 版本 ID
-    qint64 reportId;        ///< 报告 ID
-    QString snapshotName;    ///< 版本名称/备注
-    QDateTime createdAt;     ///< 创建时间
-    QString content;         ///< 版本内容（JSON）
-
-    VersionInfo() : versionId(-1), reportId(-1) {}
-};
 
 /**
  * @brief 版本历史对话框
  */
-class VersionHistoryDialog : public QDialog
+class VersionHistoryDialog : public BaseDialog
 {
     Q_OBJECT
 

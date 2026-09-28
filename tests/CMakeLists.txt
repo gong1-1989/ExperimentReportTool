@@ -1,0 +1,18 @@
+# ---------------------------------------------------------------------------
+# 单元测试（Qt Test）
+# 启用方式：CMake 配置时加 -DBUILD_TESTS=ON
+# 运行方式：构建后执行 ctest，或直接运行各测试可执行文件
+# ---------------------------------------------------------------------------
+
+find_package(Qt6 REQUIRED COMPONENTS Test)
+
+enable_testing()
+
+# 模型层单元测试（纯逻辑，不依赖数据库与 UI）
+add_executable(tst_datatable tst_datatable.cpp)
+target_link_libraries(tst_datatable PRIVATE core_lib Qt6::Test)
+add_test(NAME tst_datatable COMMAND tst_datatable)
+
+add_executable(tst_report tst_report.cpp)
+target_link_libraries(tst_report PRIVATE core_lib Qt6::Test)
+add_test(NAME tst_report COMMAND tst_report)

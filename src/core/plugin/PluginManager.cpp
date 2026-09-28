@@ -4,7 +4,6 @@
  */
 
 #include "PluginManager.h"
-#include "CoreService.h"
 #include "core/utils/Logger.h"
 
 #include <QPluginLoader>
@@ -17,7 +16,6 @@
 
 PluginManager::PluginManager(QObject* parent)
     : QObject(parent)
-    , m_core(nullptr)
 {
 }
 
@@ -29,11 +27,6 @@ PluginManager::~PluginManager()
 // ============================================================================
 // 配置
 // ============================================================================
-
-void PluginManager::setCoreService(CoreService* core)
-{
-    m_core = core;
-}
 
 void PluginManager::addPluginDirectory(const QString& path)
 {
@@ -54,7 +47,7 @@ void PluginManager::registerBuiltinPlugin(PluginInterface* plugin)
     }
 
     // 初始化内置插件
-    if (m_core && plugin->initialize(m_core)) {
+    if (plugin->initialize()) {
         m_plugins.append(plugin);
 
         PluginInfo info;
@@ -270,7 +263,7 @@ bool PluginManager::tryLoadPlugin(const QString& filePath)
     }
 
     // 初始化插件
-    if (m_core && plugin->initialize(m_core)) {
+    if (plugin->initialize()) {
         m_plugins.append(plugin);
         m_loaders.append(loader);
 

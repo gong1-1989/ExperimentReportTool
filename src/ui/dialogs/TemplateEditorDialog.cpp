@@ -10,11 +10,13 @@
 #include "TemplateEditorDialog.h"
 #include "ui_TemplateEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/ReportEditor.h"
+#include "service/TemplateService.h"
 #include "data/repositories/TemplateRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QInputDialog>
 #include <QVBoxLayout>
 
@@ -32,7 +34,7 @@
  */
 TemplateEditorDialog::TemplateEditorDialog(QWidget* parent,
                                              const Template::Ptr& existingTemplate)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::TemplateEditorDialog)  // 创建 UI 界面对象
     , m_editor(nullptr)                  // 报告编辑器组件（动态创建）
     , m_template(existingTemplate)
@@ -168,16 +170,16 @@ void TemplateEditorDialog::on_m_buttonBox_accepted()
     // 保存到数据库
     bool success = false;
     if (m_isNewTemplate) {
-        success = TemplateRepository::insert(m_template);
+        success = TemplateService::save(m_template);
     } else {
-        success = TemplateRepository::update(m_template);
+        success = TemplateService::save(m_template);
     }
 
     if (success) {
         LOG_INFO(QString("模板已保存: %1").arg(m_template->name()));
         accept();  // 保存成功，关闭对话框
     } else {
-        QMessageBox::critical(this, tr("保存失败"), tr("保存模板时发生错误。"));
+        UiHelper::error(this, tr("保存失败"), tr("保存模板时发生错误。"));
     }
 }
 
@@ -196,7 +198,7 @@ void TemplateEditorDialog::on_m_buttonBox_rejected()
 bool TemplateEditorDialog::validateInput()
 {
     if (ui->m_nameEdit->text().trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("输入错误"), tr("模板名称不能为空"));
+        UiHelper::warning(this, tr("输入错误"), tr("模板名称不能为空"));
         ui->m_nameEdit->setFocus();
         return false;
     }

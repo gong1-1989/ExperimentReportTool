@@ -8,7 +8,7 @@
 #ifndef PLUGIN_MANAGER_DIALOG_H
 #define PLUGIN_MANAGER_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include "core/plugin/PluginManager.h"
 
 namespace Ui {
@@ -18,7 +18,7 @@ class PluginManagerDialog;
 /**
  * @brief 插件管理对话框
  */
-class PluginManagerDialog : public QDialog
+class PluginManagerDialog : public BaseDialog
 {
     Q_OBJECT
 

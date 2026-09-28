@@ -1,16 +1,19 @@
 /**
  * @file PluginInterface.h
- * @brief 插件接口基类头文件
+ * @brief 插件抽象基类接口头文件
  *
- * 所有插件必须实现此接口。插件框架通过此接口管理插件的生命周期。
+ * 所有插件必须继承此接口。插件框架通过此接口管理插件的生命周期。
  *
  * 插件开发流程：
- * 1. 继承 PluginInterface（或其子接口，如 EditorBlockPluginInterface）
+ * 1. 继承 PluginInterface
  * 2. 实现 name()、version()、description() 等元信息方法
  * 3. 实现 initialize() 进行插件初始化
  * 4. 实现 shutdown() 进行插件清理
  * 5. 使用 Q_PLUGIN_METADATA 宏声明插件元数据
  * 6. 使用 Q_INTERFACES 宏声明实现的接口
+ *
+ * 参考示例：plugins/demo/DemoPlugin.h（独立 .dll 示例插件）、
+ *           plugin_template/MyPlugin.h（插件脚手架模板）
  */
 
 #ifndef PLUGIN_INTERFACE_H
@@ -20,13 +23,10 @@
 #include <QVariantMap>
 #include <QtPlugin>
 
-// 前向声明
-class CoreService;
-
 /**
- * @brief 插件接口基类
+ * @brief 插件抽象基类接口
  *
- * 这是所有插件的根接口。每个插件必须提供：
+ * 这是所有插件的唯一基类。每个插件必须提供：
  * - 唯一标识符（IID）
  * - 名称、版本、描述等元信息
  * - 初始化和清理方法
@@ -34,7 +34,7 @@ class CoreService;
  * @code
  * class MyPlugin : public QObject, public PluginInterface {
  *     Q_OBJECT
- *     Q_PLUGIN_METADATA(IID "com.example.MyPlugin" FILE "myplugin.json")
+ *     Q_PLUGIN_METADATA(IID "com.example.MyPlugin")
  *     Q_INTERFACES(PluginInterface)
  * public:
  *     QString name() const override { return "My Plugin"; }
@@ -95,12 +95,11 @@ public:
     /**
      * @brief 初始化插件
      *
-     * 在插件加载后调用，此时可以访问核心服务。
+     * 在插件加载后调用，此时可以执行资源准备、注册等操作。
      *
-     * @param core 核心服务接口，提供数据库、日志、设置等服务
      * @return 初始化成功返回 true，失败返回 false
      */
-    virtual bool initialize(CoreService* core) = 0;
+    virtual bool initialize() = 0;
 
     /**
      * @brief 插件初始化完成后的回调
@@ -140,7 +139,9 @@ public:
 };
 
 // 声明插件接口（Qt 插件系统要求）
-#define PLUGIN_INTERFACE_IID "com.examplereporttool.PluginInterface/1.0"
+// 注意：接口变更（如 initialize 签名变化）时必须升级此版本号，
+// 否则旧插件 .dll 会被 qobject_cast 误判为兼容，导致 ABI 崩溃（SIGSEGV）。
+#define PLUGIN_INTERFACE_IID "com.examplereporttool.PluginInterface/2.0"
 Q_DECLARE_INTERFACE(PluginInterface, PLUGIN_INTERFACE_IID)
 
 #endif // PLUGIN_INTERFACE_H

@@ -125,35 +125,6 @@ namespace DialogSize {
 }
 
 // ---------------------------------------------------------------------------
-// 主题颜色常量
-// ---------------------------------------------------------------------------
-
-namespace ThemeColors {
-    /// 成功状态颜色（绿色）
-    inline const QString SUCCESS = "#67C23A";
-    /// 警告状态颜色（橙色）
-    inline const QString WARNING = "#E6A23C";
-    /// 错误状态颜色（红色）
-    inline const QString ERROR = "#F56C6C";
-    /// 信息状态颜色（蓝色）
-    inline const QString INFO = "#409EFF";
-    /// 主要文字颜色
-    inline const QString TEXT_PRIMARY = "#303133";
-    /// 常规文字颜色
-    inline const QString TEXT_REGULAR = "#606266";
-    /// 次要文字颜色
-    inline const QString TEXT_SECONDARY = "#909399";
-    /// 占位文字颜色
-    inline const QString TEXT_PLACEHOLDER = "#C0C4CC";
-    /// 边框颜色
-    inline const QString BORDER = "#DCDFE6";
-    /// 背景颜色（浅灰）
-    inline const QString BACKGROUND_LIGHT = "#F5F7FA";
-    /// 背景颜色（白色）
-    inline const QString BACKGROUND_WHITE = "#FFFFFF";
-}
-
-// ---------------------------------------------------------------------------
 // 超时时间常量（毫秒）
 // ---------------------------------------------------------------------------
 

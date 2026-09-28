@@ -9,7 +9,7 @@
 #ifndef LOGIN_DIALOG_H
 #define LOGIN_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 #include <QString>
 
 // UI 类前向声明（由 .ui 文件自动生成）
@@ -28,7 +28,7 @@ class LoginDialog;
  *   }
  * @endcode
  */
-class LoginDialog : public QDialog
+class LoginDialog : public BaseDialog
 {
     Q_OBJECT
 

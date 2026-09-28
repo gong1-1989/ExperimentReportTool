@@ -5,6 +5,7 @@
 
 #include "TagManagerDialog.h"
 #include "ui_TagManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
+#include "service/TagService.h"
 #include "data/repositories/TagRepository.h"
 #include "core/models/Tag.h"
 #include "core/utils/Logger.h"
@@ -12,6 +13,7 @@
 #include "core/utils/AppTheme.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QInputDialog>
 #include <QColor>
 #include <QBrush>
@@ -24,7 +26,7 @@
 // ===========================================================================
 
 TagManagerDialog::TagManagerDialog(QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::TagManagerDialog)
     , m_editing(false)
 {
@@ -66,9 +68,9 @@ TagManagerDialog::~TagManagerDialog()
 void TagManagerDialog::loadTags(const QString& filter)
 {
     if (filter.isEmpty()) {
-        m_tags = TagRepository::findAll();
+        m_tags = TagService::listAll();
     } else {
-        m_tags = TagRepository::search(filter);
+        m_tags = TagService::search(filter);
     }
     updateTagList();
 }
@@ -171,18 +173,14 @@ void TagManagerDialog::on_m_deleteBtn_clicked()
 {
     if (!m_currentTag) return;
 
-    const auto result = QMessageBox::question(
-        this, tr("确认删除"),
-        tr("确定要删除标签「%1」吗？\n\n"
-           "该标签将从所有关联的报告中移除。\n此操作不可撤销。")
-            .arg(m_currentTag->name()),
-        QMessageBox::Yes | QMessageBox::No,
-        QMessageBox::No);
+    if (!UiHelper::confirm(this,
+                           tr("确认删除"),
+                           tr("确定要删除标签「%1」吗？\n\n"
+                              "该标签将从所有关联的报告中移除。\n此操作不可撤销。")
+                               .arg(m_currentTag->name()))) return;
 
-    if (result != QMessageBox::Yes) return;
-
-    if (TagRepository::remove(m_currentTag->id())) {
-        QMessageBox::information(this, tr("删除成功"), tr("标签已删除"));
+    if (TagService::remove(m_currentTag->id())) {
+        UiHelper::info(this, tr("删除成功"), tr("标签已删除"));
         m_currentTag.reset();
         clearEditForm();
         setEditMode(false);
@@ -190,7 +188,7 @@ void TagManagerDialog::on_m_deleteBtn_clicked()
         ui->m_deleteBtn->setEnabled(false);
         loadTags(ui->m_searchEdit->text());
     } else {
-        QMessageBox::critical(this, tr("删除失败"), tr("删除标签时发生错误"));
+        UiHelper::error(this, tr("删除失败"), tr("删除标签时发生错误"));
     }
 }
 
@@ -202,14 +200,14 @@ void TagManagerDialog::on_m_saveBtn_clicked()
 {
     const QString name = ui->m_nameEdit->text().trimmed();
     if (name.isEmpty()) {
-        QMessageBox::warning(this, tr("提示"), tr("标签名称不能为空"));
+        UiHelper::warning(this, tr("提示"), tr("标签名称不能为空"));
         ui->m_nameEdit->setFocus();
         return;
     }
 
     // 检查重名
-    if (TagRepository::exists(name, m_currentTag ? m_currentTag->id() : -1)) {
-        QMessageBox::warning(this, tr("提示"), tr("标签名称已存在"));
+    if (TagService::exists(name, m_currentTag ? m_currentTag->id() : -1)) {
+        UiHelper::warning(this, tr("提示"), tr("标签名称已存在"));
         return;
     }
 
@@ -221,8 +219,8 @@ void TagManagerDialog::on_m_saveBtn_clicked()
     m_currentTag->setColor(ui->m_colorCombo->currentData().toString());
     m_currentTag->setDescription(ui->m_descEdit->toPlainText().trimmed());
 
-    if (TagRepository::save(m_currentTag)) {
-        QMessageBox::information(this, tr("保存成功"), tr("标签已保存"));
+    if (TagService::update(m_currentTag)) {
+        UiHelper::info(this, tr("保存成功"), tr("标签已保存"));
         setEditMode(false);
         loadTags(ui->m_searchEdit->text());
 
@@ -236,7 +234,7 @@ void TagManagerDialog::on_m_saveBtn_clicked()
             }
         }
     } else {
-        QMessageBox::critical(this, tr("保存失败"), tr("保存标签时发生错误"));
+        UiHelper::error(this, tr("保存失败"), tr("保存标签时发生错误"));
     }
 }
 

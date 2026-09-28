@@ -6,6 +6,7 @@
 #include "ChartRenderer.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
+#include "core/utils/AppTheme.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -19,16 +20,16 @@
 #include <QGraphicsScene>
 #include <QElapsedTimer>
 
-// 预定义颜色方案
+// 预定义颜色方案（色板集中定义于 AppTheme::Chart，便于统一调整）
 static const QList<QColor> CHART_COLORS = {
-    QColor("#4A90D9"),  // 蓝色
-    QColor("#67C23A"),  // 绿色
-    QColor("#E6A23C"),  // 橙色
-    QColor("#F56C6C"),  // 红色
-    QColor("#9B59B6"),  // 紫色
-    QColor("#1ABC9C"),  // 青色
-    QColor("#E91E63"),  // 粉色
-    QColor("#FF9800"),  // 深橙
+    QColor(AppTheme::Chart::Series1),  // 蓝色
+    QColor(AppTheme::Chart::Series2),  // 绿色
+    QColor(AppTheme::Chart::Series3),  // 橙色
+    QColor(AppTheme::Chart::Series4),  // 红色
+    QColor(AppTheme::Chart::Series5),  // 紫色
+    QColor(AppTheme::Chart::Series6),  // 青色
+    QColor(AppTheme::Chart::Series7),  // 粉色
+    QColor(AppTheme::Chart::Series8),  // 深橙
 };
 
 // ===========================================================================
@@ -363,7 +364,7 @@ void ChartRenderer::applyCommonStyle()
 {
     // 标题字体
     QFont titleFont = m_chart->titleFont();
-    titleFont.setPointSize(14);
+    titleFont.setPointSize(AppTheme::FontSize::Normal);
     titleFont.setBold(true);
     m_chart->setTitleFont(titleFont);
 

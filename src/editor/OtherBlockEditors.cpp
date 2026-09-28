@@ -14,14 +14,10 @@
 #include "OtherBlockEditors.h"
 #include "TextBlockEditor.h"
 #include "FormulaBlockEditor.h"
-#include "core/plugin/PluginManager.h"
-#include "core/plugin/EditorBlockPluginInterface.h"
 #include "core/utils/Logger.h"
 
 #include <QVBoxLayout>
-
-// 静态成员变量初始化
-PluginManager* BlockEditorFactory::s_pluginManager = nullptr;
+#include "core/utils/AppTheme.h"
 
 // ===========================================================================
 // 分割线块编辑器
@@ -38,7 +34,7 @@ DividerBlockEditor::DividerBlockEditor(const ContentBlock& block, QWidget* paren
     m_divider = new QFrame(this);
     m_divider->setFrameShape(QFrame::HLine);
     m_divider->setFrameShadow(QFrame::Sunken);
-    m_divider->setStyleSheet("QFrame { color: #ddd; max-height: 1px; }");
+    m_divider->setStyleSheet(QString("QFrame { color: %1; max-height: 1px; }").arg(AppTheme::Color::Border));
     layout->addWidget(m_divider);
 
     updateHeight();
@@ -50,44 +46,7 @@ DividerBlockEditor::DividerBlockEditor(const ContentBlock& block, QWidget* paren
 
 BlockEditor* BlockEditorFactory::createEditor(const ContentBlock& block, QWidget* parent)
 {
-    // ========================================================================
-    // 第一步：优先通过插件创建块编辑器
-    // ========================================================================
-    if (s_pluginManager) {
-        QString typeStr;
-        switch (block.type) {
-            case BlockType::Paragraph:    typeStr = "paragraph"; break;
-            case BlockType::Heading1:     typeStr = "heading1"; break;
-            case BlockType::Heading2:     typeStr = "heading2"; break;
-            case BlockType::Heading3:     typeStr = "heading3"; break;
-            case BlockType::BulletList:   typeStr = "bullet_list"; break;
-            case BlockType::NumberedList: typeStr = "numbered_list"; break;
-            case BlockType::Quote:        typeStr = "quote"; break;
-            case BlockType::Table:        typeStr = "table"; break;
-            case BlockType::Image:        typeStr = "image"; break;
-            case BlockType::CodeBlock:    typeStr = "code"; break;
-            case BlockType::Divider:      typeStr = "divider"; break;
-            case BlockType::Chart:        typeStr = "chart"; break;
-            case BlockType::DataReference:typeStr = "chart"; break;
-            case BlockType::Formula:      typeStr = "formula"; break;
-            default:                      typeStr = "paragraph"; break;
-        }
-
-        const QList<PluginInterface*> plugins = s_pluginManager->loadedPlugins();
-        for (PluginInterface* p : plugins) {
-            auto* editorPlugin = dynamic_cast<EditorBlockPluginInterface*>(p);
-            if (editorPlugin && editorPlugin->blockType() == typeStr) {
-                BlockEditor* editor = editorPlugin->createEditor(block, parent);
-                if (editor) {
-                    return editor;
-                }
-            }
-        }
-    }
-
-    // ========================================================================
-    // 第二步：插件未提供时，使用内置实现
-    // ========================================================================
+    // 框架内置实现：按块类型分发编辑器
     switch (block.type) {
     case BlockType::Heading1:
     case BlockType::Heading2:

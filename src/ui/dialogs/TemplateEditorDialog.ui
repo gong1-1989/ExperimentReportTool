@@ -7,8 +7,8 @@
   <property name="minimumSize"><size><width>500</width><height>400</height></size></property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing"><number>12</number></property>
-   <property name="leftMargin"><number>15</number></property><property name="topMargin"><number>15</number></property>
-   <property name="rightMargin"><number>15</number></property><property name="bottomMargin"><number>15</number></property>
+   <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property>
+   <property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>16</number></property>
    <item>
     <widget class="QGroupBox" name="basicGroup">
      <property name="title"><string>基本信息</string></property>

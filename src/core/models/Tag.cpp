@@ -4,6 +4,7 @@
  */
 
 #include "Tag.h"
+#include "core/utils/AppTheme.h"
 #include <QHash>
 #include <QStringList>
 
@@ -16,7 +17,6 @@ Tag::Tag()
     , m_name("")
     , m_color("")
     , m_description("")
-    , m_usageCount(0)
 {
     m_createdAt = QDateTime::currentDateTime();
 }
@@ -46,16 +46,10 @@ QColor Tag::effectiveColor() const
         return QColor(m_color);
     }
 
-    // 根据名称生成默认颜色
-    static const QStringList defaultColors = {
-        "#4A90D9", "#52c41a", "#faad14", "#f5222d",
-        "#722ed1", "#13c2c2", "#eb2f96", "#fa8c16",
-        "#2f54eb", "#a0d911"
-    };
-
+    // 根据名称生成默认颜色（使用 AppTheme 中的预设颜色）
     const uint hash = qHash(m_name);
-    const int index = hash % defaultColors.size();
-    return QColor(defaultColors.at(index));
+    const int index = hash % AppTheme::TagColors::Count;
+    return QColor(AppTheme::TagColors::Presets[index]);
 }
 
 // ===========================================================================
@@ -64,18 +58,9 @@ QColor Tag::effectiveColor() const
 
 QStringList Tag::presetColors()
 {
-    return {
-        "#4A90D9",  // 蓝
-        "#52c41a",  // 绿
-        "#faad14",  // 黄
-        "#f5222d",  // 红
-        "#722ed1",  // 紫
-        "#13c2c2",  // 青
-        "#eb2f96",  // 粉
-        "#fa8c16",  // 橙
-        "#2f54eb",  // 深蓝
-        "#a0d911",  // 黄绿
-        "#8c8c8c",  // 灰
-        "#000000"   // 黑
-    };
+    QStringList colors;
+    for (int i = 0; i < AppTheme::TagColors::Count; ++i) {
+        colors.append(QString::fromLatin1(AppTheme::TagColors::Presets[i]));
+    }
+    return colors;
 }

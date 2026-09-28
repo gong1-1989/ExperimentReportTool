@@ -31,7 +31,7 @@ TableBlockEditor::TableBlockEditor(const ContentBlock& block, QWidget* parent)
 
     // 工具栏
     QHBoxLayout* toolbar = new QHBoxLayout();
-    toolbar->setSpacing(4);
+    toolbar->setSpacing(AppTheme::Spacing::Small);
 
     m_addRowBtn = new QPushButton(tr("+ 行"), this);
     m_addColBtn = new QPushButton(tr("+ 列"), this);
@@ -39,7 +39,10 @@ TableBlockEditor::TableBlockEditor(const ContentBlock& block, QWidget* parent)
     m_removeColBtn = new QPushButton(tr("- 列"), this);
 
     for (QPushButton* btn : {m_addRowBtn, m_addColBtn, m_removeRowBtn, m_removeColBtn}) {
-        btn->setStyleSheet("QPushButton { padding: 2px 8px; font-size: 12px; }");
+        btn->setStyleSheet(QString("QPushButton { padding: %1px %2px; font-size: %3px; }")
+                               .arg(AppTheme::Spacing::Tiny)
+                               .arg(AppTheme::Spacing::Medium)
+                               .arg(AppTheme::FontSize::Small));
         toolbar->addWidget(btn);
     }
     toolbar->addStretch();

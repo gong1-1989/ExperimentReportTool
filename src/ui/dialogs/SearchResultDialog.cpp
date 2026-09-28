@@ -5,7 +5,9 @@
 
 #include "SearchResultDialog.h"
 #include "ui_SearchResultDialog.h"  // 由 uic 工具从 .ui 文件自动生成
+#include "service/ProjectService.h"
 #include "data/repositories/ProjectRepository.h"
+#include "service/TagService.h"
 #include "data/repositories/TagRepository.h"
 #include "core/models/Tag.h"
 #include "core/utils/Logger.h"
@@ -13,6 +15,7 @@
 #include "core/utils/AppTheme.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QDateTime>
 #include <QLabel>
 
@@ -21,7 +24,7 @@
 // ===========================================================================
 
 SearchResultDialog::SearchResultDialog(QWidget* parent, const QString& initialKeyword)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::SearchResultDialog)
     , m_searchService(nullptr)
 {
@@ -31,7 +34,7 @@ SearchResultDialog::SearchResultDialog(QWidget* parent, const QString& initialKe
     // 初始化项目过滤下拉
     ui->m_projectFilter->addItem(tr("全部项目"), -1);
     {
-        const Project::List projects = ProjectRepository::findAll();
+        const Project::List projects = ProjectService::listAll();
         for (const Project::Ptr& project : projects) {
             ui->m_projectFilter->addItem(project->name(), project->id());
         }
@@ -70,7 +73,7 @@ void SearchResultDialog::performSearch()
 {
     const QString keyword = ui->m_searchEdit->text().trimmed();
     if (keyword.isEmpty()) {
-        QMessageBox::information(this, tr("提示"), tr("请输入搜索关键词"));
+        UiHelper::info(this, tr("提示"), tr("请输入搜索关键词"));
         return;
     }
 
@@ -125,7 +128,7 @@ void SearchResultDialog::displayResults(const QList<SearchResultItem>& results)
         const QString statusColor = AppTheme::statusColor(item.report->status()).name();
 
         // 标签（取前3个）
-        const Tag::List tags = TagRepository::findByReport(item.report->id());
+        const Tag::List tags = TagService::findByReport(item.report->id());
         QString tagsHtml;
         for (int i = 0; i < qMin(3, tags.size()); ++i) {
             const QColor color = tags[i]->effectiveColor();
@@ -222,7 +225,7 @@ void SearchResultDialog::on_m_resultList_itemClicked(QListWidgetItem* item)
             const QString statusBg = AppTheme::statusColor(result.report->status()).lighter(180).name();
 
             // 标签
-            const Tag::List tags = TagRepository::findByReport(result.report->id());
+            const Tag::List tags = TagService::findByReport(result.report->id());
             QString tagsHtml;
             for (const Tag::Ptr& tag : tags) {
                 const QColor color = tag->effectiveColor();

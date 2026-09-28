@@ -9,10 +9,12 @@
 
 #include "ProjectDialog.h"
 #include "ui_ProjectDialog.h"  // 由 uic 工具从 .ui 文件自动生成
+#include "service/ProjectService.h"
 #include "data/repositories/ProjectRepository.h"
 #include "core/utils/UserSession.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QPushButton>
 
 // ===========================================================================
@@ -27,7 +29,7 @@
  * @param parent 父窗口指针，用于窗口父子关系管理
  */
 ProjectDialog::ProjectDialog(QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::ProjectDialog)  // 创建 UI 界面对象
     , m_parentProjectId(-1)       // 默认根项目（无父项目）
     , m_editingProjectId(-1)      // 默认新建模式（-1 表示不是编辑已有项目）
@@ -191,22 +193,22 @@ bool ProjectDialog::validateInput()
 
     // 验证1：名称不能为空
     if (name.isEmpty()) {
-        QMessageBox::warning(this, tr("输入错误"), tr("项目名称不能为空"));
+        UiHelper::warning(this, tr("输入错误"), tr("项目名称不能为空"));
         ui->m_nameEdit->setFocus();  // 将焦点设置到名称输入框
         return false;
     }
 
     // 验证2：名称长度限制（最多100个字符）
     if (name.length() > 100) {
-        QMessageBox::warning(this, tr("输入错误"), tr("项目名称不能超过 100 个字符"));
+        UiHelper::warning(this, tr("输入错误"), tr("项目名称不能超过 100 个字符"));
         ui->m_nameEdit->setFocus();
         return false;
     }
 
     // 验证3：名称重复检查
     // 编辑模式下排除正在编辑的项目自身，避免误报
-    if (ProjectRepository::existsByName(name, m_editingProjectId)) {
-        QMessageBox::warning(this, tr("输入错误"), tr("已存在同名项目，请使用其他名称"));
+    if (ProjectService::existsByName(name, m_editingProjectId)) {
+        UiHelper::warning(this, tr("输入错误"), tr("已存在同名项目，请使用其他名称"));
         ui->m_nameEdit->setFocus();
         return false;
     }

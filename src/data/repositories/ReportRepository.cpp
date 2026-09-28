@@ -135,7 +135,7 @@ Report::Ptr ReportRepository::findById(qint64 id)
 
     // 执行查询并检查错误
     if (!query.exec()) {
-        LOG_ERROR(QString("findById 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("findById 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return nullptr;
     }
 
@@ -261,7 +261,7 @@ Report::List ReportRepository::findAll(const ReportQuery& query)
 
     // 执行查询并检查错误
     if (!sqlQuery.exec()) {
-        LOG_ERROR(QString("findAll 失败: %1").arg(sqlQuery.lastError().text()));
+        LOG_ERROR(QString("findAll 失败: %1\nSQL: %2").arg(sqlQuery.lastError().text(), sqlQuery.lastQuery()));
         return result;
     }
 
@@ -348,7 +348,7 @@ bool ReportRepository::insert(Report::Ptr report)
 
     // 执行插入
     if (!query.exec()) {
-        LOG_ERROR(QString("insert 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("insert 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
@@ -416,7 +416,7 @@ bool ReportRepository::update(const Report::Ptr& report)
 
     // 执行更新
     if (!query.exec()) {
-        LOG_ERROR(QString("update 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("update 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
@@ -453,7 +453,10 @@ bool ReportRepository::remove(qint64 id)
     QSqlQuery query(db);
 
     // 开启事务，保证删除操作的原子性
-    DatabaseManager::instance().transaction();
+    if (!DatabaseManager::instance().transaction()) {
+        LOG_ERROR("删除报告事务启动失败，取消删除");
+        return false;
+    }
 
     // 准备删除语句
     query.prepare("DELETE FROM reports WHERE id = :id;");
@@ -461,13 +464,17 @@ bool ReportRepository::remove(qint64 id)
 
     // 执行删除
     if (!query.exec()) {
-        LOG_ERROR(QString("remove 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("remove 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         DatabaseManager::instance().rollback();
         return false;
     }
 
     // 提交事务
-    DatabaseManager::instance().commit();
+    if (!DatabaseManager::instance().commit()) {
+        LOG_ERROR("删除报告事务提交失败");
+        DatabaseManager::instance().rollback();
+        return false;
+    }
     LOG_INFO(QString("报告已删除: id=%1").arg(id));
     return true;
 }
@@ -636,7 +643,7 @@ qint64 ReportRepository::saveVersion(qint64 reportId, const QString& snapshotNam
 
     // 执行插入
     if (!query.exec()) {
-        LOG_ERROR(QString("saveVersion 失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("saveVersion 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return -1;
     }
 

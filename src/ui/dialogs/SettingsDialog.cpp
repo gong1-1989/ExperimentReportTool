@@ -20,6 +20,7 @@
 #include "core/utils/AppDimensions.h"
 
 #include <QMessageBox>
+#include "ui/UiHelper.h"
 #include <QDir>
 #include <QCoreApplication>
 #include <QStandardPaths>
@@ -32,7 +33,7 @@
 // ============================================================================
 
 SettingsDialog::SettingsDialog(QWidget* parent)
-    : QDialog(parent)
+    : BaseDialog(parent)
     , ui(new Ui::SettingsDialog)
 {
     // 加载 .ui 文件中设计的布局
@@ -82,15 +83,7 @@ void SettingsDialog::loadSettings()
     updateColorPreview(ui->warningColorPreview, ui->warningColorEdit->text());
     updateColorPreview(ui->dangerColorPreview, ui->dangerColorEdit->text());
 
-    // 连接输入框文本变化信号，实时更新颜色预览
-    connect(ui->primaryColorEdit, &QLineEdit::textChanged,
-            this, [this](const QString& color) { updateColorPreview(ui->primaryColorPreview, color); });
-    connect(ui->successColorEdit, &QLineEdit::textChanged,
-            this, [this](const QString& color) { updateColorPreview(ui->successColorPreview, color); });
-    connect(ui->warningColorEdit, &QLineEdit::textChanged,
-            this, [this](const QString& color) { updateColorPreview(ui->warningColorPreview, color); });
-    connect(ui->dangerColorEdit, &QLineEdit::textChanged,
-            this, [this](const QString& color) { updateColorPreview(ui->dangerColorPreview, color); });
+    // 颜色输入框的 textChanged 由 .ui 自动连接（on_primaryColorEdit_textChanged 等）
 
     // ---- 编辑器设置 ----
     ui->fontCombo->setCurrentFont(QFont(config.editorFontFamily()));
@@ -150,7 +143,7 @@ void SettingsDialog::saveSettings()
 void SettingsDialog::applySettings()
 {
     saveSettings();
-    QMessageBox::information(this, tr("设置"),
+    UiHelper::info(this, tr("设置"),
         tr("设置已应用并保存。\n\n"
            "字体、外观和窗口设置将在重启应用后生效。\n"
            "数据库路径修改后需要重启程序才能生效。"));
@@ -169,7 +162,7 @@ void SettingsDialog::on_okButton_clicked()
 void SettingsDialog::on_applyButton_clicked()
 {
     applySettings();
-    QMessageBox::information(this, tr("设置"),
+    UiHelper::info(this, tr("设置"),
         tr("设置已应用并保存。\n外观和窗口设置将在重启应用后生效。"));
 }
 
@@ -180,12 +173,9 @@ void SettingsDialog::on_cancelButton_clicked()
 
 void SettingsDialog::on_resetButton_clicked()
 {
-    const QMessageBox::StandardButton ret = QMessageBox::question(
-        this, tr("恢复默认"),
-        tr("确定要将所有设置恢复为默认值吗？"),
-        QMessageBox::Yes | QMessageBox::No);
-
-    if (ret != QMessageBox::Yes) return;
+    if (!UiHelper::confirm(this,
+                           tr("恢复默认"),
+                           tr("确定要将所有设置恢复为默认值吗？"))) return;
 
     // ---- 常规设置 ----
     ui->autoSaveCheck->setChecked(true);
@@ -227,18 +217,41 @@ void SettingsDialog::on_primaryColorBtn_clicked()
     }
 }
 
+void SettingsDialog::on_primaryColorEdit_textChanged(const QString& color)
+{
+    updateColorPreview(ui->primaryColorPreview, color);
+}
+
+void SettingsDialog::on_successColorEdit_textChanged(const QString& color)
+{
+    updateColorPreview(ui->successColorPreview, color);
+}
+
+void SettingsDialog::on_warningColorEdit_textChanged(const QString& color)
+{
+    updateColorPreview(ui->warningColorPreview, color);
+}
+
+void SettingsDialog::on_dangerColorEdit_textChanged(const QString& color)
+{
+    updateColorPreview(ui->dangerColorPreview, color);
+}
+
 void SettingsDialog::updateColorPreview(QLabel* previewLabel, const QString& colorStr)
 {
     if (!previewLabel) return;
     const QColor color(colorStr);
     if (color.isValid()) {
         previewLabel->setStyleSheet(
-            QString("background-color: %1; border: 1px solid #999; border-radius: 3px;")
-                .arg(color.name()));
+            QString("background-color: %1; border: 1px solid %2; border-radius: 3px;")
+                .arg(color.name())
+                .arg(AppTheme::Color::TextSecondary));
     } else {
         // 无效颜色时显示灰色斜纹
         previewLabel->setStyleSheet(
-            "background-color: #eee; border: 1px solid #999; border-radius: 3px;");
+            QString("background-color: %1; border: 1px solid %2; border-radius: 3px;")
+                .arg(AppTheme::Color::BgGray)
+                .arg(AppTheme::Color::TextSecondary));
     }
 }
 

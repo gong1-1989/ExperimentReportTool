@@ -17,6 +17,10 @@ public:
     static bool update(const Tag::Ptr& tag);
     static bool remove(qint64 id);
     static bool exists(const QString& name);
+    static bool exists(const QString& name, qint64 excludeId);
+    static Tag::List search(const QString& keyword);
+    static Tag::List findByReport(qint64 reportId);
+    static bool setReportTags(qint64 reportId, const QList<qint64>& tagIds);
 
 private:
     TagService() = delete;

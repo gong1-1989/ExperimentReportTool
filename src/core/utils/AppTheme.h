@@ -78,6 +78,15 @@ namespace FontSize {
 }
 
 // ===========================================================================
+// 标题字号（磅值，编辑器内标题专用；与 px 档位 FontSize 分离）
+// ===========================================================================
+namespace Heading {
+    constexpr int H1 = 22;  ///< 一级标题
+    constexpr int H2 = 18;  ///< 二级标题
+    constexpr int H3 = 15;  ///< 三级标题
+}
+
+// ===========================================================================
 // 间距（px，4px 基准阶梯）
 // ===========================================================================
 namespace Spacing {
@@ -89,6 +98,20 @@ namespace Spacing {
     constexpr int ExtraLarge = 16;  ///< 更大（页面边距）
     constexpr int Huge       = 24;  ///< 大（弹窗边距）
     constexpr int Massive    = 32;  ///< 极大（空状态内边距）
+}
+
+// ===========================================================================
+// 图表系列色（数据可视化专用色板，与 UI 主题色分离）
+// ===========================================================================
+namespace Chart {
+    constexpr const char* Series1 = "#4A90D9";  ///< 系列1 蓝色
+    constexpr const char* Series2 = "#67C23A";  ///< 系列2 绿色
+    constexpr const char* Series3 = "#E6A23C";  ///< 系列3 橙色
+    constexpr const char* Series4 = "#F56C6C";  ///< 系列4 红色
+    constexpr const char* Series5 = "#9B59B6";  ///< 系列5 紫色
+    constexpr const char* Series6 = "#1ABC9C";  ///< 系列6 青色
+    constexpr const char* Series7 = "#E91E63";  ///< 系列7 粉色
+    constexpr const char* Series8 = "#FF9800";  ///< 系列8 深橙
 }
 
 // ===========================================================================
@@ -136,22 +159,34 @@ inline QString statusName(ReportStatus status)
 }
 
 // ===========================================================================
-// 预设标签颜色（10 种，Element UI 标签色板）
+// 预设标签颜色（12 种，Ant Design 色板）
 // ===========================================================================
 namespace TagColors {
     constexpr const char* Presets[] = {
-        "#409EFF",  // 蓝
-        "#67C23A",  // 绿
-        "#E6A23C",  // 橙
-        "#F56C6C",  // 红
-        "#909399",  // 灰
-        "#9C27B0",  // 紫
-        "#00BCD4",  // 青
-        "#FF9800",  // 深橙
-        "#795548",  // 棕
-        "#607D8B"   // 蓝灰
+        "#4A90D9",  // 蓝
+        "#52c41a",  // 绿
+        "#faad14",  // 黄
+        "#f5222d",  // 红
+        "#722ed1",  // 紫
+        "#13c2c2",  // 青
+        "#eb2f96",  // 粉
+        "#fa8c16",  // 橙
+        "#2f54eb",  // 深蓝
+        "#a0d911",  // 黄绿
+        "#8c8c8c",  // 灰
+        "#000000"   // 黑
     };
-    constexpr int Count = 10;
+    constexpr int Count = 12;
+
+    /// 预设颜色名称
+    inline QStringList presetNames() {
+        return {
+            QStringLiteral("蓝色"), QStringLiteral("绿色"), QStringLiteral("黄色"),
+            QStringLiteral("红色"), QStringLiteral("紫色"), QStringLiteral("青色"),
+            QStringLiteral("粉色"), QStringLiteral("橙色"), QStringLiteral("深蓝"),
+            QStringLiteral("黄绿"), QStringLiteral("灰色"), QStringLiteral("黑色")
+        };
+    }
 }
 
 } // namespace AppTheme

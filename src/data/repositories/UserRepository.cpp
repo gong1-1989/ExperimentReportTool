@@ -23,7 +23,7 @@ User::Ptr UserRepository::findById(qint64 userId)
     query.bindValue(":id", userId);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("查询用户失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("查询用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return nullptr;
     }
 
@@ -40,7 +40,7 @@ User::Ptr UserRepository::findByUsername(const QString& username)
     query.bindValue(":username", username);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("查询用户失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("查询用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return nullptr;
     }
 
@@ -95,7 +95,7 @@ bool UserRepository::save(User::Ptr user)
     query.bindValue(":last_login_at", user->lastLoginAt());
 
     if (!query.exec()) {
-        LOG_ERROR(QString("保存用户失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("保存用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
 
@@ -112,7 +112,7 @@ bool UserRepository::remove(qint64 userId)
     query.bindValue(":id", userId);
 
     if (!query.exec()) {
-        LOG_ERROR(QString("删除用户失败: %1").arg(query.lastError().text()));
+        LOG_ERROR(QString("删除用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
         return false;
     }
     return true;

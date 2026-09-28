@@ -6,7 +6,7 @@
 #ifndef CHANGE_PASSWORD_DIALOG_H
 #define CHANGE_PASSWORD_DIALOG_H
 
-#include <QDialog>
+#include "BaseDialog.h"
 
 namespace Ui {
 class ChangePasswordDialog;
@@ -17,7 +17,7 @@ class ChangePasswordDialog;
  *
  * 用于首次登录强制改密码，或用户主动修改密码。
  */
-class ChangePasswordDialog : public QDialog
+class ChangePasswordDialog : public BaseDialog
 {
     Q_OBJECT
 
