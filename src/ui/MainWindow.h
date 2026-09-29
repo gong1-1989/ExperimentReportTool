@@ -39,6 +39,7 @@ class ProjectTreeWidget;
 class ReportListWidget;
 class ReportEditorWindow;
 class PluginManager;
+class MainWindowDialogs;
 
 /**
  * @brief 主窗口类
@@ -71,6 +72,7 @@ private slots:
     void onImportData();
     void onExportProject();
     void onExit();
+    void onLogout();
 
     // -----------------------------------------------------------------------
     // 编辑菜单
@@ -167,7 +169,6 @@ private:
     void showStatusMessage(const QString& message, int timeout = 0);
     void updateStatusBar();  ///< 更新状态栏显示
     void updatePropertyPanel();  ///< 更新属性面板显示
-    void refreshAll();
     qint64 currentProjectId() const;
     qint64 currentReportId() const;
 
@@ -199,6 +200,7 @@ private:
     QLineEdit* m_globalSearchEdit;       ///< 工具栏全局搜索框
 
     // 状态栏控件（动态创建）
+    QLabel* m_statusUserLabel;           ///< 当前登录用户
     QLabel* m_statusProjectLabel;        ///< 当前项目
     QLabel* m_statusReportLabel;         ///< 当前报告
     QLabel* m_statusCountLabel;          ///< 统计信息
@@ -252,6 +254,7 @@ private:
     qint64 m_currentReportId;   ///< 当前打开的报告 ID
     double m_zoomFactor;        ///< 缩放因子
     PluginManager* m_pluginManager;  ///< 插件管理器（用于插件管理对话框）
+    MainWindowDialogs* m_dialogs;    ///< 对话框操作控制器
 
     /// 打开的报告编辑器窗口列表（使用 QPointer 安全管理，自动检测对象是否已删除）
     QList<QPointer<ReportEditorWindow>> m_editorWindows;

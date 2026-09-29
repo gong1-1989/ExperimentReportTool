@@ -18,8 +18,33 @@
 
 #include <QString>
 #include <QMessageBox>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
+#include <QTableWidget>
+#include <QTableView>
+#include <QHeaderView>
 
 class QWidget;
+
+/**
+ * @brief 表格单元格居中委托
+ *
+ * QSS 的 text-align 对表格单元格不生效，因此通过自定义委托
+ * 将单元格内容统一水平+垂直居中。
+ */
+class CenteredItemDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+protected:
+    void initStyleOption(QStyleOptionViewItem* option,
+                         const QModelIndex& index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->displayAlignment = Qt::AlignCenter;
+    }
+};
 
 /**
  * @brief UI 提示工具类（全部为静态方法）
@@ -30,24 +55,24 @@ public:
     /**
      * @brief 显示错误提示（QMessageBox::Critical）
      * @param parent 父窗口
-     * @param message 错误信息
      * @param title 标题（默认"错误"）
+     * @param message 信息内容
      */
     static void error(QWidget* parent, const QString& title, const QString& message = QString());
 
     /**
      * @brief 显示信息提示（QMessageBox::Information）
      * @param parent 父窗口
-     * @param message 信息内容
      * @param title 标题（默认"提示"）
+     * @param message 信息内容
      */
     static void info(QWidget* parent, const QString& title, const QString& message = QString());
 
     /**
      * @brief 显示警告提示（QMessageBox::Warning）
      * @param parent 父窗口
-     * @param message 警告信息
      * @param title 标题（默认"警告"）
+     * @param message 信息内容
      */
     static void warning(QWidget* parent, const QString& title, const QString& message = QString());
 
@@ -56,8 +81,8 @@ public:
      *
      * 用于需要"保存/放弃/取消"等多按钮选择的三态确认场景。
      * @param parent 父窗口
-     * @param message 提示信息
      * @param title 标题
+     * @param message 提示信息
      * @param buttons 按钮组合（如 QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel）
      * @param defaultButton 默认按钮
      * @return 用户点击的按钮
@@ -68,13 +93,21 @@ public:
                                                QMessageBox::StandardButton defaultButton = QMessageBox::NoButton);
 
     /**
-     * @brief 显示确认对话框（QMessageBox::Question，是/否）
+     * @brief 显示确认对话框（QMessageBox::Question）
      * @param parent 父窗口
-     * @param message 确认信息
      * @param title 标题（默认"确认"）
-     * @return 用户点击"是"返回 true，否则返回 false
+     * @param message 信息内容
+     * @param buttons 按钮集合（默认仅确定）
+     * @param defaultButton 默认按钮（默认取消）
      */
     static bool confirm(QWidget* parent, const QString& title, const QString& message = QString());
+
+    /**
+     * @brief 使表格单元格与表头内容居中显示
+     * @param table 目标表格控件
+     */
+    static void centerTableWidget(QTableWidget* table);
+    static void centerTableWidget(QTableView* table);
 };
 
 #endif // UI_HELPER_H

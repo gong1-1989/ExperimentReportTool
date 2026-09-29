@@ -22,7 +22,8 @@
  * @brief 报告模板实体类
  *
  * 对应数据库中的 templates 表。
- * 模板结构（structure）以 JSON 数组存储，每个元素是一个 ContentBlock。
+ * 模板结构（structure）以 JSON 对象存储：{ "version": 2, "document": "<html>..." }
+ * 模板通常只含文本骨架（标题/段落），不含结构化对象。
  *
  * 内置模板（is_builtin = true）不可删除，只能复制后修改。
  */
@@ -64,17 +65,18 @@ public:
     void setUpdatedAt(const QDateTime& dt) { m_updatedAt = dt; }
 
     // -----------------------------------------------------------------------
-    // 模板块操作
+    // 模板内容（连续文档 HTML）
     // -----------------------------------------------------------------------
 
-    /// 获取模板块列表
-    const QList<ContentBlock>& blocks() const { return m_blocks; }
-    /// 设置模板块列表
-    void setBlocks(const QList<ContentBlock>& blocks) { m_blocks = blocks; }
-    /// 追加块
-    void appendBlock(const ContentBlock& block) { m_blocks.append(block); }
-    /// 块数量
-    int blockCount() const { return m_blocks.size(); }
+    /// 获取模板文档 HTML
+    const QString& document() const { return m_document; }
+    /// 设置模板文档 HTML
+    void setDocument(const QString& html) { m_document = html; }
+
+    /// 模板内嵌结构化对象（表格/图表/图片/公式/代码，与 document 中的锚点对应）
+    const QList<ContentBlock>& objects() const { return m_objects; }
+    void setObjects(const QList<ContentBlock>& objects) { m_objects = objects; }
+    int objectCount() const { return m_objects.size(); }
 
     // -----------------------------------------------------------------------
     // 序列化
@@ -114,7 +116,8 @@ private:
     QDateTime m_createdAt;  ///< 创建时间
     QDateTime m_updatedAt;  ///< 更新时间
 
-    QList<ContentBlock> m_blocks;  ///< 模板块定义
+    QString m_document;          ///< 模板文档 HTML
+    QList<ContentBlock> m_objects;  ///< 模板内嵌结构化对象（与 document 锚点对应）
 };
 
 #endif // TEMPLATE_H

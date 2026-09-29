@@ -16,6 +16,7 @@
 #include <QLabel>
 #include <QToolButton>
 #include <QMenu>
+#include <QColor>
 
 #include "core/models/Report.h"
 #include "core/models/Tag.h"
@@ -28,6 +29,8 @@ class ReportEditorWindow;
 // 前向声明
 class ReportEditor;
 class PluginManager;
+class ObjectInsertionController;
+class ReportExportController;
 
 /**
  * @brief 报告编辑窗口
@@ -56,6 +59,9 @@ public:
 
     /// 设置插件管理器
     void setPluginManager(PluginManager* manager) { m_pluginManager = manager; }
+
+    /// 当前报告标题（供主界面状态栏等查询）
+    QString reportTitle() const;
 
 signals:
     /// 报告已保存
@@ -89,13 +95,19 @@ private slots:
     void onBold();
     void onItalic();
     void onUnderline();
-    void onHeading(int level);
+    void onFontSize(int size);
+    void onTextColor();
+
+    /// 生成对齐按钮小图标（三条横线示意）
+    QIcon makeAlignIcon(Qt::Alignment align) const;
     void onList(bool numbered);
     void onQuote();
-    void onCodeBlock();
     void onInsertTable();
+    void onInsertChart();
+    void onInsertFormula();
     void onInsertImage();
     void onInsertDivider();
+    void onObjectEdit(const QString& objectId);
 
     // 视图操作
     void onToggleFullscreen();
@@ -124,8 +136,6 @@ private:
     /// 显示状态栏消息
     void showStatusMessage(const QString& message, int timeout = 3000);
 
-    /// 对当前块应用格式（粗体、斜体、下划线等）
-    void applyFormatToCurrentBlock(const QString& format);
 
     // -----------------------------------------------------------------------
     // 成员变量
@@ -136,6 +146,8 @@ private:
     Report::Ptr m_report;                ///< 当前报告
     class PrintManager* m_printManager;  ///< 打印管理器
     PluginManager* m_pluginManager;      ///< 插件管理器
+    ObjectInsertionController* m_insertionController;  ///< 对象插入/编辑控制器
+    ReportExportController* m_exportController;        ///< 导出/打印控制器
 
     // 状态栏控件
     QLabel* m_statusSaveLabel;           ///< 保存状态
@@ -152,8 +164,13 @@ private:
     QAction* m_actionUnderline;
     QAction* m_actionVersionHistory;     ///< 版本历史
     QAction* m_actionManageAttachments;  ///< 附件管理
+    QAction* m_actionAlignLeft;          ///< 左对齐
+    QAction* m_actionAlignCenter;        ///< 居中
+    QAction* m_actionAlignRight;         ///< 右对齐
+    bool m_updatingFormat = false;       ///< 防止行高下拉回显触发保存
 
-    bool m_isNewReport;              ///< 是否为新建报告
+    bool m_isNewReport;
+    bool m_readOnly = false;   ///< 只读模式（无编辑权限）              ///< 是否为新建报告
     double m_zoomFactor;             ///< 缩放因子
 };
 

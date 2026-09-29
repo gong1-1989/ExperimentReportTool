@@ -49,13 +49,6 @@ public:
 
 signals:
     /**
-     * @brief 版本已恢复信号
-     * @param reportId 报告 ID
-     * @param versionId 恢复的版本 ID
-     */
-    void versionRestored(qint64 reportId, qint64 versionId);
-
-    /**
      * @brief 新版本已保存信号
      * @param reportId 报告 ID
      * @param versionId 新版本 ID

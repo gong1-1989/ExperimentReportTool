@@ -58,8 +58,6 @@ namespace Widget {
     constexpr int BlockMinHeight     = 32;   ///< 文本块最小高度
     constexpr int TableMinHeight     = 150;  ///< 表格块最小高度
     constexpr int ImageMinHeight     = 200;  ///< 图片块最小高度
-    constexpr int CodeMinHeight      = 120;  ///< 代码块最小高度
-    constexpr int CodeMaxHeight      = 400;  ///< 代码块最大高度
     constexpr int ChartMinHeight     = 350;  ///< 图表块最小高度
     constexpr int FormulaMinHeight   = 60;   ///< 公式块最小高度
     constexpr int PlaceholderHeight  = 200;  ///< 空占位高度

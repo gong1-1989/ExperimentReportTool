@@ -142,13 +142,6 @@ public:
     bool exportToPdf(const Report::Ptr& report, const QString& filePath, QWidget* parent = nullptr);
 
     /**
-     * @brief 将内容块 JSON 数组渲染为 HTML 片段（公共静态，供版本历史等复用）
-     * @param blocks 内容块 JSON 数组
-     * @return HTML 片段（不含 <html><head><body> 标签）
-     */
-    static QString renderBlocksToHtml(const QJsonArray& blocks);
-
-    /**
      * @brief 从完整 HTML 文档中提取 <body> 内容（公共静态）
      * @param html 完整的 HTML 文档
      * @return body 标签内的 HTML 片段
@@ -171,6 +164,8 @@ private:
     // -----------------------------------------------------------------------
 
     PrintConfig m_config;  ///< 当前打印配置
+    QStringList m_tempChartFiles;  ///< 打印时生成的图表临时文件（用于清理）
+    void cleanupTempChartFiles();  ///< 清理图表临时文件
 };
 
 #endif // PRINT_MANAGER_H

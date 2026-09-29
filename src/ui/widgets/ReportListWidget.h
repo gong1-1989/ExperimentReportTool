@@ -10,10 +10,11 @@
 #define REPORT_LIST_WIDGET_H
 
 #include <QWidget>
-#include <QTableWidget>
+#include <QTableView>
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QLineEdit>
+#include <QTimer>
 #include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
@@ -23,6 +24,7 @@
 #include <QMenu>
 
 #include "core/models/Report.h"
+#include "ReportListModel.h"
 
 namespace Ui {
 class ReportListWidget;
@@ -100,12 +102,12 @@ private slots:
     void on_searchEdit_textChanged(const QString& text);
     /// 状态筛选变化
     void on_statusFilter_currentIndexChanged(int index);
-    /// 表格双击
-    void on_tableWidget_cellDoubleClicked(int row, int column);
+    /// 表格双击（QTableView 双击信号）
+    void on_tableWidget_doubleClicked(const QModelIndex& index);
     /// 表格右键菜单
     void on_tableWidget_customContextMenuRequested(const QPoint& pos);
-    /// 选中变化
-    void on_tableWidget_itemSelectionChanged();
+    /// 选中变化（QTableView 自身无 selectionChanged 信号，由 setupUi 手动连接 selectionModel）
+    void handleTableSelectionChanged();
     /// 新建报告
     void on_newButton_clicked();
     /// 切换视图
@@ -121,10 +123,9 @@ private:
     /// 获取筛选后的报告列表
     Report::List getFilteredReports();
 
-    /// 状态显示名称
-    QString statusDisplayName(ReportStatus status) const;
-
     Ui::ReportListWidget* ui;
+    ReportListModel* m_tableModel;   ///< 表格模型（虚拟化 + 局部刷新）
+    QTimer* m_searchTimer;           ///< 搜索防抖计时器（击键后延迟刷新列表）
 
     // -----------------------------------------------------------------------
     // 数据

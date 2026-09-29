@@ -7,6 +7,7 @@
 
 #include "SearchService.h"
 #include "service/ReportService.h"
+#include "data/repositories/ReportRepository.h"
 #include "service/TagService.h"
 #include "service/ProjectService.h"
 #include "data/database/DatabaseManager.h"
@@ -50,11 +51,66 @@ QList<SearchResultItem> SearchService::search(const SearchQuery& query)
     // 使用 LIKE 模糊搜索：标题、作者、标签、状态
     results = metadataSearch(query);
 
+    // 全文搜索：报告内容（正文/表格/图表标题）
+    contentSearch(query, results);
+
     // 补充项目名称等信息
     enrichResults(results);
 
     emit searchFinished(results);
     return results;
+}
+
+// ===========================================================================
+// 全文搜索（报告内容 JSON）
+// ===========================================================================
+
+void SearchService::contentSearch(const SearchQuery& query,
+                                   QList<SearchResultItem>& existing)
+{
+    // 收集已有报告 ID 用于去重
+    QSet<qint64> existingIds;
+    for (const SearchResultItem& item : existing) {
+        if (item.report) existingIds.insert(item.report->id());
+    }
+
+    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlQuery sqlQuery(db);
+
+    QString sql = "SELECT * FROM reports WHERE content LIKE :keyword";
+    if (query.projectId > 0) {
+        sql += " AND project_id = :projectId";
+    }
+    sql += " ORDER BY updated_at DESC LIMIT :limit;";
+
+    sqlQuery.prepare(sql);
+    sqlQuery.bindValue(":keyword", "%" + query.keyword + "%");
+    if (query.projectId > 0) {
+        sqlQuery.bindValue(":projectId", query.projectId);
+    }
+    sqlQuery.bindValue(":limit", query.maxResults);
+
+    if (!sqlQuery.exec()) {
+        LOG_ERROR(QString("全文搜索失败: %1").arg(sqlQuery.lastError().text()));
+        return;
+    }
+
+    while (sqlQuery.next()) {
+        // 直接复用当前查询行构造完整报告（SELECT * 已含 content JSON），省去每结果一次 getById
+        const qint64 reportId = sqlQuery.value("id").toLongLong();
+        if (existingIds.contains(reportId)) continue;  // 元数据已匹配，跳过
+
+        Report::Ptr report = ReportRepository::fromQueryRow(sqlQuery);
+        if (!report) continue;
+
+        SearchResultItem item;
+        item.report = report;
+        item.score = 0.0;
+        item.matchedAt = QDateTime::currentDateTime();
+        item.highlight = tr("内容匹配: %1").arg(query.keyword);
+        existing.append(item);
+        existingIds.insert(reportId);
+    }
 }
 
 QList<SearchResultItem> SearchService::search(const QString& keyword,
@@ -115,20 +171,24 @@ QList<SearchResultItem> SearchService::metadataSearch(const SearchQuery& query)
     }
 
     while (sqlQuery.next()) {
-        // 用 ReportService::getById 加载完整报告（包含内容块）
-        const qint64 reportId = sqlQuery.value("id").toLongLong();
-        Report::Ptr report = ReportService::getById(reportId);
+        // 直接复用当前查询行构造完整报告（SELECT r.* 已含 content JSON），省去每结果一次 getById
+        Report::Ptr report = ReportRepository::fromQueryRow(sqlQuery);
         if (!report) continue;
 
         SearchResultItem item;
         item.report = report;
         item.score = 0.0;
         item.matchedAt = QDateTime::currentDateTime();
-
-        // 生成匹配字段描述（用于显示匹配了哪些字段）
-        item.highlight = buildMatchDescription(report, query.keyword);
-
         results.append(item);
+    }
+
+    // 批量加载本次结果的全部标签（一次 SQL），供匹配描述使用
+    QList<qint64> reportIds;
+    for (const SearchResultItem& item : results) reportIds.append(item.report->id());
+    const QHash<qint64, Tag::List> tagsMap = TagService::findReportTagsBatch(reportIds);
+
+    for (SearchResultItem& item : results) {
+        item.highlight = buildMatchDescription(item.report, query.keyword, tagsMap);
     }
 
     return results;
@@ -139,7 +199,8 @@ QList<SearchResultItem> SearchService::metadataSearch(const SearchQuery& query)
 // ===========================================================================
 
 QString SearchService::buildMatchDescription(const Report::Ptr& report,
-                                              const QString& keyword)
+                                              const QString& keyword,
+                                              const QHash<qint64, Tag::List>& tagsMap)
 {
     if (!report) return QString();
 
@@ -162,8 +223,8 @@ QString SearchService::buildMatchDescription(const Report::Ptr& report,
         matchedFields.append(tr("状态"));
     }
 
-    // 检查标签
-    const Tag::List tags = TagService::findByReport(report->id());
+    // 检查标签（使用调用方批量预载的缓存，避免逐结果查询）
+    const Tag::List tags = tagsMap.value(report->id());
     for (const Tag::Ptr& tag : tags) {
         if (tag->name().toLower().contains(kw)) {
             matchedFields.append(tr("标签"));
@@ -184,12 +245,18 @@ QString SearchService::buildMatchDescription(const Report::Ptr& report,
 
 void SearchService::enrichResults(QList<SearchResultItem>& results)
 {
+    // 批量查询项目名（一次 SQL），避免逐结果 getById
+    QList<qint64> projectIds;
+    for (const SearchResultItem& item : results) {
+        if (item.report && item.report->projectId() > 0) {
+            projectIds.append(item.report->projectId());
+        }
+    }
+    const QHash<qint64, QString> names = ProjectService::findNamesBatch(projectIds);
+
     for (SearchResultItem& item : results) {
         if (item.report && item.report->projectId() > 0) {
-            Project::Ptr project = ProjectService::getById(item.report->projectId());
-            if (project) {
-                item.projectName = project->name();
-            }
+            item.projectName = names.value(item.report->projectId());
         }
     }
 }
@@ -234,6 +301,5 @@ bool SearchService::isFtsAvailable() const
 
 bool SearchService::rebuildIndex()
 {
-    LOG_INFO("全文搜索已禁用，仅搜索元数据（标题、作者、标签、状态）");
     return true;
 }

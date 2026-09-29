@@ -82,7 +82,7 @@ Template::Ptr TemplateRepository::findById(qint64 id)
     // 参数校验：无效 ID 直接返回
     if (id <= 0) return nullptr;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用预处理语句查询
@@ -111,7 +111,7 @@ Template::List TemplateRepository::findAll()
 {
     Template::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 静态 SQL（无参数），直接执行
@@ -139,7 +139,7 @@ Template::List TemplateRepository::findByCategory(const QString& category)
 {
     Template::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 按分类查询，按名称排序
@@ -167,7 +167,7 @@ Template::List TemplateRepository::findBuiltin()
 {
     Template::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // is_builtin = 1 表示内置模板
@@ -191,7 +191,7 @@ Template::List TemplateRepository::findCustom()
 {
     Template::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // is_builtin = 0 表示自定义模板
@@ -219,7 +219,7 @@ QStringList TemplateRepository::allCategories()
 {
     QStringList categories;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 查询所有不重复的分类名称
@@ -256,7 +256,7 @@ bool TemplateRepository::insert(Template::Ptr temp)
     // 空指针检查
     if (!temp) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备插入语句
@@ -276,10 +276,7 @@ bool TemplateRepository::insert(Template::Ptr temp)
     query.bindValue(":updated_at", now);                       // 更新时间
 
     // 执行插入
-    if (!query.exec()) {
-        LOG_ERROR(QString("insert 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "insert ")) return false;
 
     // 获取自增 ID 并回写到对象
     temp->setId(query.lastInsertId().toLongLong());
@@ -304,7 +301,7 @@ bool TemplateRepository::update(const Template::Ptr& temp)
     // 校验：指针非空且已持久化
     if (!temp || !temp->isPersisted()) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备更新语句（不更新 is_builtin 字段）
@@ -324,10 +321,7 @@ bool TemplateRepository::update(const Template::Ptr& temp)
     query.bindValue(":id", temp->id());
 
     // 执行更新
-    if (!query.exec()) {
-        LOG_ERROR(QString("update 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "update ")) return false;
 
     // 同步更新对象的时间戳
     temp->setUpdatedAt(QDateTime::currentDateTime());
@@ -360,7 +354,7 @@ bool TemplateRepository::remove(qint64 id)
         return false;
     }
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备删除语句
@@ -368,7 +362,11 @@ bool TemplateRepository::remove(qint64 id)
     query.bindValue(":id", id);
 
     // 执行删除并返回结果
-    return query.exec();
+    if (!query.exec()) {
+        LOG_ERROR(QString("删除模板失败: id=%1, %2").arg(id).arg(query.lastError().text()));
+        return false;
+    }
+    return true;
 }
 
 // ===========================================================================
@@ -386,7 +384,7 @@ bool TemplateRepository::remove(qint64 id)
  */
 int TemplateRepository::count()
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用 COUNT(*) 聚合查询

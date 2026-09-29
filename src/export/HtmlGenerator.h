@@ -47,10 +47,11 @@ private:
     QString reportToHtml(const Report::Ptr& report, const ExportConfig& config);
 
     /// 将单个内容块转换为 HTML
-    QString blockToHtml(const ContentBlock& block, int& headingCounter, const Report::Ptr& report);
 
     /// 生成 CSS 样式表
     QString generateCss(const ExportConfig& config);
+
+    // --- blockToHtml 拆分后的子方法（复杂块类型） ---
 };
 
 #endif // HTML_GENERATOR_H

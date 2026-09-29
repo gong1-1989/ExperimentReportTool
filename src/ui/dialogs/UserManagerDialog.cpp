@@ -34,6 +34,11 @@ UserManagerDialog::UserManagerDialog(QWidget* parent)
     ui->userTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->userTable->horizontalHeader()->setStretchLastSection(true);
     ui->userTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    // 表格内容与表头居中
+    UiHelper::centerTableWidget(ui->userTable);
+
+    loadUsers();    ui->userTable->horizontalHeader()->setStretchLastSection(true);
+    ui->userTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
     loadUsers();
 }

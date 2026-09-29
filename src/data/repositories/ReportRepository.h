@@ -15,6 +15,7 @@
 #include <QSqlQuery>
 
 #include "core/models/Report.h"
+#include "BaseRepository.h"
 
 /**
  * @brief 报告查询条件结构体
@@ -70,7 +71,7 @@ struct VersionInfo {
 /**
  * @brief 报告仓储类
  */
-class ReportRepository
+class ReportRepository : public BaseRepository
 {
 public:
     // -----------------------------------------------------------------------
@@ -149,6 +150,13 @@ public:
     static int count();
     static int countByProject(qint64 projectId);
     static int countByStatus(ReportStatus status);
+
+    // -----------------------------------------------------------------------
+    // 批量/列表场景辅助
+    // -----------------------------------------------------------------------
+
+    /// 从已执行查询的当前行构造完整报告（供搜索等批量场景复用查询行，避免逐条 getById）
+    static Report::Ptr fromQueryRow(const QSqlQuery& query);
 
 private:
     static Report::Ptr mapToReport(const QSqlQuery& query);

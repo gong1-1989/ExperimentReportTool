@@ -4,7 +4,7 @@
 
 ## 当前版本
 
-**v9.15** — 深度优化版（测试框架、发布脚本、代码收口、DB 诊断）
+**v9.19.3** — C1 阶段2 块3：MainWindow 对话框组拆分 MainWindowDialogs
 
 ---
 
@@ -14,201 +14,102 @@
 
 | 版本 | 主要变更 |
 |------|----------|
-| v9.0 | 多用户基础：User 模型、用户表、登录验证、首次登录强制改密码、项目按用户二级分类 |
-| v9.1 | 权限拦截（普通用户只能改自己的）、用户管理界面（仅管理员）、数据库路径可配置、报告列表显示创建者 |
-| v9.1.1~9.1.5 | 数据库路径浏览按钮、选择文件夹模式、设置窗口颜色实时预览、字体配置修复 |
-| v9.2 | 字数统计修复、新建报告/项目自动填充创建者、编辑器状态栏重叠修复 |
-| v9.2.1~9.2.7 | 创建者显示修复、状态栏重复修复、界面重叠修复、toPlainText 优化 |
-| v9.3 | 字数字段缓存方案（数据库 word_count 列，保存时统计，主界面直接读取） |
-| v9.3.1 | 修复 hasColumn 编译错误 |
-| v9.4 | "作者"改为"创建者"，去掉作者列，创建者自动填充且只读 |
-| v9.4.1 | 保存时不强制覆盖创建者，从输入框读取 |
-| v9.4.2 | 新建报告时创建者自动设置为当前用户（MainWindow 新建逻辑修复） |
-| v9.4.3 | 恢复标签管理菜单（重构中被意外移除） |
-| v9.4.4 | 报告列表按项目过滤（必须选择项目才显示对应报告） |
-| v9.4.5 | 标签颜色保存修复（颜色组合框 data 值为空导致保存后变红色） |
-| v9.5 | 增加用户修改密码功能、修复新建模板崩溃（QDialogButtonBox::Save 空指针） |
-| v9.5.1 | 修复模板取消键和版本历史关闭键无反应（信号未连接） |
-| v9.5.2 | 改为符合命名规则的槽函数（on_<objectName>_<signalName>），uic 自动连接 |
-| v9.6 | 标签选择集成到报告编辑器（下拉单选、默认为无标签）、标签状态在主界面列表/属性面板体现 |
-| v9.7 | 导出 PDF/Word 直接引用打印预览渲染路径，修复表格/图表/图片不显示 |
-| v9.8 | 附件管理、版本历史等对话框槽函数命名规范化 |
-| v9.9 | 搜索范围调整（仅名称/作者/标签/状态）、搜索结果界面布局优化 |
-| v9.10 | 插件体系精简：只保留单一抽象基类 PluginInterface + PluginManager + 示例插件 |
-| v9.11 | 插件 IID 升级 /2.0（修复旧 .dll ABI 残留导致 SIGSEGV） |
-| v9.12 | 全面代码检查（40 项扫描）与 P0 修复 |
-| v9.13 | 插件骨架（方案 B）：独立 .dll 示例插件 plugins/demo + plugin_template 脚手架 |
-| v9.13.1 | 插件 IID /2.0 打包 |
-| v9.13.2 | 插件骨架回退重打包（PluginSkeleton） |
-| v9.14 | 全面优化：①新建 UiHelper 统一 UI 提示（125 处收口）②Service 层补日志 ③SettingsDialog connect 收口 on_ 槽 ④search/export/print 的 Repository 直调收口 Service（UI 层零直调）⑤TagRepository 删除统计死代码（count/usageCount，738→649 行）⑥AppTheme 新增 Chart 色板/Heading 磅值档位，颜色字体硬编码收口 ⑦主菜单 action 补 standardIcon ⑧ChangePasswordDialog/UserManagerDialog/ReportListWidget 补 .ui 文件（纯代码 UI → .ui 定义，connect 全部自动连接） |
-| v9.14.1 | ChangePasswordDialog/UserManagerDialog/ReportListWidget 补 .ui 文件（纯代码 UI → .ui 定义，17 处 connect 全部改自动连接，删除 2 个死槽和 8 个 m_ 控件成员） |
-| v9.14.2 | AttachmentService/DataTableService 补关键日志（Service 层日志全覆盖）、MainWindow/ReportEditorWindow 菜单 action 补 QStyle 标准图标（21 个）、ProjectTreeWidget 补 QStyle include |
-| v9.14.3 | 主菜单 action 图标全量收口（26/27，仅 AboutQt 无图标）、修复 tail 误判导致的 Restore 图标遗漏 |
-| v9.14.4 | 修复编译错误：①UiHelper 增加带按钮参数的 warning 重载（closeEvent 三态确认框误转修复）②SP_DialogLockButton（Qt6 已移除）改为 SP_DialogApplyButton ③全面扫描确认全部 SP_ 枚举为 Qt6 标准、QMessageBox 直用清零 |
-| v9.14.5 | UI 全面审查：19 个 .ui 中文化核对（50+ 按钮/17 窗口标题全部中文）、按钮-槽映射核对（全部连接完备）、对话框 margin 统一规范（10→12、15→16，共 7 个对话框）、登录提示补 test/123456 账号 |
-| v9.14.6 | 修复标准对话框按钮英文：①main.cpp 加载 Qt 中文翻译（qtbase_zh_CN.qm，多路径查找）使 QInputDialog/QFileDialog/QColorDialog 按钮中文化 ②UiHelper 全部方法改为自定义中文按钮（确定/取消/保存/放弃/是/否），不依赖翻译文件部署 ③导出项目 getItem 补 &ok 参数准确区分确定/取消 |
-| v9.15 | P3 颜色收口（#ddd/#666/#999/#eee → AppTheme，4 处+补 include）；P4① 测试框架（tests/CMakeLists + DataTable/Report 模型单测 12 用例，-DBUILD_TESTS=ON 启用）；P4② 发布脚本 deploy.ps1（CMake 构建+windeployqt+翻译+插件+zip）；P4③ arg 链收口 59 处（.arg 多参数化）；P4④ Service 入口 Q_ASSERT 前置断言 7 处+QtGlobal include；P4⑤ DB 写失败统一日志（事务/commit/rollback 日志、25 处失败分支补 SQL 诊断、3 处事务+3 处 commit 返回值检查、AttachmentService 补日志） |
-| v9.15.1 | 修复 v9.15 arg 链合并编译错误：Qt6 QString::arg 多参数版仅支持纯字符串参数，混合 int/QString 会编译失败——已回退 29 处混合类型合并为链式（含 Logger.h 4 处宏、DataTable/ExportManager/ReportEditor/ProjectRepository/HtmlGenerator 等），保留纯字符串多参（AppTheme 常量等合法用法） |
-| v9.15.2 | 修复 v9.15.1 遗漏：AppTheme::Spacing/FontSize/Radius 为 int 常量（非字符串），含这些常量的多参 .arg 仍编译失败或语义错误（int+int 匹配 fieldWidth 重载）——已把合并文件中全部纯简单参数多参 .arg 拆回链式（56 处，涉及 10 文件），剩余 40 处多参全部为合法纯字符串/浮点格式化重载；P4③ arg 链合并整体放弃，恢复链式写法 |
-| v9.15.3 | 运行期日志检查修复 4 项：①Logger.cpp 恢复 arg(levelStr, -8) 的 fieldWidth 语义（v9.15.2 拆回误伤，导致日志消息被 -8 顶掉、Argument missing 警告）②中文检测正则 \\u4e00 双反斜杠改单反斜杠（PCRE2 不识别 \\u 转义，正则无效——此 bug 正是此前'字数统计为 0'的根源，Report.cpp/ReportEditor.cpp 两处）③主工具栏补 setObjectName（消除 saveState '????????' 警告）④DatabaseManager::close() 改块作用域，确保 removeDatabase 前无活跃句柄（消除 connection still in use 警告） |
-| v9.15.4 | 修复 UiHelper 提示弹窗标题/内容位置颠倒：UiHelper 签名定义为 (parent, message, title) 但全项目 134 处调用均按 (parent, title, message) 传参（标题在前），导致弹窗标题栏显示长正文、正文区只显示标题——已将 UiHelper（error/info/warning/五参 warning/confirm）与 BaseDialog（showInfo/showWarning/confirm）签名统一为 title 在前，内部实现与全部调用处自动匹配，零调用处改动 |
-| v9.15.5 | MainWindow 优化（P4⑥ 落地，不拆文件）：①新建 PropertyPanelHelper（ui/widgets/）静态工具类，集中报告属性/项目属性/占位提示/标签 HTML 生成（reportHtml/projectHtml/emptyHtml/tagsHtml），内部解析状态（复用 Report::statusDisplayName）、项目名、创建者、标签 ②MainWindow::updatePropertyPanel 从 120 行精简到约 20 行（1570→约1470 行）③SearchService 状态 switch 复用 Report::statusDisplayName（消除重复） |
-| v9.15.6 | 菜单栏迁移到 .ui：①MainWindow.ui 新增 menuBar（文件/编辑/视图/工具/帮助 5 菜单）+ 27 个 QAction 定义（text/shortcut/checkable/checked/enabled/statusTip 全部迁入 .ui）②删除 MainWindow.cpp createMenus()（约60行动态代码）③createActions() 改为从 ui->m_actionXxx 取指针，仅保留 icon 设置（QStyle::standardIcon 无法在 .ui 表达）④createToolBar() 改用 ui->mainToolBar（原 addToolBar 会与 .ui 工具栏重复创建） |
-| v9.15.7 | 修复 v9.15.6 AutoUic 失败：MainWindow.ui 的 QMenuBar 内 5 个 QMenu 缺少 <addaction name="menuX"/> 引用（Qt 官方 uic 严格要求 QMenu 必须被 menuBar 引用，PyQt6 uic 宽松放过导致漏检）——已补 5 个 addaction，并统一 property 为多行标准格式（与项目其他 .ui 一致），PyQt6 uic 编译验证通过 |
-| v9.15.8 | 继续排查 AutoUic 失败：将 menuBar/actions 的 <string> 内容全部改为单行无空白（与 Qt Designer 输出字节级一致，消除 uic 对 string 空白处理的可能歧义）；如仍失败请运行 uic.exe 获取具体错误行 |
-| v9.15.9 | **修复 AutoUic 根因**：uic.exe 报 'line 343 Unexpected element actions'——<actions> 节必须位于 <widget>（QMainWindow）内部（</widget> 之前），此前误放在顶层。已把 27 个 <action> 移入 widget 内（statusbar 之后、</widget> 之前），与 Qt Designer 输出完全一致 |
-| v9.16.0 | **全面 .ui 化改造**：①MainWindow 中央三栏布局（m_mainSplitter/项目树/报告列表/属性面板）全部定义到 .ui（含 ProjectTreeWidget/ReportListWidget 提升、customwidgets），setupUi() 由 80 行动态创建改为 5 行成员引用；②MainWindow 状态栏 3 个标签+弹簧与工具栏全局搜索框迁入 .ui；③ReportEditorWindow 全面迁 .ui：8 个成员 QAction + 22 个菜单动作 + 文件/编辑/插入/格式/视图 5 个菜单 + 工具栏（含标题下拉）+ 状态栏 4 个标签，删除动态 createMenus/createToolBar，动作连接集中到 createActions |
-| v9.16.1 | **修复 v9.16.0 编译错误**：m_reportList 提升为 ReportListWidget 后残留的 4 个 QTableWidget 专属属性（editTriggers/selectionBehavior/selectionMode/alternatingRowColors）导致 uic 生成无效 setter 调用，已删除（ReportListWidget 继承 QWidget，属性由组件内部管理） |
-| v9.16.2 | **修复主界面三栏变垂直堆叠**：删除 m_centerSplitter 时残留的 `<property name=orientation>Vertical</property>` 误留在 m_mainSplitter 内，覆盖了 Horizontal 方向导致项目树/报告列表/属性面板上下排列；已删除残留，uic 现仅生成一次 Horizontal |
-| v9.16.3 | **修复状态栏控件重叠**：QStatusBar 的子 widget 写在 .ui 中时 uic 不会生成 addWidget 调用，控件全部堆叠重叠；已恢复 cpp 中 addWidget/addPermanentWidget 显式添加（MainWindow 3 标签+弹簧、ReportEditorWindow 4 标签）；另修复 11 处 UiHelper::confirm 参数顺序颠倒（message/title 传反导致弹窗标题=长正文）与 BaseDialog::showError 传反 |
-| v9.16.3 | **修复弹窗标题/正文颠倒（文字重叠视觉）**：11 处 `UiHelper::confirm(this, 消息, 标题)` 参数传反（删除项目/报告/附件/标签/用户、恢复设置/版本、内置模板复制等确认框），标题被长消息占用；已全部改为 `(this, 标题, 消息)`。同时修正 BaseDialog::showError 封装（message/title 顺序与 UiHelper 一致） |
+| **v9.19.3** | C1 阶段2 块3：MainWindow 1413 行对话框组拆分——新建 MainWindowDialogs（17 个对话框槽/649 行：新建项目/报告、导入、项目导出、编辑/删除项目与报告、模板/标签/密码/备份/恢复/设置、关于/检查更新/用户管理），Hooks 结构体依赖注入窗口能力（当前选中/刷新/状态栏/关闭编辑器窗口）；权限检查（canModifyReport/Project）按方案保留窗口槽；onOpenReport/onLogout/onFind/onPluginManager 因依赖窗口状态留窗口；MainWindow 933 行；清理 20 个无引用 include；验收补丁：Hooks 补成员时误删 refreshProjectTree 导致聚合初始化错位（编译错 refreshProjectTree 无成员/too many initializers），已补回并与 MainWindow.cpp 初始化顺序逐项对齐（11 成员 ↔ 11 lambda）；补丁2：报告编辑窗口「创建者」强制只读（加载后 setReadOnly(true)，保存不再从编辑框回写 author，创建者固定为创建时用户名）；补丁3：「创建者」输入框直接改为 QLabel 纯展示（ReportEditor.ui QLineEdit→QLabel，删除 setReadOnly 调用，视觉上不可编辑） |
+| **v9.19.2** | C1 阶段2 块2：ReportEditorWindow 1098 行三组拆分——格式操作下沉 ReportEditor（setBold/setItalic/setUnderline/setFontSize/setTextColor/setList/setQuote + applyCharFormat/clearBlockHeading，窗口槽 1-3 行转发）；新建 ObjectInsertionController（表格/图片/图表/公式/分隔线插入 + 对象编辑 onObjectEdit 107 行）；新建 ReportExportController（导出/打印/打印预览/页面设置本体，保存前置保留窗口槽）；窗口保留保存组（saveReport/另存为/版本历史）、UI 组装、信号槽骨架 828 行；迁移后清理 6 个无引用 include |
+| **v9.19.1** | C1 阶段2 块1：ReportEditor 4 个对象预览渲染（表格/图表/图片/公式，~180 行）提取为 ObjectPreviewRenderer 静态纯渲染类（入参仅 ContentBlock，不依赖编辑器实例）；refreshObjectPreview 收敛为一行调用；CMake GLOB_RECURSE 自动收录新源文件 |
+| **v9.19.0** | C6 Repository 基类：新增 BaseRepository（非模板工具基类），db() 统一 7 仓库 69 处数据库连接获取；execChecked() 统一 SQL exec 失败检测与错误日志（22 处接入）；inPlaceholders/dedupeIds/chunkIds 统一批量 IN 查询占位符/去重/500 分块（3 处重复逻辑收敛）；rollback 事务、文件操作日志等特殊错误处理保留原样；子类保持静态业务方法（静态成员可被派生类访问）；验收补丁：main.cpp '数据库初始化成功' info 降为 debug（与 DatabaseManager 内部 DEBUG 记录同义），删除 MainWindow 与 Repository 层重复的项目/报告创建 LOG_INFO（各保留 Repository 层权威记录） |
+| **v9.18.5** | N+1 定点清理 + 搜索防抖：元数据/全文搜索循环内每结果 getById 改直接复用查询行 mapToReport（一次搜索 N+1 次 SQL → 0）；匹配描述标签改批量 findReportTagsBatch（TagRepository 新增，返回完整标签含颜色）；结果项目名改批量 findNamesBatch（ProjectRepository 新增）；SearchResultDialog 结果列表标签批量一次 SQL；PropertyPanelHelper 创建者/修改者 2 次单查合并批量 1 次；搜索框输入防抖（QTimer 300ms，避免连续击键触发 SQL）；验收补丁：mapToReport 为 private，新增公开薄包装 ReportRepository::fromQueryRow 供搜索复用查询行 |
+| **v9.18.4** | C4 导入异步：DataImportDialog 解析改 QtConcurrent 后台线程（QFutureWatcher 回主线程更新预览，setFuture 替换天然只响应最新任务，大 CSV 不卡 UI），CMake 增加 Concurrent 模块；C5/P7 列表局部刷新+虚拟化：报告列表改为 QTableView + 新建 ReportListModel（QAbstractTableModel，视图按需渲染可见行；id 序列一致时仅 dataChanged 局部通知；创建者/标签批量一次 SQL 消除 N+1；表头点击排序由模型 sort() 实现；删 QTableWidget 全量 item 重建与死代码；验收补丁：QTableView 自身无 selectionChanged 信号，选中变化改手动连接 QItemSelectionModel（消除 connectSlotsByName 警告）） |
+| **v9.18.3** | 代码/性能优化速赢批：删除 MainWindow::refreshAll 死代码（无调用）；collectDocument 锚点扫描改单次正则收集（O(n×m) → O(n+m)，保存路径优化）；UserService 新增 batchDisplayNames 批量查询，报告列表创建者显示改为一次 SQL（消除跨刷新 N+1）；补：修复 ObjectRenderer.h 引用不存在的 ContentBlock.h（ContentBlock 实为 Report.h 内定义）、qHash 匿名命名空间遮蔽全局重载（字段哈希改 ::qHash 全局限定）、UserService 误调非静态 DatabaseManager::database（改 instance().database()） |
+| **v9.18.2** | README 全面精简梳理（641 → 254 行）：迭代历史压缩为 9 行倒序（最近 3 版详细 + 阶段合并）；目录结构精简为 20 行；功能指南 18 节约减 50%；编译/存储/配置/开发约定压缩为要点式；去除旧块编辑器/18 插件/事件总线/插件多接口等已删残留；数据库迁移更新至 v6 |
+| **v9.18.1** | 代码/性能优化第二批：双击信号改名 objectClicked→objectDoubleClicked；FTS5 可用状态补 Debug 日志；图表渲染 LRU 缓存（键含数据表id/更新时间/配置/宽高，数据或配置变化自动失效）；评估确认 Q_UNUSED 为 Qt 惯例、撤销栈默认 100 已限、魔法数值已用枚举 |
+| **v9.18.0** | 代码/性能优化第一批：补 report_tags.tag_id 索引（按标签反向查报告提速）；图片预览缩略解码（QImageReader，超大图不再整张载入）；补 5 处裸写操作 exec 检查与错误日志；对象渲染合并为共享 ObjectRenderer（导出/打印共用一套逻辑，参数化差异，消除约 300 行重复） |
+| **v9.17.54** | 日志分级治理：LOG_DEBUG 在 Release 编译为空零开销；运行时 --log-level= / 环境变量 ERT_LOG_LEVEL 调级；启动细节降 Debug，Info 仅留用户操作结果；密码明文不再写日志 |
+| **v9.17.44~9.17.53** | 格式工具栏收尾：按钮 checked 高亮样式；行高范围/回显/Word 式应用修复（clearSelection→blockFormat 取选区终点块→下拉数值匹配 setCurrentIndex）；模板 v3 显式 20pt 标题、v4 零 h 标签（版本号检测重建）；对象对齐跟随编辑窗；清理调试日志 |
+| **v9.17.0~9.17.43** | **连续文档+对象锚点重构（大版本）**：块模式→Word 式连续文档，表格/图表/图片/公式以对象锚点内嵌；旧块编辑器全删；锚点双保险显示（setResourceProvider+addResource）；模板带对象序列化；数据表保存/外键/命名/查找、标签下拉、保存标记、只读权限、打印间距/实际大小、标题统一、段落样式与代码块移除、字号/加粗/对齐回显链路修复等 40+ 项迭代 |
+| **v9.16.x** | 全面 .ui 化（主窗口三栏/菜单/工具栏/状态栏）；撤销栈节流合并；字号下拉回显+可编辑；历史版本崩溃修复（ChartRenderer 双重释放）；Word 导出 base64 内嵌（不再生成 images 文件夹）；搜索 N+1 修复；FTS5 全文搜索启用；数据库迁移包事务防半迁移 |
+| **v9.15.x** | 颜色收口 AppTheme；测试框架（12 用例）；deploy.ps1 发布脚本；arg 链合并尝试与回退（Qt6 多参限制）；UiHelper 参数顺序统一；菜单栏迁 .ui + AutoUic 修复 |
+| **v9.0~9.14** | 多用户基础（登录/权限/用户管理/改密）；创建者字段；字数字段缓存；标签管理；PDF/Word 导出；插件体系精简与 IID 升级；UiHelper 统一提示（125 处收口）；Service 层日志与 Repository 直调收口；.ui 中文化与标准图标收口 |
 
 ### v8.x 全面优化阶段
 
-- **QSS 全局样式表**：app.qss + resources.qrc，统一外观管理
-- **UiUtils/HtmlListWidget** 通用组件
-- **OtherBlockEditors 拆分**：Table/Image/Code/Chart 四个独立文件
-- **Service 层**：ReportService/ProjectService/TagService，解耦 UI 与业务逻辑
-- **魔法数字优化**：AppTheme（颜色/字体/间距）+ AppDimensions（尺寸）+ AppConfig（.ini 配置）
-- **设置窗口**：外观、数据、插件配置可视化，颜色实时预览
+- QSS 全局样式表统一外观；UiUtils/HtmlListWidget 通用组件；Service 层解耦 UI 与业务
+- AppTheme/AppDimensions 魔法数字收口；设置窗口可视化（外观/数据/插件）
 
-### v4.x ~ v7.x 插件架构重构
+### v4.x ~ v7.x 插件架构重构（历史）
 
-- **18 个独立 .dll 插件**：工具插件（搜索/标签/附件/版本/模板/插件管理）、导入插件（CSV）、导出插件（PDF/HTML/Word/Text）、编辑器块插件（文本/表格/图片/代码/公式/图表）
-- **core_lib SHARED**：核心框架动态库
-- **每个插件独立 CMakeLists.txt**
-- **PluginInterface 纯虚类**，支持运行时动态加载
-- **ExportManager 调用插件渲染**：blockToHtml 优先调用插件 renderToHtml()
+- 当时采用 18 个独立 .dll 插件（工具/导入/导出/编辑器块）+ core_lib 动态库
+- 后续版本已精简为单一 PluginInterface + 示例插件（见 v9.10/v9.11 迭代）
 
-### v1.x ~ v3.x 基础功能阶段
+### v1.x ~ v3.x 基础功能阶段（历史）
 
-- P0 基础功能：项目管理、报告编辑、数据表、图表、导出、搜索、打印、版本
-- P1 高级功能：公式编辑器、数据导入、标签管理、附件管理
-- 五阶段重构：14+ .ui 文件、修复 20+ 编译错误
-- 对话框信号槽统一：on_<objectName>_<signalName> 命名约定
-- 标签功能集成：编辑器单选下拉列表、主界面列表和属性面板显示
-- 搜索功能重写：只搜元数据（标题/作者/标签/状态）
-- PDF 导出复用 PrintManager 渲染
+- P0 基础功能（项目管理/报告编辑/数据表/图表/导出/搜索/打印/版本）+ P1 高级功能（公式/导入/标签/附件）
+- 五阶段重构、.ui 化、信号槽命名约定（on_<objectName>_<signalName>）、PDF 导出复用 PrintManager
 
 ---
 
 ## 功能使用指南
 
 ### 1. 登录与用户
-
-- 启动后显示登录界面，输入用户名和密码
-- 默认账号：
-  - 管理员：`admin` / `admin123`
-  - 普通用户：`test` / `123456`（首次登录必须修改密码）
-- 工具 → 修改密码：修改当前用户密码
-- 工具 → 用户管理（仅管理员可见）：增删改查用户、重置密码
+- 默认账号：管理员 `admin/admin123`；普通用户 `test/123456`（首次登录强制改密）
+- 工具 → 修改密码；用户管理（仅管理员）：增删改查、重置密码
 
 ### 2. 多用户协作
-
-- 数据库可放在共享文件夹，多人同时使用
-- 普通用户可查看所有人数据，但只能修改自己创建的
-- 项目树按用户名二级分类，每个用户名下显示其创建的项目
-- 未分配创建者的旧数据，所有人都可修改（兼容）
+- 数据库放共享文件夹即可多人使用；普通用户可查看所有数据，只能修改自己创建的
+- 项目树按用户名二级分类；未分配创建者的旧数据所有人可改（兼容）
 
 ### 3. 项目管理
-
-- 左侧项目树：右键新建项目/子项目、重命名、删除
-- 支持树状项目结构（项目 → 子项目 → 报告）
-- 必须选择具体项目，右侧才显示该项目下的报告
+- 左侧项目树：右键新建项目/子项目、重命名、删除；选择项目后右侧显示其报告
 
 ### 4. 报告创建与编辑
-
-- 选择项目后 → 文件 → 新建报告（或工具栏按钮）
-- 选择模板 → 输入标题 → 自动打开编辑窗口
-- 创建者自动填充为当前用户显示名，不可修改
-- 支持 14 种内容块：标题(H1-H3)、段落、无序列表、有序列表、引用、表格、图片、代码块、分割线、图表、公式、数据引用
-- 标签选择：编辑器顶部下拉列表，单选，默认为"无标签"
-- 快捷键：Enter 新建块、Backspace 删除空块、Alt+Up/Down 移动块
-- 自动保存：3 秒防抖
+- 新建报告 → 选模板 → 自动打开编辑窗口；创建者自动填充不可改，修改者自动记录
+- **连续文档模式（Word 式）**：正文直接输入；表格/图表/图片/公式/分割线/数据引用以对象锚点内嵌，**双击**打开编辑
+- 格式工具栏：字号、加粗/斜体/下划线、颜色、对齐、行高（1.0~3.0）；无选中时作用于整段
+- 标签下拉单选（默认"无标签"）；自动保存：3 秒防抖 + Ctrl+S
 
 ### 5. 数据表
-
-- 插入表格块 → 双击打开数据表编辑器
-- 动态增删行列、设置列属性（名称/类型/单位/必填/数值范围）
-- 数据校验、CSV 导入导出
+- 插入表格对象 → 双击打开编辑器：动态增删行列、列属性（名称/类型/单位/必填/范围）、数据校验、CSV 导入导出
 
 ### 6. 图表
-
-- 插入图表块 → 点击「配置图表」选择数据表和图表类型
-- 支持 5 种图表：折线图、柱状图、饼图、散点图、面积图
-- 可配置标题、轴标题、图例、网格、数据点、主题
-- 打印预览时等待 500ms 确保图表渲染完成
+- 插入图表对象 → 双击配置：5 种图表（折线/柱状/饼图/散点/面积），可配标题、轴、图例、网格、主题
 
 ### 7. 公式
-
-- 插入公式块 → 双击打开公式编辑器
-- 输入 LaTeX 公式，右侧实时预览（MathJax）
-- 20 个常用公式模板：分数、根号、求和、积分、矩阵、方程组等
+- 插入公式对象 → 双击打开：LaTeX 输入 + MathJax 实时预览，20 个常用公式模板
 
 ### 8. 导出
-
-- 文件 → 导出 → 选择格式（PDF/HTML/Word/纯文本）
-- PDF：复用打印预览渲染，表格图表正常显示
-- HTML：完整 CSS 样式，图片内嵌
-- Word：Word 兼容格式（.doc）
-- 纯文本：Markdown 风格
+- 文件 → 导出：PDF（复用打印渲染）/ HTML（CSS+图片内嵌）/ Word / 纯文本（Markdown 风格）
 
 ### 9. 搜索
-
-- 主窗口顶部搜索框 → 输入关键词 → 回车
-- 只搜索元数据：报告名称、作者、标签、状态
-- 支持状态筛选下拉框
+- 顶部搜索框回车：FTS5 全文检索（标题/内容/标签，不可用自动降级 LIKE）+ 状态筛选
 
 ### 10. 打印
-
-- 文件 → 打印预览 / 打印 / 页面设置
-- 支持 A4/Letter 等纸张、横竖屏、页边距
+- 文件 → 打印预览/打印/页面设置：A4/Letter、横竖屏、页边距
 
 ### 11. 版本管理
-
-- 报告编辑窗口 → 工具 → 版本历史
-- 保存当前版本（可命名）、恢复历史版本、删除版本
-- 版本内容预览
+- 报告编辑窗口 → 工具 → 版本历史：保存命名版本、恢复、删除、内容预览
 
 ### 12. 标签管理
-
-- 工具 → 标签管理：新建/编辑/删除标签，设置颜色（12 种预设颜色）
-- 报告编辑器顶部下拉列表选择标签（单选）
-- 主界面报告列表和属性面板显示标签名称和颜色
+- 工具 → 标签管理：增删改 + 12 种颜色；报告顶部下拉单选；列表/属性面板显示
 
 ### 13. 附件管理
-
-- 报告编辑窗口 → 工具 → 附件管理
-- 上传文件（支持批量，进度条）、下载、打开、删除
-- 文件名显示原始文件名
+- 报告编辑窗口 → 工具 → 附件管理：批量上传（进度条）、下载、打开、删除
 
 ### 14. 数据导入
-
-- 数据表编辑器 → 导入 CSV
-- 自动检测分隔符和编码
-- 数据预览（前 20 行）
-- 三种导入模式：追加到现有数据、替换现有数据、创建新数据表
+- 数据表编辑器 → 导入 CSV：自动检测分隔符/编码、预览前 20 行、追加/替换/新建三种模式
 
 ### 15. 模板管理
-
-- 工具 → 模板管理器
-- 新建/编辑模板，设置名称、分类、描述、内容块
-- 新建报告时选择模板
+- 工具 → 模板管理器：新建/编辑（名称/分类/描述/内容）；新建报告时选用
 
 ### 16. 插件管理
-
-- 帮助 → 插件管理
-- 查看已加载插件列表、插件元信息
-- 18 个独立 .dll 插件，可扩展
+- 帮助 → 插件管理：查看已加载插件；PluginManager 动态加载 .dll（示例 DemoPlugin）
 
 ### 17. 设置
+- 工具 → 设置：外观（主题/字体/字号，重启生效）、数据（数据库路径）、颜色实时预览
 
-- 工具 → 设置
-- 外观：主题颜色、字体、字号（修改后需重启生效）
-- 数据：数据库路径（选择文件夹，程序自动创建数据库文件）
-- 颜色配置实时预览
-
----
+### 18. 日志级别控制
+- 默认：Release=`info`（Debug 日志编译期屏蔽，零开销）；Debug 构建=`debug` 全量输出
+- 现场排查临时开全量（免重编译）：`--log-level=debug` 命令行参数，或环境变量 `ERT_LOG_LEVEL=debug`（优先级：命令行 > 环境变量）
+- 可选级别：`debug/info/warning/error`；日志位于程序目录 `logs/`，按大小滚动
 
 ## 技术栈
 
@@ -229,39 +130,31 @@
 ### 分层架构
 
 ```
-┌─────────────────────────────────────────┐
-│  UI Layer (Qt Widgets)                   │  主窗口、编辑器、对话框、组件
-├─────────────────────────────────────────┤
-│  Service Layer                            │  ReportService/ProjectService/TagService
-├─────────────────────────────────────────┤
-│  Editor Layer                             │  块编辑器、报告编辑器、自动保存
-├─────────────────────────────────────────┤
-│  Plugin Layer                             │  18 个独立 .dll 插件
-├─────────────────────────────────────────┤
-│  Core Layer                               │  实体模型、插件接口、事件总线、工具类
-├─────────────────────────────────────────┤
-│  Data Layer                               │  数据库、仓储层
-└─────────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│  UI Layer (Qt Widgets)                     │  主窗口、报告编辑窗口、对话框、组件
+├───────────────────────────────────────────┤
+│  Service Layer                             │  Report/Project/Tag/DataTable/User Service
+├───────────────────────────────────────────┤
+│  Editor / Export / Print / Chart           │  报告编辑器、对象渲染（ObjectRenderer）、图表渲染
+├───────────────────────────────────────────┤
+│  Core Layer                                │  实体模型、插件接口、工具类（Logger/AppConfig）
+├───────────────────────────────────────────┤
+│  Data Layer                                │  DatabaseManager + Repository
+└───────────────────────────────────────────┘
 ```
 
 ### 插件架构
 
-- **core_lib**：核心框架动态库，包含所有基础功能
-- **18 个独立插件**（.dll）：
-  - 工具插件：搜索、标签管理、附件管理、版本历史、模板管理、插件管理
-  - 导入插件：CSV 导入
-  - 导出插件：PDF、HTML、Word、纯文本
-  - 编辑器块插件：文本、表格、图片、代码、公式、图表
-- 每个插件独立 CMakeLists.txt，运行时动态加载
-- PluginInterface 纯虚类，支持 qobject_cast 类型转换
+- **core_lib**：核心框架动态库，包含全部基础功能
+- **单一 PluginInterface 抽象基类** + PluginManager 动态加载；示例插件 plugins/demo（独立 CMakeLists.txt 编译为 .dll）
+- 早期版本曾用 18 个独立插件，v9.10 起精简为单一基类
 
 ### 核心设计模式
 
-- **仓储模式 (Repository Pattern)**：数据访问封装在 Repository 类中
+- **仓储模式 (Repository Pattern)**：数据访问封装在 Repository 类
 - **单例模式 (Singleton)**：DatabaseManager、Logger、UserSession、AppConfig
-- **工厂模式 (Factory Pattern)**：BlockEditorFactory 根据块类型创建编辑器
-- **插件模式 (Plugin Pattern)**：基于 Qt Plugin 系统的动态加载
-- **观察者模式 (Observer Pattern)**：Qt 信号槽 + 事件总线
+- **策略模式 (Strategy)**：对象渲染差异（导出/打印）通过 ObjectRenderer::Options 参数化
+- **观察者模式 (Observer Pattern)**：Qt 信号槽驱动 UI 与数据联动
 
 ---
 
@@ -269,270 +162,93 @@
 
 ```
 ExperimentReportTool/
-├── CMakeLists.txt                    # 根 CMake 配置
-├── README.md                         # 项目说明（唯一文档）
+├── CMakeLists.txt                  # 根 CMake（GLOB 自动收集 src 源码）
+├── README.md                       # 项目说明（唯一文档）
 ├── src/
-│   ├── main.cpp                      # 程序入口
-│   ├── app.qrc                       # 资源文件（QSS 样式表）
-│   │
-│   ├── core/                         # 核心层
-│   │   ├── models/                   # 实体模型
-│   │   │   ├── Project.h/cpp             # 实验项目
-│   │   │   ├── Report.h/cpp              # 实验报告（ContentBlock + JSON）
-│   │   │   ├── Template.h/cpp            # 报告模板
-│   │   │   ├── DataTable.h/cpp           # 实验数据表
-│   │   │   ├── Tag.h/cpp                 # 标签
-│   │   │   ├── Attachment.h/cpp          # 附件
-│   │   │   └── User.h/cpp                # 用户
-│   │   ├── plugin/                   # 插件框架
-│   │   │   ├── PluginInterface.h         # 插件基类接口
-│   │   │   ├── ToolPluginInterface.h     # 工具插件接口
-│   │   │   ├── ImportPluginInterface.h   # 导入插件接口
-│   │   │   ├── ExportPluginInterface.h   # 导出插件接口
-│   │   │   ├── EditorBlockPluginInterface.h  # 编辑器块插件接口
-│   │   │   ├── PluginManager.h/cpp       # 插件管理器
-│   │   │   └── CoreServiceImpl.h/cpp     # 核心服务实现
-│   │   ├── eventbus/                 # 事件总线
-│   │   │   └── EventBus.h/cpp
-│   │   └── utils/                    # 工具类
-│   │       ├── AppConstants.h            # 全局常量
-│   │       ├── AppConfig.h/cpp           # 配置管理（.ini）
-│   │       ├── AppTheme.h                # 主题常量（颜色/字体/间距）
-│   │       ├── AppDimensions.h           # 尺寸常量
-│   │       ├── Logger.h/cpp              # 线程安全日志
-│   │       ├── UserSession.h/cpp         # 当前用户会话
-│   │       └── CsvParser.h/cpp           # CSV 解析器
-│   │
-│   ├── data/                         # 数据层
-│   │   ├── database/
-│   │   │   └── DatabaseManager.h/cpp     # 数据库管理器（建表/迁移）
-│   │   └── repositories/             # 仓储层
-│   │       ├── ProjectRepository.h/cpp
-│   │       ├── ReportRepository.h/cpp
-│   │       ├── TemplateRepository.h/cpp
-│   │       ├── DataTableRepository.h/cpp
-│   │       ├── TagRepository.h/cpp
-│   │       ├── AttachmentRepository.h/cpp
-│   │       └── UserRepository.h/cpp
-│   │
-│   ├── service/                      # 服务层
-│   │   ├── ReportService.h/cpp
-│   │   ├── ProjectService.h/cpp
-│   │   └── TagService.h/cpp
-│   │
-│   ├── editor/                       # 编辑器层
-│   │   ├── BlockEditor.h/cpp            # 块编辑器基类
-│   │   ├── TextBlockEditor.h/cpp        # 文本块
-│   │   ├── TableBlockEditor.h/cpp       # 表格块
-│   │   ├── ImageBlockEditor.h/cpp       # 图片块
-│   │   ├── CodeBlockEditor.h/cpp        # 代码块
-│   │   ├── ChartBlockEditor.h/cpp       # 图表块
-│   │   ├── FormulaBlockEditor.h/cpp     # 公式块
-│   │   ├── ReportEditor.h/cpp            # 报告编辑器主组件
-│   │   ├── AutoSaveManager.h/cpp         # 自动保存
-│   │   └── ReportEditor.ui
-│   │
-│   ├── chart/                        # 图表模块
-│   │   ├── ChartRenderer.h/cpp
-│   │   └── ChartConfigDialog.h/cpp
-│   │
-│   ├── export/                       # 导出模块
-│   │   └── ExportManager.h/cpp
-│   │
-│   ├── print/                        # 打印模块
-│   │   └── PrintManager.h/cpp
-│   │
-│   ├── ui/                           # 界面层
-│   │   ├── MainWindow.h/cpp             # 主窗口
-│   │   ├── MainWindow.ui
-│   │   ├── ReportEditorWindow.h/cpp     # 报告编辑独立窗口
-│   │   ├── ReportEditorWindow.ui
-│   │   ├── widgets/
-│   │   │   ├── ProjectTreeWidget.h/cpp  # 项目树（按用户二级分类）
-│   │   │   └── ReportListWidget.h/cpp   # 报告列表
-│   │   └── dialogs/
-│   │       ├── LoginDialog.h/cpp         # 登录对话框
-│   │       ├── ChangePasswordDialog.h/cpp # 修改密码对话框
-│   │       ├── UserManagerDialog.h/cpp   # 用户管理对话框
-│   │       ├── ProjectDialog.h/cpp       # 项目编辑
-│   │       ├── TagManagerDialog.h/cpp    # 标签管理
-│   │       ├── AttachmentManagerDialog.h/cpp  # 附件管理
-│   │       ├── VersionHistoryDialog.h/cpp # 版本历史
-│   │       ├── TemplateEditorDialog.h/cpp # 模板编辑器
-│   │       ├── SettingsDialog.h/cpp       # 设置对话框
-│   │       ├── PluginManagerDialog.h/cpp  # 插件管理
-│   │       ├── SearchResultDialog.h/cpp   # 搜索结果
-│   │       └── FormulaEditorDialog.h/cpp  # 公式编辑器
-│   │
-│   └── plugins/                      # 插件（18 个独立 .dll）
-│       ├── tools/                    # 工具插件
-│       │   ├── search/
-│       │   ├── tagmanager/
-│       │   ├── attachmentmanager/
-│       │   ├── versionmanager/
-│       │   ├── templatemanager/
-│       │   └── pluginmanager/
-│       ├── import/                   # 导入插件
-│       │   └── csvimport/
-│       ├── export/                   # 导出插件
-│       │   ├── pdfexport/
-│       │   ├── htmlexport/
-│       │   ├── wordexport/
-│       │   └── textexport/
-│       └── editor/                   # 编辑器块插件
-│           ├── textblock/
-│           ├── tableblock/
-│           ├── imageblock/
-│           ├── codeblock/
-│           ├── formulablock/
-│           └── chartblock/
-│
-├── resources/                        # 资源文件
-│   └── styles/
-│       └── app.qss                   # 全局样式表
-│
-└── tests/                            # 单元测试（预留）
+│   ├── main.cpp                    # 程序入口
+│   ├── app.qss + resources.qrc     # 全局样式表与资源
+│   ├── core/                       # 核心层：模型（Project/Report/Template/DataTable/Tag/Attachment/User）、
+│   │                               #   插件框架（PluginManager）、工具类（Logger/AppConfig/AppTheme/UserSession）
+│   ├── data/                       # 数据层：DatabaseManager（建表/迁移/FTS5/索引/事务）+ 7 个 Repository
+│   ├── service/                    # 业务服务层（Report/Project/Tag/DataTable/User 等）
+│   ├── editor/                     # 报告编辑器：DocumentTextEdit（连续文档+对象锚点）、ReportEditor、
+│   │                               #   AutoSaveManager、DataTableEditorDialog
+│   ├── chart/                      # 图表：ChartRenderer、ChartConfigDialog
+│   ├── export/                     # 导出：HtmlGenerator（HTML/Word）、ExportManager、ObjectRenderer（对象渲染共享）
+│   ├── print/                      # 打印：PrintManager
+│   ├── search/                     # 搜索服务（FTS5 全文检索）
+│   ├── utils/                      # CSV 解析/导入工具
+│   └── ui/                         # 界面：MainWindow、ReportEditorWindow、widgets（项目树/报告列表/属性面板）、
+│                                   #   dialogs（登录/设置/模板/版本/标签/附件/公式/搜索结果等）
+├── plugins/demo/                   # 示例插件（插件框架示例）
+└── tests/                          # 单元测试（-DBUILD_TESTS=ON 启用）
 ```
 
 ---
 
 ## 编译方法
 
-### 前置要求
+**前置要求**：Qt 6.2+（Core/Gui/Widgets/Sql/Charts/PrintSupport）、CMake 3.16+、C++17 编译器（GCC 9+/Clang 10+/MSVC 2019+/MinGW 11+）
 
-- **Qt** 6.2+（必须包含：Core、Gui、Widgets、Sql、Charts、PrintSupport）
-- **CMake** 3.16+
-- **C++17** 兼容编译器：GCC 9+、Clang 10+、MSVC 2019+、MinGW 11+
+- **Windows (MinGW)**：`cmake .. -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\Qt\6.10.1\mingw_64 && mingw32-make -j`
+- **Windows (MSVC)**：`cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=C:\Qt\6.10.1\msvc2019_64 && cmake --build . --config Release`
+- **Linux/macOS**：`cmake .. -DCMAKE_PREFIX_PATH=/path/to/Qt/6.5.0/gcc_64 && make -j$(nproc)`
 
-### Windows (MinGW)
-
-```bash
-mkdir build && cd build
-cmake .. -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\Qt\6.10.1\mingw_64
-mingw32-make -j
-```
-
-### Windows (MSVC)
-
-```powershell
-mkdir build
-cd build
-cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=C:\Qt\6.10.1\msvc2019_64
-cmake --build . --config Release
-```
-
-### Linux / macOS
-
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH=/path/to/Qt/6.5.0/gcc_64
-make -j$(nproc)
-```
-
-### 注意事项
-
-- 新增 .cpp 文件无需手动修改 CMakeLists.txt（使用 file(GLOB_RECURSE) 自动收集）
-- 新增 Q_OBJECT 类或修改 .ui 文件后，需删除 build 目录重新运行 CMake
-- 插件编译为独立 .dll，运行时从 plugins/ 目录加载
-
----
+**注意**：新增 .cpp 无需改 CMakeLists（GLOB 自动收集）；新增 Q_OBJECT 类或改 .ui 后须删除 build 重跑 CMake；插件独立编译为 .dll 运行时从 plugins/ 加载。
 
 ## 数据库设计
 
-### 数据表清单（11 张）
+### 数据表清单（10 张 + 1 张 FTS5 虚拟表）
 
 | 表名 | 说明 |
 |------|------|
-| `users` | 用户表（用户名、密码哈希、显示名、角色、首次改密码标记） |
-| `projects` | 实验项目（树状结构，parent_id 自关联，created_by 创建者） |
-| `reports` | 实验报告（内容 JSON + created_by + version + word_count） |
+| `users` | 用户表（用户名、密码哈希、角色、首次改密码标记） |
+| `projects` | 实验项目（树状结构，parent_id 自关联） |
+| `reports` | 实验报告（document+objects JSON、created_by、modified_by、version） |
 | `report_versions` | 报告版本快照 |
-| `templates` | 报告模板 |
-| `data_tables` | 实验数据表 |
-| `tags` | 标签（名称、颜色） |
-| `report_tags` | 报告-标签多对多关联 |
+| `templates` | 报告模板（结构含 objects） |
+| `data_tables` | 实验数据表（columns/rows 存 JSON） |
+| `tags` / `report_tags` | 标签 + 报告-标签多对多关联 |
 | `attachments` | 附件 |
 | `app_meta` | 应用元信息（数据库版本等） |
+| `reports_fts` | FTS5 全文索引虚拟表（触发器同步，不可用时自动降级 LIKE） |
 
 ### 数据库版本迁移
 
-- 当前版本：**4**
-- v1→v2：tags 表添加 description 和 created_at
-- v2→v3：添加 users 表，projects/reports 表加 created_by 和 version
-- v3→v4：reports 表加 word_count（字数统计缓存）
-- 首次运行自动迁移，无需手动操作
+- 当前版本：**6**，首次运行自动迁移，无需手动操作
+- v1→v4：早期演进（tags/reports 扩展字段、users 表、word_count 缓存）
+- v4→v5：重建 data_tables 去掉外键（全局数据表可保存）
+- v5→v6：reports 表加 modified_by（修改者）
 
 ---
 
 ## 数据存储位置
 
-数据文件和配置文件放在**程序所在目录**：
-
 ```
 程序目录/
-├── data/
-│   └── experiment_reports.db    # SQLite 数据库
-├── logs/                         # 日志文件（按日期滚动）
-├── config.ini                    # 配置文件
-├── plugins/                      # 插件目录（.dll 文件）
-└── attachments/                  # 报告附件存储
+├── data/experiment_reports.db   # SQLite 数据库
+├── logs/                        # 日志（按大小滚动）
+├── config.ini                   # 配置
+├── plugins/                     # 插件 .dll
+└── attachments/                 # 报告附件
 ```
 
-多用户使用时，将整个程序目录放在共享文件夹，多人同时访问同一数据库文件。
-
----
+多用户：将整个程序目录放共享文件夹，多人访问同一数据库文件。
 
 ## 配置文件说明
 
-`config.ini` 位于程序目录，包含：
-
-```ini
-[Appearance]
-theme=default
-fontFamily=Microsoft YaHei
-baseFontSize=13
-primaryColor=#4A90D9
-successColor=#52c41a
-warningColor=#faad14
-dangerColor=#f5222d
-
-[Data]
-databasePath=              ; 为空则使用程序目录/data/
-showStatusBar=true
-
-[Window]
-width=1200
-height=800
-```
-
-可通过"工具 → 设置"可视化修改，颜色配置支持实时预览。
-
----
+`config.ini` 位于程序目录，三节：`[Appearance]`（主题/字体/颜色）、`[Data]`（数据库路径，空则用程序目录 data/）、`[Window]`（尺寸）。均可通过"工具 → 设置"可视化修改，颜色实时预览。
 
 ## 开发约定
 
 ### 槽函数命名
-
-所有按钮/控件的槽函数必须遵循 `on_<objectName>_<signalName>` 命名约定，由 uic 自动连接，禁止手动 connect。
-
-示例：
-- `on_m_saveBtn_clicked()`
-- `on_m_buttonBox_accepted()`
-- `on_m_versionList_itemClicked(QListWidgetItem* item)`
+- 槽函数必须遵循 `on_<objectName>_<signalName>` 命名约定，由 uic 自动连接，禁止手动 connect（示例：`on_m_saveBtn_clicked()`）
 
 ### 插件开发
-
-新增插件需继承对应接口（ToolPluginInterface/ImportPluginInterface/ExportPluginInterface/EditorBlockPluginInterface），使用 `Q_PLUGIN_METADATA` 宏，独立 CMakeLists.txt 编译为 .dll。
+- 继承 `PluginInterface` 抽象基类，`Q_PLUGIN_METADATA` 宏，独立 CMakeLists.txt 编译为 .dll
 
 ### 常量管理
-
-- 魔法数字/文字禁止硬编码
-- 外观常量 → AppTheme（颜色/字体/间距）
-- 尺寸常量 → AppDimensions
-- 可配置项 → AppConfig（.ini 文件）
-- 全局常量 → AppConstants
-
----
+- 禁止魔法数字/文字硬编码：外观 → AppTheme、尺寸 → AppDimensions、可配置项 → AppConfig（.ini）、全局常量 → AppConstants
 
 ## 许可证
 

@@ -79,6 +79,13 @@ Report::List ReportService::query(const ReportQuery& query)
 
     // 关键词筛选（标题/作者/标签）
     if (!query.keyword.isEmpty()) {
+        // 一次性批量取全部报告的标签，避免循环内逐报告查询（N+1）
+        QList<qint64> reportIds;
+        reportIds.reserve(reports.size());
+        for (const Report::Ptr& report : reports) reportIds.append(report->id());
+        const QHash<qint64, QStringList> tagNamesByReport =
+            TagRepository::findReportTagNamesBatch(reportIds);
+
         Report::List filtered;
         for (const Report::Ptr& report : reports) {
             bool match = false;
@@ -91,8 +98,8 @@ Report::List ReportService::query(const ReportQuery& query)
                 match = true;
             }
             // 标签匹配（通过关联表查询）
-            if (!match) {
-                const QStringList tagNames = TagRepository::findReportTagNames(report->id());
+            if (!match && tagNamesByReport.contains(report->id())) {
+                const QStringList tagNames = tagNamesByReport.value(report->id());
                 for (const QString& tagName : tagNames) {
                     if (tagName.contains(query.keyword, Qt::CaseInsensitive)) {
                         match = true;

@@ -40,7 +40,6 @@ struct ExportConfig {
     QString pageSize;          ///< 页面大小（A4, Letter 等）
     QString fontFamily;        ///< 字体
     int fontSize;              ///< 基础字号
-    bool enableSyntaxHighlight; ///< 代码块语法高亮
 
     ExportConfig()
         : format(ExportFormat::Pdf)
@@ -50,7 +49,6 @@ struct ExportConfig {
         , pageSize("A4")
         , fontFamily("Microsoft YaHei")
         , fontSize(12)
-        , enableSyntaxHighlight(true)
     {}
 };
 

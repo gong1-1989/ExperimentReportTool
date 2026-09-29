@@ -12,11 +12,12 @@
 #include <QString>
 #include <QSqlQuery>
 #include "core/models/Attachment.h"
+#include "BaseRepository.h"
 
 /**
  * @brief 附件仓储类
  */
-class AttachmentRepository
+class AttachmentRepository : public BaseRepository
 {
 public:
     // -----------------------------------------------------------------------

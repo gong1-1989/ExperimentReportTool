@@ -16,3 +16,7 @@ add_test(NAME tst_datatable COMMAND tst_datatable)
 add_executable(tst_report tst_report.cpp)
 target_link_libraries(tst_report PRIVATE core_lib Qt6::Test)
 add_test(NAME tst_report COMMAND tst_report)
+
+add_executable(tst_versiondiffer tst_versiondiffer.cpp)
+target_link_libraries(tst_versiondiffer PRIVATE core_lib Qt6::Test)
+add_test(NAME tst_versiondiffer COMMAND tst_versiondiffer)

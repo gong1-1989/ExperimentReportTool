@@ -23,8 +23,21 @@
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
 #include "core/utils/AppConfig.h"
+#include "core/utils/UserSession.h"
 #include "data/database/DatabaseManager.h"
 #include "core/plugin/PluginManager.h"
+
+/**
+ * @brief 解析日志级别字符串（--log-level= 或环境变量 ERT_LOG_LEVEL）
+ */
+static LogLevel parseLogLevel(const QString& s)
+{
+    const QString v = s.trimmed().toLower();
+    if (v == "debug")    return LogLevel::Debug;
+    if (v == "warning")  return LogLevel::Warning;
+    if (v == "error")    return LogLevel::Error;
+    return LogLevel::Info;
+}
 
 /**
  * @brief 初始化应用程序的全局设置
@@ -46,9 +59,29 @@ static void initializeApplication()
     // 初始化日志系统（程序目录下的 logs 子目录）
     const QString logDir = QCoreApplication::applicationDirPath() + "/logs";
     Logger::instance().initialize(logDir);
+    // 日志级别策略：命令行 --log-level= > 环境变量 ERT_LOG_LEVEL > 构建默认
+    // （Debug 构建默认 debug；Release 构建默认 info，Debug 日志编译为空）
+    LogLevel logLevel = LogLevel::Info;
+#ifndef QT_NO_DEBUG_OUTPUT
+    logLevel = LogLevel::Debug;
+#endif
+    const QByteArray envLevel = qgetenv("ERT_LOG_LEVEL");
+    if (!envLevel.isEmpty()) logLevel = parseLogLevel(QString::fromLatin1(envLevel));
+    const QStringList args = QCoreApplication::arguments();
+    for (const QString& a : args) {
+        if (a.startsWith("--log-level=", Qt::CaseInsensitive)) {
+            logLevel = parseLogLevel(a.mid(12));
+            break;
+        }
+    }
+    Logger::instance().setLogLevel(logLevel);
+    LOG_DEBUG(QString("日志级别: %1").arg(
+        logLevel == LogLevel::Debug ? "debug" :
+        logLevel == LogLevel::Warning ? "warning" :
+        logLevel == LogLevel::Error ? "error" : "info"));
     Logger::instance().info(QString("应用程序启动，版本 %1").arg(AppConstants::APP_VERSION));
-    Logger::instance().info(QString("数据目录: %1").arg(dataDir));
-    Logger::instance().info(QString("日志目录: %1").arg(logDir));
+    LOG_DEBUG(QString("数据目录: %1").arg(dataDir));
+    LOG_DEBUG(QString("日志目录: %1").arg(logDir));
 }
 
 /**
@@ -72,7 +105,7 @@ static bool initializeDatabase()
         return false;
     }
 
-    Logger::instance().info(QString("数据库初始化成功: %1").arg(dbPath));
+    Logger::instance().debug(QString("数据库初始化成功: %1").arg(dbPath));
     return true;
 }
 
@@ -99,7 +132,8 @@ int main(int argc, char *argv[])
     // 依次尝试：Qt 安装目录翻译目录 → 程序目录 translations → 程序目录
     // （发布部署时需将 qtbase_zh_CN.qm 拷贝到程序目录或 translations 子目录）
     {
-        auto* qtTranslator = new QTranslator(&app);  // 父对象管理生命周期，保持常驻
+        // 静态存储期：程序退出时销毁，晚于 app 析构，安全且无泄漏（clang-analyzer 不再误报）
+        static QTranslator qtTranslator;
         const QStringList candidates = {
             QLibraryInfo::path(QLibraryInfo::TranslationsPath) + "/qtbase_zh_CN",
             QLibraryInfo::path(QLibraryInfo::TranslationsPath) + "/qt_zh_CN",
@@ -108,9 +142,9 @@ int main(int argc, char *argv[])
         };
         bool loaded = false;
         for (const QString& path : candidates) {
-            if (qtTranslator->load(path)) {
-                app.installTranslator(qtTranslator);
-                Logger::instance().info(QString("Qt 中文翻译已加载: %1").arg(path));
+            if (qtTranslator.load(path)) {
+                app.installTranslator(&qtTranslator);
+                LOG_DEBUG(QString("Qt 中文翻译已加载: %1").arg(path));
                 loaded = true;
                 break;
             }
@@ -130,7 +164,7 @@ int main(int argc, char *argv[])
     if (qssFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         app.setStyleSheet(qssFile.readAll());
         qssFile.close();
-        Logger::instance().info("全局样式表已加载");
+        LOG_DEBUG("全局样式表已加载");
     } else {
         Logger::instance().warning("全局样式表加载失败");
     }
@@ -141,7 +175,7 @@ int main(int argc, char *argv[])
         appFont.setFamily(AppConfig::instance().fontFamily());
         appFont.setPixelSize(AppConfig::instance().baseFontSize());
         app.setFont(appFont);
-        Logger::instance().info(QString("全局字体已设置: %1, %2px")
+        LOG_DEBUG(QString("全局字体已设置: %1, %2px")
             .arg(appFont.family()).arg(appFont.pixelSize()));
     }
 
@@ -171,27 +205,35 @@ int main(int argc, char *argv[])
         .arg(pluginCount));
 
     // -----------------------------------------------------------------------
-    // 用户登录验证
+    // 用户登录验证（循环：登出后重新回到登录界面）
     // -----------------------------------------------------------------------
-    LoginDialog loginDialog;
-    if (loginDialog.exec() != QDialog::Accepted) {
-        // 用户取消登录或关闭登录窗口，直接退出程序
-        Logger::instance().info("用户取消登录，程序退出");
-        pluginManager.unloadAllPlugins();
-        DatabaseManager::instance().close();
-        return 0;
+    int exitCode = 0;
+    while (true) {
+        LoginDialog loginDialog;
+        if (loginDialog.exec() != QDialog::Accepted) {
+            // 用户取消登录或关闭登录窗口，直接退出程序
+            Logger::instance().info("用户取消登录，程序退出");
+            exitCode = 0;
+            break;
+        }
+
+        Logger::instance().info(QString("用户 '%1' 登录成功").arg(loginDialog.currentUsername()));
+
+        // 创建并显示主窗口
+        MainWindow mainWindow;
+        mainWindow.setPluginManager(&pluginManager);
+        mainWindow.show();
+
+        // 进入 Qt 事件循环（exec 阻塞直到窗口关闭）
+        exitCode = app.exec();
+
+        // 主窗口关闭后：若会话已清除（登出），回到登录界面重新登录；
+        // 否则（正常退出）结束程序
+        if (UserSession::instance().isLoggedIn()) {
+            break;
+        }
+        Logger::instance().info("用户已登出，返回登录界面");
     }
-
-    Logger::instance().info(QString("用户 '%1' 登录成功").arg(loginDialog.currentUsername()));
-
-    // 创建并显示主窗口
-    MainWindow mainWindow;
-    mainWindow.setPluginManager(&pluginManager);
-    mainWindow.show();
-
-    // 进入 Qt 事件循环
-    // exec() 会阻塞直到窗口关闭，返回退出码
-    const int exitCode = app.exec();
 
     // 清理资源
     pluginManager.unloadAllPlugins();

@@ -120,6 +120,12 @@ private:
     // -----------------------------------------------------------------------
 
     Ui::ChartConfigDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
+
+    /// 收集当前界面配置到 m_config
+    void collectConfig();
+
+    /// 图表渲染器（用于预览，需保持存活以维护 QChartView）
+    class ChartRenderer* m_previewRenderer = nullptr;
     DataTable::List m_tables;   ///< 可用的数据表列表
     ChartConfig m_config;       ///< 图表配置
 };

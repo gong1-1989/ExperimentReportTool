@@ -4,6 +4,7 @@
  */
 
 #include "PrintManager.h"
+#include "export/ObjectRenderer.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/AppTheme.h"
@@ -29,6 +30,9 @@
 #include <QDir>
 #include <QDateTime>
 #include <QByteArray>
+#include <QRegularExpression>
+#include <QVector>
+#include <QUrl>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -72,12 +76,20 @@ bool PrintManager::printPreview(const Report::Ptr& report, QWidget* parent)
         return false;
     }
 
+    LOG_DEBUG("打印预览开始");
+
     QPrinter printer(QPrinter::HighResolution);
     setupPrinter(printer, m_config);
 
     QPrintPreviewDialog preview(&printer, parent);
     preview.setWindowTitle(tr("打印预览 - %1").arg(report->title()));
     preview.resize(AppDimensions::Window::PrintPreviewWidth, AppDimensions::Window::PrintPreviewHeight);
+
+    // 收紧预览工具栏图标间距（避免全局 QSS 的 QToolButton padding 撑宽图标间隔）
+    preview.setStyleSheet(
+        "QPrintPreviewDialog QToolBar { spacing: 2px; padding: 2px 4px; }"
+        "QPrintPreviewDialog QToolButton { padding: 2px 5px; }"
+        "QPrintPreviewDialog QToolBar::separator { margin: 0 2px; }");
 
     // 连接 paintRequested 信号
     connect(&preview, &QPrintPreviewDialog::paintRequested,
@@ -89,7 +101,9 @@ bool PrintManager::printPreview(const Report::Ptr& report, QWidget* parent)
                 }
             });
 
-    return preview.exec() == QDialog::Accepted;
+    const bool accepted = preview.exec() == QDialog::Accepted;
+    cleanupTempChartFiles();
+    return accepted;
 }
 
 // ===========================================================================
@@ -102,6 +116,8 @@ bool PrintManager::print(const Report::Ptr& report, QWidget* parent)
         UiHelper::error(parent, tr("打印失败"), tr("报告为空"));
         return false;
     }
+
+    LOG_DEBUG("打印开始");
 
     QPrinter printer(QPrinter::HighResolution);
     setupPrinter(printer, m_config);
@@ -124,6 +140,7 @@ bool PrintManager::print(const Report::Ptr& report, QWidget* parent)
         delete doc;
     }
     QApplication::restoreOverrideCursor();
+    cleanupTempChartFiles();
 
     LOG_INFO(QString("报告已打印: %1").arg(report->title()));
     return true;
@@ -146,8 +163,10 @@ bool PrintManager::printWithConfig(const Report::Ptr& report,
     if (doc) {
         doc->print(&printer);
         delete doc;
+        cleanupTempChartFiles();
         return true;
     }
+    cleanupTempChartFiles();
     return false;
 }
 
@@ -183,8 +202,10 @@ bool PrintManager::exportToPdf(const Report::Ptr& report,
     if (doc) {
         doc->print(&printer);
         delete doc;
+        cleanupTempChartFiles();
         return QFile::exists(filePath);
     }
+    cleanupTempChartFiles();
     return false;
 }
 
@@ -279,61 +300,20 @@ QString PrintManager::extractHtmlBody(const QString& html)
  */
 static DataTable::Ptr getDataTableForPrint(qint64 id, const Report::Ptr& report)
 {
+    Q_UNUSED(report);
     if (id > 0) {
         // 正 ID：从数据库获取数据表
         return DataTableService::getById(id);
-    } else if (id < 0 && report) {
-        // 负 ID：从报告表格块获取
-        const int targetIndex = -id - 1;
-        int tableBlockIndex = 0;
-
-        for (int i = 0; i < report->blockCount(); ++i) {
-            const ContentBlock& block = report->blockAt(i);
-            if (block.type == BlockType::Table) {
-                if (tableBlockIndex == targetIndex) {
-                    // 将表格块转换为 DataTable
-                    DataTable::Ptr table = DataTable::create();
-                    table->setId(id);
-                    table->setName(QObject::tr("表格块 #%1").arg(tableBlockIndex + 1));
-
-                    const int cols = block.data.value("cols").toInt(0);
-                    QList<ColumnDefinition> columns;
-                    if (block.data.value("headers").isArray()) {
-                        const QJsonArray headers = block.data.value("headers").toArray();
-                        for (int col = 0; col < cols; ++col) {
-                            ColumnDefinition colDef;
-                            colDef.name = col < headers.size() ? headers[col].toString() : QString("列%1").arg(col + 1);
-                            colDef.type = ColumnType::Text;
-                            columns.append(colDef);
-                        }
-                    } else {
-                        for (int col = 0; col < cols; ++col) {
-                            ColumnDefinition colDef;
-                            colDef.name = QString("列%1").arg(col + 1);
-                            colDef.type = ColumnType::Text;
-                            columns.append(colDef);
-                        }
-                    }
-                    table->setColumns(columns);
-
-                    if (block.data.value("cells").isArray()) {
-                        const QJsonArray cells = block.data.value("cells").toArray();
-                        for (int row = 0; row < cells.size(); ++row) {
-                            const QJsonArray rowData = cells[row].toArray();
-                            QVariantList variantRow;
-                            for (int col = 0; col < cols; ++col) {
-                                variantRow.append(col < rowData.size() ? rowData[col].toVariant() : QVariant());
-                            }
-                            table->appendRow(variantRow);
-                        }
-                    }
-                    return table;
-                }
-                ++tableBlockIndex;
-            }
-        }
     }
     return nullptr;
+}
+
+void PrintManager::cleanupTempChartFiles()
+{
+    for (const QString& file : m_tempChartFiles) {
+        QFile::remove(file);
+    }
+    m_tempChartFiles.clear();
 }
 
 QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
@@ -362,7 +342,7 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
     QString html;
     html += "<html><head><meta charset='utf-8'><style>";
     html += "body { font-family: 'Microsoft YaHei', sans-serif; font-size: 11pt; line-height: 1.8; color: #333; }";
-    html += "h1 { font-size: 22pt; text-align: center; color: #1a1a1a; margin-bottom: 20px; }";
+    html += "h1 { font-size: 22pt; color: #1a1a1a; margin-bottom: 20px; }";   /* 对齐由段落自身决定 */
     html += "h2 { font-size: 16pt; color: #2a2a2a; margin-top: 24px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }";
     html += "h3 { font-size: 13pt; color: #333; margin-top: 18px; }";
     html += "p { margin: 10px 0; text-align: justify; }";
@@ -377,185 +357,84 @@ QTextDocument* PrintManager::renderDocument(const Report::Ptr& report,
     // 注意：不设置 img { max-width: 100%; }，让 QTextDocument 自动处理图片缩放
     html += "</style></head><body>";
 
-    // 标题
+    // 标题（报告主标题固定居中）
     if (config.includeTitle) {
-        html += QString("<h1>%1</h1>").arg(report->title().toHtmlEscaped());
+        html += QString("<p align='center' style='text-align:center; font-size:20pt; font-weight:bold;'>%1</p>").arg(report->title().toHtmlEscaped());
     }
 
     // 元信息
     if (config.includeMeta) {
         html += "<div class='meta'>";
-        html += QString("<span><strong>作者:</strong> %1</span>").arg(report->author().toHtmlEscaped());
-        html += QString("<span><strong>实验日期:</strong> %1</span>").arg(report->experimentDate().toString("yyyy-MM-dd"));
+        // QTextDocument 不支持 span 的 margin-right，用显式空格分隔三个信息项
+        html += QString("<span><strong>创建者:</strong> %1</span>&nbsp;&nbsp;&nbsp;").arg(report->author().toHtmlEscaped());
+        html += QString("<span><strong>实验日期:</strong> %1</span>&nbsp;&nbsp;&nbsp;").arg(report->experimentDate().toString("yyyy-MM-dd"));
         html += QString("<span><strong>创建时间:</strong> %1</span>").arg(report->createdAt().toString("yyyy-MM-dd hh:mm"));
         html += "</div>";
     }
 
-    // 内容块
-    for (int i = 0; i < report->blockCount(); ++i) {
-        const ContentBlock& block = report->blockAt(i);
-        switch (block.type) {
-        case BlockType::Heading1:
-            // 文本块存储的是完整 HTML 文档，需要提取 body 内容
-            html += QString("<h2>%1</h2>").arg(extractHtmlBody(block.data.value("text").toString()));
-            break;
-        case BlockType::Heading2:
-            html += QString("<h3>%1</h3>").arg(extractHtmlBody(block.data.value("text").toString()));
-            break;
-        case BlockType::Heading3:
-            html += QString("<h3 style='font-size:12pt;'>%1</h3>").arg(extractHtmlBody(block.data.value("text").toString()));
-            break;
-        case BlockType::Paragraph:
-            // 段落直接使用提取后的 HTML 内容（保留格式）
-            html += extractHtmlBody(block.data.value("text").toString());
-            break;
-        case BlockType::BulletList:
-            html += "<ul>";
-            if (block.data.value("items").isArray()) {
-                for (const QJsonValue& item : block.data.value("items").toArray()) {
-                    html += QString("<li>%1</li>").arg(item.toString().toHtmlEscaped());
-                }
-            }
-            html += "</ul>";
-            break;
-        case BlockType::NumberedList:
-            html += "<ol>";
-            if (block.data.value("items").isArray()) {
-                for (const QJsonValue& item : block.data.value("items").toArray()) {
-                    html += QString("<li>%1</li>").arg(item.toString().toHtmlEscaped());
-                }
-            }
-            html += "</ol>";
-            break;
-        case BlockType::Quote:
-            html += QString("<blockquote>%1</blockquote>").arg(extractHtmlBody(block.data.value("text").toString()));
-            break;
-        case BlockType::CodeBlock:
-            // 代码块使用纯文本，需要转义
-            html += QString("<pre><code>%1</code></pre>").arg(block.data.value("code").toString().toHtmlEscaped());
-            break;
-        case BlockType::Divider:
-            html += "<hr>";
-            break;
-        case BlockType::Image: {
-            const QString imagePath = block.data.value("path").toString();
-            const QString caption = block.data.value("caption").toString();
-
-            // 直接使用本地文件路径引用图片
-            if (!imagePath.isEmpty() && QFile::exists(imagePath)) {
-                // 使用 QUrl::fromLocalFile 生成正确的 file:/// 路径
-                const QString fileUrl = QUrl::fromLocalFile(imagePath).toString();
-                html += QString("<p align='center'><img src='%1'/></p>").arg(fileUrl);
-                // 图片说明
-                if (!caption.isEmpty()) {
-                    html += QString("<p align='center' style='color:#666; font-size:10pt;'>%1</p>")
-                                .arg(caption.toHtmlEscaped());
-                }
-            } else {
-                html += "<p align='center' style='color:#888;'>[未选择图片]</p>";
-            }
-            break;
-        }
-        case BlockType::Table: {
-            // 从 JSON 数据渲染 HTML 表格
-            const int rows = block.data.value("rows").toInt(0);
-            const int cols = block.data.value("cols").toInt(0);
-
-            if (rows > 0 && cols > 0) {
-                // 使用最简单的 HTML 表格，确保 QTextDocument 兼容
-                html += "<p><table border='1' cellspacing='0' cellpadding='4' width='100%'>";
-
-                // 表头
-                if (block.data.value("headers").isArray()) {
-                    const QJsonArray headers = block.data.value("headers").toArray();
-                    html += "<tr bgcolor='#e8e8e8'>";
-                    for (int col = 0; col < cols; ++col) {
-                        const QString headerText = col < headers.size()
-                                                       ? headers[col].toString()
-                                                       : QString("列%1").arg(col + 1);
-                        html += QString("<td><b>%1</b></td>").arg(headerText.toHtmlEscaped());
-                    }
-                    html += "</tr>";
-                }
-
-                // 表格数据
-                if (block.data.value("cells").isArray()) {
-                    const QJsonArray cells = block.data.value("cells").toArray();
-                    for (int row = 0; row < rows && row < cells.size(); ++row) {
-                        html += "<tr>";
-                        const QJsonArray rowData = cells[row].toArray();
-                        for (int col = 0; col < cols; ++col) {
-                            const QString cellText = col < rowData.size()
-                                                         ? rowData[col].toString()
-                                                         : QString();
-                            html += QString("<td>%1</td>").arg(cellText.toHtmlEscaped());
-                        }
-                        html += "</tr>";
-                    }
-                }
-
-                html += "</table></p>";
-            } else {
-                html += "<p style='text-align:center; color:#888;'>[空表格]</p>";
-            }
-            break;
-        }
-        case BlockType::Chart: {
-            // 从 JSON 数据解析图表配置
-            const ChartConfig config = ChartConfig::fromJson(block.data);
-
-            if (config.dataTableId != 0) {
-                // 根据 ID 获取数据表（正 ID=数据库，负 ID=表格块）
-                DataTable::Ptr table = getDataTableForPrint(config.dataTableId, report);
-
-                if (table) {
-                    // 使用 ChartRenderer 渲染图表
-                    ChartRenderer renderer;
-                    renderer.setConfig(config);
-                    renderer.setDataTable(table);
-
-                    if (renderer.render()) {
-                        // 将图表渲染为图片
-                        const int chartWidth = config.width > 0 ? config.width : 600;
-                        const int chartHeight = config.height > 0 ? config.height : 400;
-                        const QPixmap pixmap = renderer.toPixmap(chartWidth, chartHeight);
-                        if (!pixmap.isNull()) {
-                            // 保存为临时文件
-                            const QString tempFile = QString("%1/chart_%2_%3.png")
-                                                         .arg(QDir::tempPath())
-                                                         .arg(report->id())
-                                                         .arg(QDateTime::currentMSecsSinceEpoch());
-                            pixmap.save(tempFile, "PNG");
-
-                            // 使用 QUrl::fromLocalFile 生成正确的 file:/// 路径
-                            const QString fileUrl = QUrl::fromLocalFile(tempFile).toString();
-                            html += QString("<p align='center'>"
-                                            "<img src='%1'/>"
-                                            "</p>").arg(fileUrl);
-                            // 图表标题
-                            if (!config.title.isEmpty()) {
-                                html += QString("<p align='center' style='color:#666; font-size:10pt;'>%1</p>")
-                                            .arg(config.title.toHtmlEscaped());
-                            }
-                        } else {
-                            html += "<p align='center' style='color:#888;'>[图表渲染失败]</p>";
-                        }
-                    } else {
-                        html += "<p align='center' style='color:#888;'>[图表渲染失败]</p>";
-                    }
-                } else {
-                    html += "<p style='text-align:center; color:#888;'>[数据源不存在]</p>";
-                }
-            } else {
-                html += "<p style='text-align:center; color:#888;'>[未配置图表，请先选择数据源]</p>";
-            }
-            break;
-        }
-        default:
-            break;
-        }
+    // 内容：连续文档 + 对象锚点替换
+    QString contentHtml = extractHtmlBody(report->document());
+    if (contentHtml.isEmpty()) {
+        contentHtml = "<p style='color:#888;'>（报告内容为空）</p>";
     }
 
+    // 对象锚点 → 对象渲染 HTML（object://type/id）
+    const QRegularExpression anchorRegex(
+        "<img[^>]*src=\"object://([^/\"]+)/([^\"]+)\"[^>]*>");
+    // 对象锚点段落 → 对齐方式映射（跟随编辑窗段落对齐设置）
+    QHash<QString, QString> anchorAligns;
+    {
+        const QRegularExpression pRe("<p([^>]*)>(.*?)</p>",
+                                     QRegularExpression::DotMatchesEverythingOption);
+        const QRegularExpression objRe("object://[a-z_0-9]+/([0-9a-fA-F-]+)");
+        const QRegularExpression alignRe("align=[\"'](left|center|right|justify)[\"']",
+                                         QRegularExpression::CaseInsensitiveOption);
+        QRegularExpressionMatchIterator pit = pRe.globalMatch(contentHtml);
+        while (pit.hasNext()) {
+            const QRegularExpressionMatch pm = pit.next();
+            const QRegularExpressionMatch om = objRe.match(pm.captured(2));
+            if (!om.hasMatch()) continue;
+            QString align = QStringLiteral("left"); // 无 align 属性 = 左对齐
+            const QRegularExpressionMatch am = alignRe.match(pm.captured(1));
+            if (am.hasMatch()) align = am.captured(1);
+            anchorAligns.insert(om.captured(1), align);
+        }
+    }
+    const auto renderObject = [&](const QRegularExpressionMatch& m) -> QString {
+        const QString objectId = m.captured(2);
+        const QString align = anchorAligns.value(objectId, QStringLiteral("left"));
+
+        // 在报告对象中查找
+        ContentBlock object;
+        const QList<ContentBlock>& objects = report->objects();
+        for (const ContentBlock& obj : objects) {
+            if (obj.id == objectId) { object = obj; break; }
+        }
+        if (object.id.isEmpty()) {
+            return QString("<p style='color:#888;'>[对象已不存在]</p>");
+        }
+
+        // 统一走共享渲染器（与导出同一套对象渲染逻辑，参数化打印差异）
+        // 打印用本地文件/临时文件引用，且数据表查找带旧版内嵌 fallback（getDataTableForPrint）
+        return ObjectRenderer::renderObject(
+            object, align, ObjectRenderer::printOptions(), report->id(),
+            [&](qint64 tid) { return getDataTableForPrint(tid, report); },
+            &m_tempChartFiles);
+    };
+    QRegularExpressionMatchIterator anchorIt = anchorRegex.globalMatch(contentHtml);
+    QVector<QPair<int, int> > anchorSpans;
+    QVector<QString> anchorHtmls;
+    while (anchorIt.hasNext()) {
+        const QRegularExpressionMatch m = anchorIt.next();
+        anchorSpans.append(qMakePair(m.capturedStart(0), m.capturedLength(0)));
+        anchorHtmls.append(renderObject(m));
+    }
+    for (int ai = anchorSpans.size() - 1; ai >= 0; --ai) {
+        contentHtml.replace(anchorSpans.at(ai).first, anchorSpans.at(ai).second,
+                            anchorHtmls.at(ai));
+    }
+
+    html += contentHtml;
     html += "</body></html>";
     doc->setHtml(html);
 

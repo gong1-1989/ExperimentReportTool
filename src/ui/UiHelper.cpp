@@ -100,3 +100,25 @@ bool UiHelper::confirm(QWidget* parent, const QString& title, const QString& mes
     box.exec();
     return box.clickedButton() == yesBtn;
 }
+
+
+void UiHelper::centerTableWidget(QTableWidget* table)
+{
+    if (!table) return;
+    // 单元格内容水平+垂直居中（委托方式，QSS text-align 对表格不生效）
+    table->setItemDelegate(new CenteredItemDelegate(table));
+    // 表头内容居中
+    if (QHeaderView* hh = table->horizontalHeader()) {
+        hh->setDefaultAlignment(Qt::AlignCenter);
+    }
+}
+
+void UiHelper::centerTableWidget(QTableView* table)
+{
+    if (!table) return;
+    // 单元格内容水平+垂直居中（QTableView + Model 场景）
+    table->setItemDelegate(new CenteredItemDelegate(table));
+    if (QHeaderView* hh = table->horizontalHeader()) {
+        hh->setDefaultAlignment(Qt::AlignCenter);
+    }
+}

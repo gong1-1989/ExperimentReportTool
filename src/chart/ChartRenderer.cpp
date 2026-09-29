@@ -45,8 +45,15 @@ ChartRenderer::ChartRenderer(QObject* parent)
 
 ChartRenderer::~ChartRenderer()
 {
-    // 直接删除 chartView，会自动删除 chart
-    // 不要调用 hide() 或 disconnect()，可能在析构时导致问题
+    // m_chartView 使用 QPointer 管理：
+    // - 预览场景：chartView 加入宿主布局后由宿主销毁，QPointer 自动置空，这里 delete 空指针安全
+    // - 离屏渲染场景：chartView 由本析构删除，防止泄漏
+    // 因此无需（也不能）在析构中访问 chartView 的 parent——那可能在宿主已先删时造成悬垂访问
+    //
+    // 注意：不能在这里 delete m_chart！
+    // QChartView(QChart*) 构造时会将 QChart 加入其内部 QGraphicsScene，
+    // QGraphicsScene 析构时负责删除其中的 QChart（QGraphicsItem 由所属 scene 管理）。
+    // 因此 delete m_chartView 时 m_chart 已被 scene 释放，再 delete m_chart 会双重释放（SIGSEGV）。
     delete m_chartView;
     m_chartView = nullptr;
     m_chart = nullptr;
@@ -63,7 +70,7 @@ bool ChartRenderer::render()
         return false;
     }
 
-    // 删除旧图表
+    // 删除旧图表（QPointer 安全：若已被宿主销毁则自动为空）
     if (m_chartView) {
         delete m_chartView;
         m_chartView = nullptr;
@@ -396,16 +403,21 @@ QVector<QPointF> ChartRenderer::extractSeriesData(int yColumn) const
 {
     QVector<QPointF> points;
 
-    // X 轴使用行索引（0, 1, 2, ...）
-    // 如果 X 轴列是数值类型，也可以用该列的值
+    // X 轴列存在时优先使用该列的值（不限定列类型，值可转数值即用）；
+    // 否则回退为行索引（0, 1, 2, ...）
+    // 说明：表格块的列类型为 Text，若按类型判断会退化导致 X 轴坐标错误
     const bool useXColumn = m_config.xAxisColumn >= 0
-        && m_config.xAxisColumn < m_table->columnCount()
-        && m_table->columnAt(m_config.xAxisColumn).type == ColumnType::Number;
+        && m_config.xAxisColumn < m_table->columnCount();
 
     for (int row = 0; row < m_table->rowCount(); ++row) {
-        double x = useXColumn
-            ? m_table->cellValue(row, m_config.xAxisColumn).toDouble()
-            : static_cast<double>(row);
+        double x = 0.0;
+        if (useXColumn) {
+            bool xOk = false;
+            const double xd = m_table->cellValue(row, m_config.xAxisColumn).toDouble(&xOk);
+            x = xOk ? xd : static_cast<double>(row);
+        } else {
+            x = static_cast<double>(row);
+        }
 
         bool ok = false;
         const double y = m_table->cellValue(row, yColumn).toDouble(&ok);

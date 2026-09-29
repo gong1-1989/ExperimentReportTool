@@ -73,6 +73,20 @@
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="previewGroup">
+     <property name="title"><string>预览</string></property>
+     <layout class="QVBoxLayout" name="previewLayout">
+      <item>
+       <widget class="QLabel" name="m_previewPlaceholder">
+        <property name="text"><string>点击"预览"按钮查看图表效果</string></property>
+        <property name="alignment"><set>Qt::AlignCenter</set></property>
+        <property name="styleSheet"><string notr="true">color: #909399; padding: 20px;</string></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QDialogButtonBox" name="m_buttonBox">
      <property name="orientation"><enum>Qt::Horizontal</enum></property>
      <property name="standardButtons"><set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set></property>

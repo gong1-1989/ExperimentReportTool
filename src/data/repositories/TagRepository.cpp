@@ -29,6 +29,7 @@
 #include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
 
+#include <QSet>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QVariant>
@@ -51,7 +52,7 @@
  */
 Tag::Ptr TagRepository::findById(qint64 tagId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用预处理语句查询
@@ -83,7 +84,7 @@ Tag::Ptr TagRepository::findById(qint64 tagId)
  */
 Tag::Ptr TagRepository::findByName(const QString& name)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用预处理语句查询
@@ -117,7 +118,7 @@ Tag::Ptr TagRepository::findByName(const QString& name)
 Tag::List TagRepository::findAll()
 {
     Tag::List tags;
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 查询所有标签（不再统计使用次数）
@@ -156,7 +157,7 @@ Tag::List TagRepository::search(const QString& keyword)
     // 关键词为空时返回所有标签
     if (keyword.isEmpty()) return findAll();
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 模糊搜索标签名称
@@ -199,7 +200,7 @@ bool TagRepository::save(Tag::Ptr tag)
     // 空指针检查
     if (!tag) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     if (tag->isNew()) {
@@ -216,10 +217,7 @@ bool TagRepository::save(Tag::Ptr tag)
         query.bindValue(":created_at", tag->createdAt());
 
         // 执行插入
-        if (!query.exec()) {
-            LOG_ERROR(QString("创建标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-            return false;
-        }
+        if (!BaseRepository::execChecked(query, "创建标签")) return false;
 
         // 获取自增 ID 并回写到对象
         tag->setId(query.lastInsertId().toLongLong());
@@ -237,10 +235,7 @@ bool TagRepository::save(Tag::Ptr tag)
         query.bindValue(":id", tag->id());
 
         // 执行更新
-        if (!query.exec()) {
-            LOG_ERROR(QString("更新标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-            return false;
-        }
+        if (!BaseRepository::execChecked(query, "更新标签")) return false;
     }
 
     return true;
@@ -272,7 +267,7 @@ bool TagRepository::remove(qint64 tagId)
     // 参数校验
     if (tagId <= 0) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用事务保证删除操作的原子性
@@ -327,7 +322,7 @@ bool TagRepository::remove(qint64 tagId)
  */
 bool TagRepository::exists(const QString& name, qint64 excludeId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 根据是否需要排除自身构建不同的 SQL
@@ -369,7 +364,7 @@ bool TagRepository::exists(const QString& name, qint64 excludeId)
 Tag::List TagRepository::findByReport(qint64 reportId)
 {
     Tag::List tags;
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 通过关联表查询报告的标签
@@ -404,7 +399,7 @@ Tag::List TagRepository::findByReport(qint64 reportId)
 QList<qint64> TagRepository::findReportIdsByTag(qint64 tagId)
 {
     QList<qint64> reportIds;
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 查询关联表中该标签的所有报告 ID
@@ -435,7 +430,7 @@ QList<qint64> TagRepository::findReportIdsByTag(qint64 tagId)
  */
 bool TagRepository::addToReport(qint64 reportId, qint64 tagId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 检查是否已存在关联（幂等性保证）
@@ -451,10 +446,7 @@ bool TagRepository::addToReport(qint64 reportId, qint64 tagId)
     query.bindValue(":reportId", reportId);
     query.bindValue(":tagId", tagId);
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("添加报告标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "添加报告标签")) return false;
 
     return true;
 }
@@ -470,7 +462,7 @@ bool TagRepository::addToReport(qint64 reportId, qint64 tagId)
  */
 bool TagRepository::removeFromReport(qint64 reportId, qint64 tagId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 删除关联记录
@@ -478,10 +470,7 @@ bool TagRepository::removeFromReport(qint64 reportId, qint64 tagId)
     query.bindValue(":reportId", reportId);
     query.bindValue(":tagId", tagId);
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("移除报告标签失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "移除报告标签")) return false;
 
     // 更新使用次数
     return true;
@@ -509,7 +498,7 @@ bool TagRepository::removeFromReport(qint64 reportId, qint64 tagId)
  */
 bool TagRepository::setReportTags(qint64 reportId, const QList<qint64>& tagIds)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
 
     // 开启事务，保证清除和添加的原子性
     if (!db.transaction()) {
@@ -626,6 +615,64 @@ QStringList TagRepository::findReportTagNames(qint64 reportId)
     }
 
     return names;
+}
+
+
+/**
+ * @brief 批量查询多个报告的标签名（一条 SQL 完成，避免循环内逐报告查询的 N+1 问题）
+ * @param reportIds 报告 ID 列表
+ * @return 映射：report_id -> 标签名列表（无标签的报告不在映射中）
+ */
+QHash<qint64, QStringList> TagRepository::findReportTagNamesBatch(const QList<qint64>& reportIds)
+{
+    QHash<qint64, QStringList> result;
+    if (reportIds.isEmpty()) return result;
+
+    // 去重（同一列表可能含重复 id）
+    // Qt6 已移除 QList::toSet()，改用 QSet 迭代器构造去重
+    for (const QList<qint64>& batch : BaseRepository::chunkIds(BaseRepository::dedupeIds(reportIds))) {
+        QSqlDatabase db = BaseRepository::db();
+        QSqlQuery query(db);        query.prepare(QString(
+            "SELECT rt.report_id, t.name FROM tags t "
+            "JOIN report_tags rt ON rt.tag_id = t.id "
+            "WHERE rt.report_id IN (%1) "
+            "ORDER BY rt.report_id, t.name").arg(BaseRepository::inPlaceholders(batch.size())));
+        for (int i = 0; i < batch.size(); ++i) {
+            query.bindValue(QString(":id%1").arg(i), batch.at(i));
+        }
+        if (!BaseRepository::execChecked(query, "批量查询报告标签名")) continue;
+
+        while (query.next()) {
+            const qint64 reportId = query.value(0).toLongLong();
+            result[reportId].append(query.value(1).toString());
+        }
+    }
+    return result;
+}
+QHash<qint64, Tag::List> TagRepository::findReportTagsBatch(const QList<qint64>& reportIds)
+{
+    QHash<qint64, Tag::List> result;
+    if (reportIds.isEmpty()) return result;
+
+    // 去重 + 500 一批分块（同 findReportTagNamesBatch 惯例）
+    for (const QList<qint64>& batch : BaseRepository::chunkIds(BaseRepository::dedupeIds(reportIds))) {
+        QSqlDatabase db = BaseRepository::db();
+        QSqlQuery query(db);        query.prepare(QString(
+            "SELECT rt.report_id, t.* FROM tags t "
+            "JOIN report_tags rt ON rt.tag_id = t.id "
+            "WHERE rt.report_id IN (%1) "
+            "ORDER BY rt.report_id, t.name").arg(BaseRepository::inPlaceholders(batch.size())));
+        for (int i = 0; i < batch.size(); ++i) {
+            query.bindValue(QString(":id%1").arg(i), batch.at(i));
+        }
+        if (!BaseRepository::execChecked(query, "批量查询报告标签")) continue;
+
+        while (query.next()) {
+            const qint64 reportId = query.value(0).toLongLong();
+            result[reportId].append(createFromQuery(query));
+        }
+    }
+    return result;
 }
 
 // ===========================================================================

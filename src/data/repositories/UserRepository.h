@@ -12,11 +12,12 @@
 #include <QString>
 #include <QSqlQuery>
 #include "core/models/User.h"
+#include "BaseRepository.h"
 
 /**
  * @brief 用户仓储类
  */
-class UserRepository
+class UserRepository : public BaseRepository
 {
 public:
     // -----------------------------------------------------------------------

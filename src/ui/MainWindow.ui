@@ -197,6 +197,7 @@
     <addaction name="m_actionImportData"/>
     <addaction name="m_actionExportReport"/>
     <addaction name="separator"/>
+    <addaction name="m_actionLogout"/>
     <addaction name="m_actionExit"/>
    </widget>
    <widget class="QMenu" name="menuEdit">
@@ -348,6 +349,11 @@
    </property>
    <property name="statusTip">
     <string>退出应用程序</string>
+   </property>
+  </action>
+    <action name="m_actionLogout">
+   <property name="text">
+    <string>登出(&amp;L)</string>
    </property>
   </action>
   <action name="m_actionEditProject">

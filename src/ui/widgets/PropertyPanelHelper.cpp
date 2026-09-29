@@ -7,6 +7,7 @@
 #include "core/utils/Logger.h"
 
 #include <QObject>
+#include <QCoreApplication>
 #include <QColor>
 
 // ===========================================================================
@@ -23,7 +24,7 @@ QString PropertyPanelHelper::reportHtml(const Report::Ptr& report)
     const QString statusStr = report->statusDisplayName();
 
     // 项目名称
-    QString projectName = QObject::tr("未分类");
+    QString projectName = QCoreApplication::translate("PropertyPanelHelper", "未分类");
     if (report->projectId() > 0) {
         const Project::Ptr project = ProjectService::getById(report->projectId());
         if (project) projectName = project->name();
@@ -33,12 +34,24 @@ QString PropertyPanelHelper::reportHtml(const Report::Ptr& report)
     const Tag::List tags = TagService::findByReport(report->id());
     const QString tagsHtml = PropertyPanelHelper::tagsHtml(tags);
 
-    // 创建者
-    QString creatorName = QObject::tr("未分配");
-    if (report->createdBy() > 0) {
-        const User::Ptr creator = UserService::getById(report->createdBy());
-        if (creator) creatorName = creator->displayNameOrUsername();
-        else creatorName = QObject::tr("未知用户");
+    // 创建者 + 修改者：批量一次查询（消除 2 次单查）
+    QString creatorName = QCoreApplication::translate("PropertyPanelHelper", "未分配");
+    QString modifierName = QCoreApplication::translate("PropertyPanelHelper", "未分配");
+    {
+        QList<qint64> userIds;
+        if (report->createdBy() > 0) userIds.append(report->createdBy());
+        if (report->modifiedBy() > 0 && report->modifiedBy() != report->createdBy()) {
+            userIds.append(report->modifiedBy());
+        }
+        const QMap<qint64, QString> userNames = UserService::batchDisplayNames(userIds);
+        if (report->createdBy() > 0) {
+            creatorName = userNames.value(report->createdBy(),
+                QCoreApplication::translate("PropertyPanelHelper", "未知用户"));
+        }
+        if (report->modifiedBy() > 0) {
+            modifierName = userNames.value(report->modifiedBy(),
+                QCoreApplication::translate("PropertyPanelHelper", "未知用户"));
+        }
     }
 
     return QString(
@@ -48,6 +61,7 @@ QString PropertyPanelHelper::reportHtml(const Report::Ptr& report)
         "<p><b>状态：</b>%4</p>"
         "<p><b>项目：</b>%5</p>"
         "<p><b>创建者：</b>%6</p>"
+        "<p><b>修改者：</b>%13</p>"
         "<p><b>实验日期：</b>%7</p>"
         "<p><b>更新时间：</b>%8</p>"
         "<p><b>字数：</b>%9 字</p>"
@@ -57,16 +71,17 @@ QString PropertyPanelHelper::reportHtml(const Report::Ptr& report)
         "</div>"
     ).arg(AppTheme::FontSize::Small)
      .arg(AppTheme::Color::Primary)
-     .arg(report->title().isEmpty() ? QObject::tr("未命名") : report->title().toHtmlEscaped())
+     .arg(report->title().isEmpty() ? QCoreApplication::translate("PropertyPanelHelper", "未命名") : report->title().toHtmlEscaped())
      .arg(statusStr)
      .arg(projectName.toHtmlEscaped())
      .arg(creatorName.toHtmlEscaped())
-     .arg(report->experimentDate().isValid() ? report->experimentDate().toString("yyyy-MM-dd") : QObject::tr("未设置"))
-     .arg(report->updatedAt().isValid() ? report->updatedAt().toString("yyyy-MM-dd HH:mm") : QObject::tr("未知"))
+     .arg(report->experimentDate().isValid() ? report->experimentDate().toString("yyyy-MM-dd") : QCoreApplication::translate("PropertyPanelHelper", "未设置"))
+     .arg(report->updatedAt().isValid() ? report->updatedAt().toString("yyyy-MM-dd HH:mm") : QCoreApplication::translate("PropertyPanelHelper", "未知"))
      .arg(QString::number(report->wordCount()))
-     .arg(QString::number(report->blockCount()))
+     .arg(QString::number(report->objectCount()))
      .arg(tagsHtml)
-     .arg(QString::number(report->id()));
+     .arg(QString::number(report->id()))
+     .arg(modifierName.toHtmlEscaped());
 }
 
 // ===========================================================================
@@ -93,9 +108,9 @@ QString PropertyPanelHelper::projectHtml(const Project::Ptr& project)
     ).arg(AppTheme::FontSize::Small)
      .arg(AppTheme::Color::Success)
      .arg(project->name().toHtmlEscaped())
-     .arg(project->description().isEmpty() ? QObject::tr("无描述") : project->description().toHtmlEscaped())
+     .arg(project->description().isEmpty() ? QCoreApplication::translate("PropertyPanelHelper", "无描述") : project->description().toHtmlEscaped())
      .arg(QString::number(reportCount))
-     .arg(project->createdAt().isValid() ? project->createdAt().toString("yyyy-MM-dd HH:mm") : QObject::tr("未知"))
+     .arg(project->createdAt().isValid() ? project->createdAt().toString("yyyy-MM-dd HH:mm") : QCoreApplication::translate("PropertyPanelHelper", "未知"))
      .arg(QString::number(project->id()));
 }
 
@@ -120,7 +135,7 @@ QString PropertyPanelHelper::emptyHtml()
 QString PropertyPanelHelper::tagsHtml(const Tag::List& tags)
 {
     if (tags.isEmpty()) {
-        return QObject::tr("无标签");
+        return QCoreApplication::translate("PropertyPanelHelper", "无标签");
     }
 
     QString html;

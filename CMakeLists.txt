@@ -43,14 +43,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # ---------------------------------------------------------------------------
 # 查找 Qt
 # ---------------------------------------------------------------------------
-find_package(Qt6 QUIET COMPONENTS Core Gui Widgets Sql Charts PrintSupport)
+find_package(Qt6 QUIET COMPONENTS Core Gui Widgets Sql Charts PrintSupport Concurrent)
 if(Qt6_FOUND)
     set(QT_VERSION_MAJOR 6)
-    set(QT_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Charts Qt6::PrintSupport)
+    set(QT_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Charts Qt6::PrintSupport Qt6::Concurrent)
 else()
-    find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Sql Charts PrintSupport)
+    find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Sql Charts PrintSupport Concurrent)
     set(QT_VERSION_MAJOR 5)
-    set(QT_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql Qt5::Charts Qt5::PrintSupport)
+    set(QT_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql Qt5::Charts Qt5::PrintSupport Qt5::Concurrent)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -67,6 +67,11 @@ file(GLOB_RECURSE CORE_QRC CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.qrc")
 # 排除 main.cpp
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
 
+# 排除已删除的旧块编辑器（v9.17.0 重构后文件已移除；
+# Windows 工作副本可能残留旧文件，排除后即使残留也不参与编译）
+list(FILTER CORE_SOURCES EXCLUDE REGEX
+    ".*/src/editor/(BlockEditor|TextBlockEditor|TableBlockEditor|ChartBlockEditor|ImageBlockEditor|CodeBlockEditor|FormulaBlockEditor|OtherBlockEditors)\..*$")
+
 add_library(core_lib SHARED ${CORE_SOURCES} ${CORE_UI} ${CORE_QRC})
 
 target_include_directories(core_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
@@ -81,7 +86,7 @@ set_target_properties(core_lib PROPERTIES
 # ---------------------------------------------------------------------------
 # 主程序可执行文件
 # ---------------------------------------------------------------------------
-add_executable(${PROJECT_NAME} src/main.cpp)
+add_executable(${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/src/main.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE core_lib)
 
 if(WIN32)

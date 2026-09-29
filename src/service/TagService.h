@@ -20,6 +20,10 @@ public:
     static bool exists(const QString& name, qint64 excludeId);
     static Tag::List search(const QString& keyword);
     static Tag::List findByReport(qint64 reportId);
+    /// 批量查询多个报告 id → 标签名列表（一次 SQL，列表/表格渲染用）
+    static QHash<qint64, QStringList> findReportTagNamesBatch(const QList<qint64>& reportIds);
+    /// 批量查询多个报告 id → 完整标签对象列表（含颜色，搜索结果/列表渲染用）
+    static QHash<qint64, Tag::List> findReportTagsBatch(const QList<qint64>& reportIds);
     static bool setReportTags(qint64 reportId, const QList<qint64>& tagIds);
 
 private:

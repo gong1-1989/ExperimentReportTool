@@ -12,6 +12,7 @@
 #include <QWidget>
 #include <QChart>
 #include <QChartView>
+#include <QPointer>
 #include <QLineSeries>
 #include <QBarSeries>
 #include <QPieSeries>
@@ -108,7 +109,7 @@ private:
     ChartConfig m_config;
     DataTable::Ptr m_table;
     QChart* m_chart;
-    QChartView* m_chartView;
+    QPointer<QChartView> m_chartView;  ///< QPointer：宿主先删时自动置空，避免双重删除
 };
 
 #endif // CHART_RENDERER_H

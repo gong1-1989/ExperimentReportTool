@@ -17,6 +17,7 @@
 #include <QSqlQuery>
 
 #include "core/models/Project.h"
+#include "BaseRepository.h"
 
 /**
  * @brief 项目查询条件结构体
@@ -49,7 +50,7 @@ struct ProjectQuery {
  * 所有方法都是静态的，因为数据库连接是全局共享的。
  * 如果未来需要支持多数据库实例，可以改为实例方法并注入连接。
  */
-class ProjectRepository
+class ProjectRepository : public BaseRepository
 {
 public:
     // -----------------------------------------------------------------------
@@ -69,6 +70,8 @@ public:
      * @return 项目列表
      */
     static Project::List findAll(const ProjectQuery& query = ProjectQuery());
+    /// 批量查询多个项目 id → 项目名（搜索结果/列表渲染用，一次 SQL）
+    static QHash<qint64, QString> findNamesBatch(const QList<qint64>& projectIds);
 
     /**
      * @brief 查找根项目（parent_id <= 0）

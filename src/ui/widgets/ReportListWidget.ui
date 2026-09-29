@@ -101,7 +101,7 @@
      <property name="currentIndex">
       <number>0</number>
      </property>
-     <widget class="QTableWidget" name="tableWidget"/>
+     <widget class="QTableView" name="tableWidget"/>
      <widget class="QListWidget" name="cardWidget"/>
     </widget>
    </item>

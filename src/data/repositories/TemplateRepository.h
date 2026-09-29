@@ -8,8 +8,9 @@
 
 #include <QSqlQuery>
 #include "core/models/Template.h"
+#include "BaseRepository.h"
 
-class TemplateRepository
+class TemplateRepository : public BaseRepository
 {
 public:
     static Template::Ptr findById(qint64 id);

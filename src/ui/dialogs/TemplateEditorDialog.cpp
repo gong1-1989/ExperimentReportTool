@@ -106,19 +106,12 @@ void TemplateEditorDialog::loadTemplate()
         m_template->setName(tr("新模板"));
         m_template->setCategory(tr("通用"));
 
-        // 添加默认块
+        // 默认模板结构（连续文档 HTML）
         Report::Ptr dummyReport = Report::create();
-        ContentBlock h1(BlockType::Heading1);
-        h1.data["text"] = "实验名称";
-        dummyReport->appendBlock(h1);
-
-        ContentBlock p(BlockType::Paragraph);
-        p.data["text"] = "";
-        dummyReport->appendBlock(p);
-
-        ContentBlock h2(BlockType::Heading1);
-        h2.data["text"] = "实验目的";
-        dummyReport->appendBlock(h2);
+        dummyReport->setDocument(
+            QString("<p style=\"font-size:20pt;\">实验名称</p>\n"
+                    "<p></p>\n"
+                    "<p style=\"font-size:20pt;\">实验目的</p>"));
 
         m_editor->loadReport(dummyReport);
     } else {
@@ -134,11 +127,10 @@ void TemplateEditorDialog::loadTemplate()
             ui->m_categoryCombo->setEditText(m_template->category());
         }
 
-        // 加载模板块到编辑器
+        // 加载模板文档到编辑器（含内嵌对象锚点）
         Report::Ptr dummyReport = Report::create();
-        for (const ContentBlock& block : m_template->blocks()) {
-            dummyReport->appendBlock(block);
-        }
+        dummyReport->setDocument(m_template->document());
+        dummyReport->setObjects(m_template->objects());
         m_editor->loadReport(dummyReport);
     }
 }
@@ -158,14 +150,14 @@ void TemplateEditorDialog::on_m_buttonBox_accepted()
     // 验证输入
     if (!validateInput()) return;
 
-    // 收集模板块（从编辑器获取）
-    const QList<ContentBlock> blocks = collectBlocks();
+    // 收集模板文档（从编辑器获取）
+    const QString doc = collectDocument();
 
     // 从输入控件读取数据，更新模板对象
     m_template->setName(ui->m_nameEdit->text().trimmed());
     m_template->setCategory(ui->m_categoryCombo->currentText().trimmed());
     m_template->setDescription(ui->m_descriptionEdit->toPlainText().trimmed());
-    m_template->setBlocks(blocks);
+    m_template->setDocument(doc);
 
     // 保存到数据库
     bool success = false;
@@ -216,10 +208,12 @@ bool TemplateEditorDialog::validateInput()
  *
  * @return QList<ContentBlock> 内容块列表
  */
-QList<ContentBlock> TemplateEditorDialog::collectBlocks() const
+QString TemplateEditorDialog::collectDocument()
 {
     Report::Ptr report = m_editor->saveToReport();
-    return report->blocks();
+    // 同步文档内嵌对象到模板（与 document 中的对象锚点对应）
+    m_template->setObjects(report->objects());
+    return report->document();
 }
 
 /**

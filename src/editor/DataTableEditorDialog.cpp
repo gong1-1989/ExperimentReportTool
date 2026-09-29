@@ -4,6 +4,7 @@
  */
 
 #include "DataTableEditorDialog.h"
+#include "service/DataTableService.h"
 #include "ui_DataTableEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "ui/dialogs/DataImportDialog.h"
 #include "core/utils/Logger.h"
@@ -12,6 +13,7 @@
 
 #include <QHeaderView>
 #include <QMessageBox>
+#include <QDateTime>
 #include "ui/UiHelper.h"
 #include <QFileDialog>
 #include <QFile>
@@ -191,6 +193,9 @@ DataTableEditorDialog::DataTableEditorDialog(const DataTable::Ptr& table, QWidge
 {
     ui->setupUi(this);  // 从 .ui 文件加载界面
 
+    // 表格内容与表头居中
+    UiHelper::centerTableWidget(ui->m_tableWidget);
+
     // 创建列属性面板并添加到右侧布局
     m_columnPanel = new ColumnPropertyPanel(this);
     ui->columnLayout->addWidget(m_columnPanel);
@@ -224,6 +229,7 @@ DataTableEditorDialog::DataTableEditorDialog(const DataTable::Ptr& table, QWidge
     connect(ui->m_buttonBox, &QDialogButtonBox::rejected,
             this, &QDialog::reject);
 
+    ui->m_nameEdit->setText(m_table->name());
     loadTable();
     setWindowTitle(tr("数据表编辑器: %1").arg(m_table->name()));
     resize(AppDimensions::Window::DialogXLargeWidth,
@@ -570,7 +576,18 @@ void DataTableEditorDialog::onValidate()
 
 void DataTableEditorDialog::onAccept()
 {
-    // 数据已经在编辑时同步到 m_table，直接接受
+    // 数据已在编辑时同步到 m_table；保存到数据库后再接受，
+    // 否则新建的数据表 id 为 0，报告对象引用丢失导致数据再次打开为空
+    // 同步表名（用户可自定义；未命名时给出默认名，数据库 name NOT NULL）
+    m_table->setName(ui->m_nameEdit->text().trimmed());
+    if (m_table->name().trimmed().isEmpty()) {
+        m_table->setName(tr("数据表 %1").arg(
+            QDateTime::currentDateTime().toString("yyyyMMddHHmmss")));
+    }
+    if (!DataTableService::save(m_table)) {
+        UiHelper::warning(this, tr("保存失败"), tr("数据表保存失败，请重试。"));
+        return;
+    }
     accept();
 }
 

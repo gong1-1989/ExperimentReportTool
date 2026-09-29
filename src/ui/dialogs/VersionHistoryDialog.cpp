@@ -5,6 +5,7 @@
 
 #include "VersionHistoryDialog.h"
 #include "ui_VersionHistoryDialog.h"  // 由 uic 工具从 .ui 文件自动生成
+#include "ui/dialogs/VersionCompareDialog.h"
 #include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
 #include "core/utils/Logger.h"
@@ -177,7 +178,7 @@ void VersionHistoryDialog::displayVersion(const VersionInfo& version)
         ".empty { color: %6; text-align: center; padding: 40px 0; }"
         "</style></head><body>"
         "<div class='header'>"
-        "<h2>%12</h2>"
+        "<div style='font-size:20px;font-weight:bold;'>%12</div>"
         "<div class='meta'>"
         "<span><strong>版本 ID:</strong> %13</span>"
         "<span><strong>内容大小:</strong> %14 字节</span>"
@@ -273,7 +274,6 @@ void VersionHistoryDialog::on_m_restoreBtn_clicked()
     if (success) {
         UiHelper::info(this, tr("恢复成功"),
             tr("已恢复到「%1」").arg(name));
-        emit versionRestored(m_reportId, m_currentVersion.versionId);
         accept();
     } else {
         UiHelper::error(this, tr("恢复失败"),
@@ -338,10 +338,13 @@ void VersionHistoryDialog::on_m_saveBtn_clicked()
 
 void VersionHistoryDialog::on_m_compareBtn_clicked()
 {
-    // 简化版本：显示提示，完整的 diff 对比需要额外实现
-    UiHelper::info(this, tr("版本对比"),
-        tr("版本对比功能将在后续版本中实现。\n\n"
-           "当前可通过预览查看历史版本内容。"));
+    if (m_versions.size() < 2) {
+        UiHelper::info(this, tr("版本对比"), tr("至少需要保存两个版本才能对比"));
+        return;
+    }
+
+    VersionCompareDialog dialog(m_versions, this);
+    dialog.exec();
 }
 
 // ===========================================================================

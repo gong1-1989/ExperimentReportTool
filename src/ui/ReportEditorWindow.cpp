@@ -7,12 +7,19 @@
 #include <QStyle>
 #include "ui_ReportEditorWindow.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/ReportEditor.h"
-#include "editor/TextBlockEditor.h"
+#include "editor/DocumentTextEdit.h"
+#include <QTextCursor>
+#include <QTextList>
+#include <QTextBlock>
+#include <QPainter>
+#include <QIcon>
+#include <QColorDialog>
 #include "export/ExportManager.h"
 #include "print/PrintManager.h"
 #include "data/repositories/TagRepository.h"
 #include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
+#include "data/repositories/DataTableRepository.h"
 #include "core/plugin/PluginManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
@@ -22,24 +29,37 @@
 #include "core/utils/UserSession.h"
 #include "ui/dialogs/VersionHistoryDialog.h"
 #include "ui/dialogs/AttachmentManagerDialog.h"
+#include "ui/dialogs/FindTextDialog.h"
 
 #include <QMenuBar>
 #include <QToolBar>
 #include <QStatusBar>
 #include <QMessageBox>
+#include "ui/ObjectInsertionController.h"
+#include "ui/ReportExportController.h"
 #include "ui/UiHelper.h"
-#include <QFileDialog>
+#include <QDateTime>
 #include <QCloseEvent>
 #include <QApplication>
 #include <QClipboard>
 #include <QLabel>
 #include <QComboBox>
+#include <QColor>
+#include <QToolButton>
+#include <QColorDialog>
 #include <QMenu>
+#include <QActionGroup>
 #include <QFile>
+#include <QTimer>
 
 // ===========================================================================
 // 构造与析构
 // ===========================================================================
+
+QString ReportEditorWindow::reportTitle() const
+{
+    return m_editor ? m_editor->reportTitle() : QString();
+}
 
 ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* parent)
     : QMainWindow(parent)
@@ -68,6 +88,9 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     setCentralWidget(m_editor);
 
     m_printManager = new PrintManager(this);
+    m_insertionController = new ObjectInsertionController(this, m_editor);
+    m_exportController = new ReportExportController(this, m_printManager,
+        [this](const QString& msg) { showStatusMessage(msg); });
     createActions();
     connectSignals();
 
@@ -77,6 +100,16 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     // 加载报告
     if (m_report) {
         m_editor->loadReport(m_report);
+        // 权限：非创建者且非管理员 → 只读（不能编辑，也不能保存）
+        m_readOnly = (m_report->createdBy() > 0
+            && m_report->createdBy() != UserSession::instance().userId()
+            && !UserSession::instance().isAdmin());
+        m_editor->setReadOnly(m_readOnly);
+        m_actionSave->setEnabled(!m_readOnly);   // 只读时禁用保存按钮
+        ui->m_lineHeightCombo->setEnabled(!m_readOnly);
+        m_actionAlignLeft->setEnabled(!m_readOnly);
+        m_actionAlignCenter->setEnabled(!m_readOnly);
+        m_actionAlignRight->setEnabled(!m_readOnly);
     } else {
         // 新建报告
         m_report = Report::create();
@@ -84,18 +117,25 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
         m_editor->loadReport(m_report);
     }
 
+    // 延迟一帧再刷新一次工具栏状态（确保首次打开/加载后回显正确）
+    QTimer::singleShot(0, this, [this]() {
+        if (m_editor) m_editor->refreshFormattingState();
+    });
+
     updateWindowTitle();
     // 初始化状态栏
     m_statusWordLabel->setText(tr("字数: %1").arg(m_editor->wordCount()));
-    m_statusBlockLabel->setText(tr("块: %1").arg(m_editor->blockCount()));
+    m_statusBlockLabel->setText(tr("对象: %1").arg(m_editor->objectCount()));
     resize(AppDimensions::Window::EditorWidth, AppDimensions::Window::EditorHeight);
 
-    LOG_INFO(QString("报告编辑窗口已打开: %1")
+    LOG_DEBUG(QString("报告编辑窗口已打开: %1")
                  .arg(m_isNewReport ? "新建报告" : m_report->title()));
 }
 
 ReportEditorWindow::~ReportEditorWindow()
 {
+    delete m_insertionController;
+    delete m_exportController;
     delete ui;
 }
 
@@ -115,15 +155,33 @@ void ReportEditorWindow::createActions()
     m_actionUnderline = ui->m_actionUnderline;
     m_actionVersionHistory = ui->m_actionVersionHistory;
     m_actionManageAttachments = ui->m_actionManageAttachments;
+    m_actionAlignLeft = ui->m_actionAlignLeft;
+    m_actionAlignCenter = ui->m_actionAlignCenter;
+    m_actionAlignRight = ui->m_actionAlignRight;
 
     m_actionSave->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
     m_actionUndo->setIcon(style()->standardIcon(QStyle::SP_ArrowBack));
     m_actionRedo->setIcon(style()->standardIcon(QStyle::SP_ArrowForward));
+    // 显式设置快捷键（确保与块编辑控件的 Ctrl+Z/Y 拦截一致）
+    m_actionUndo->setShortcut(QKeySequence::Undo);
+    m_actionRedo->setShortcut(QKeySequence::Redo);
     m_actionVersionHistory->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    // 对齐图标（自绘三条线示意）
+    m_actionAlignLeft->setIcon(makeAlignIcon(Qt::AlignLeft));
+    m_actionAlignCenter->setIcon(makeAlignIcon(Qt::AlignCenter));
+    m_actionAlignRight->setIcon(makeAlignIcon(Qt::AlignRight));
+    // 对齐按钮互斥（同一时间只亮一个）
+    QActionGroup* alignGroup = new QActionGroup(this);
+    alignGroup->setExclusive(true);
+    alignGroup->addAction(m_actionAlignLeft);
+    alignGroup->addAction(m_actionAlignCenter);
+    alignGroup->addAction(m_actionAlignRight);
     m_actionManageAttachments->setIcon(style()->standardIcon(QStyle::SP_DirLinkIcon));
 
     // 成员动作连接
     connect(m_actionSave, &QAction::triggered, this, &ReportEditorWindow::onSave);
+    connect(m_actionUndo, &QAction::triggered, this, &ReportEditorWindow::onUndo);
+    connect(m_actionRedo, &QAction::triggered, this, &ReportEditorWindow::onRedo);
     connect(m_actionBold, &QAction::triggered, this, &ReportEditorWindow::onBold);
     connect(m_actionItalic, &QAction::triggered, this, &ReportEditorWindow::onItalic);
     connect(m_actionUnderline, &QAction::triggered, this, &ReportEditorWindow::onUnderline);
@@ -138,12 +196,10 @@ void ReportEditorWindow::createActions()
     connect(ui->actionClose, &QAction::triggered, this, &QWidget::close);
     connect(ui->actionFind, &QAction::triggered, this, &ReportEditorWindow::onFind);
     connect(ui->actionInsertTable, &QAction::triggered, this, &ReportEditorWindow::onInsertTable);
+    connect(ui->actionInsertChart, &QAction::triggered, this, &ReportEditorWindow::onInsertChart);
+    connect(ui->actionInsertFormula, &QAction::triggered, this, &ReportEditorWindow::onInsertFormula);
     connect(ui->actionInsertImage, &QAction::triggered, this, &ReportEditorWindow::onInsertImage);
     connect(ui->actionInsertDivider, &QAction::triggered, this, &ReportEditorWindow::onInsertDivider);
-    connect(ui->actionCodeBlock, &QAction::triggered, this, &ReportEditorWindow::onCodeBlock);
-    connect(ui->actionHeading1, &QAction::triggered, this, [this]() { onHeading(1); });
-    connect(ui->actionHeading2, &QAction::triggered, this, [this]() { onHeading(2); });
-    connect(ui->actionHeading3, &QAction::triggered, this, [this]() { onHeading(3); });
     connect(ui->actionBulletList, &QAction::triggered, this, [this]() { onList(false); });
     connect(ui->actionNumberedList, &QAction::triggered, this, [this]() { onList(true); });
     connect(ui->actionQuote, &QAction::triggered, this, &ReportEditorWindow::onQuote);
@@ -152,9 +208,56 @@ void ReportEditorWindow::createActions()
     connect(ui->actionZoomOut, &QAction::triggered, this, &ReportEditorWindow::onZoomOut);
     connect(ui->actionResetZoom, &QAction::triggered, this, &ReportEditorWindow::onResetZoom);
 
-    // 工具栏标题下拉（已在 .ui 工具栏中定义）
-    connect(ui->headingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int idx) { onHeading(idx); });
+    // 字体大小下拉（.ui 已定义，现接入功能）
+    ui->fontSizeCombo->setEditable(true);
+    ui->fontSizeCombo->setInsertPolicy(QComboBox::NoInsert);
+    connect(ui->fontSizeCombo, &QComboBox::currentTextChanged,
+            this, [this](const QString& text) {
+                if (m_updatingFormat) return;
+                bool ok = false;
+                const int size = text.toInt(&ok);
+                if (ok && size >= 6 && size <= 120) onFontSize(size);
+            });
+    // 用户点击列表项时直接应用（不依赖 editable 文本框的回流，最可靠）
+    connect(ui->fontSizeCombo, &QComboBox::activated,
+            this, [this](int index) {
+                if (m_updatingFormat) return;
+                bool ok = false;
+                const int size = ui->fontSizeCombo->itemText(index).toInt(&ok);
+                if (ok && size >= 6 && size <= 120) onFontSize(size);
+            });
+
+    // 行高下拉
+    connect(ui->m_lineHeightCombo, &QComboBox::currentTextChanged,
+            this, [this](const QString& text) {
+                if (m_updatingFormat) return;
+                bool ok = false;
+                const qreal lh = text.toDouble(&ok);
+                if (ok && lh >= 0.5 && lh <= 5.0) {
+                    m_editor->applyLineHeight(lh);
+                }
+            });
+    connect(ui->m_lineHeightCombo, &QComboBox::activated,
+            this, [this](int index) {
+                if (m_updatingFormat) return;
+                bool ok = false;
+                const qreal lh = ui->m_lineHeightCombo->itemText(index).toDouble(&ok);
+                if (ok && lh >= 0.5 && lh <= 5.0) {
+                    m_editor->applyLineHeight(lh);
+                }
+            });
+
+    // 对齐按钮
+    connect(m_actionAlignLeft, &QAction::triggered,
+            this, [this]() { m_editor->applyParagraphAlignment(Qt::AlignLeft); });
+    connect(m_actionAlignCenter, &QAction::triggered,
+            this, [this]() { m_editor->applyParagraphAlignment(Qt::AlignCenter); });
+    connect(m_actionAlignRight, &QAction::triggered,
+            this, [this]() { m_editor->applyParagraphAlignment(Qt::AlignRight); });
+
+    // 文字颜色按钮
+    connect(ui->m_colorBtn, &QToolButton::clicked,
+            this, &ReportEditorWindow::onTextColor);
 }
 
 
@@ -172,7 +275,7 @@ void ReportEditorWindow::initStatusBar()
     m_statusSaveLabel->setStyleSheet(QString("color: %1; padding: 0 8px;").arg(AppTheme::Color::Success));
     bar->addWidget(m_statusSaveLabel);
 
-    m_statusBlockLabel = new QLabel(tr("块: 0"), this);
+    m_statusBlockLabel = new QLabel(tr("对象: 0"), this);
     m_statusBlockLabel->setStyleSheet(QString("color: %1; padding: 0 8px;").arg(AppTheme::Color::TextRegular));
     bar->addPermanentWidget(m_statusBlockLabel);
 
@@ -203,6 +306,68 @@ void ReportEditorWindow::connectSignals()
             this, &ReportEditorWindow::onSaveTriggered);
     connect(m_editor, &ReportEditor::saveStateChanged,
             this, &ReportEditorWindow::onSaveStateChanged);
+    connect(m_editor, &ReportEditor::objectDoubleClicked,
+            this, &ReportEditorWindow::onObjectEdit);
+
+    // 撤销/重做按钮随栈状态置灰
+    connect(m_editor, &ReportEditor::undoAvailableChanged,
+            this, [this](bool available) { m_actionUndo->setEnabled(available); });
+    connect(m_editor, &ReportEditor::redoAvailableChanged,
+            this, [this](bool available) { m_actionRedo->setEnabled(available); });
+    m_actionUndo->setEnabled(false);
+    m_actionRedo->setEnabled(false);
+
+    // 格式化状态同步：字号回显 / B/I/U 按钮状态 / 光标位置
+    connect(m_editor, &ReportEditor::formattingStateChanged,
+            this, [this](int fontSize, bool bold, bool italic, bool underline, int line, int col,
+                         Qt::Alignment alignment, qreal lineHeightMultiplier,
+                         int headingLevel, const QColor& textColor) {
+                Q_UNUSED(headingLevel);
+                m_actionBold->setChecked(bold);
+                m_actionItalic->setChecked(italic);
+                m_actionUnderline->setChecked(underline);
+                // 对齐按钮状态
+                m_actionAlignLeft->setChecked(alignment.testFlag(Qt::AlignLeft));
+                m_actionAlignCenter->setChecked(alignment.testFlag(Qt::AlignHCenter));
+                m_actionAlignRight->setChecked(alignment.testFlag(Qt::AlignRight));
+                // 下拉回显统一加锁，防止触发各自的应用槽（循环/破坏格式）
+                m_updatingFormat = true;
+                // 字号回显
+                const QString sizeText = QString::number(fontSize);
+                if (ui->fontSizeCombo->currentText() != sizeText) {
+                    const int sIdx = ui->fontSizeCombo->findText(sizeText);
+                    if (sIdx >= 0) ui->fontSizeCombo->setCurrentIndex(sIdx);
+                    else ui->fontSizeCombo->setEditText(sizeText);
+                }
+                // 行高回显：数值匹配列表项
+                // （"1.00" 与列表项 "1.0" 字符串不匹配，findText 会失败；
+                //  且行高下拉不可编辑，setEditText 无效 → 必须按数值 setCurrentIndex）
+                bool lhMatched = false;
+                for (int i = 0; i < ui->m_lineHeightCombo->count(); ++i) {
+                    bool ok = false;
+                    const qreal itemVal = ui->m_lineHeightCombo->itemText(i).toDouble(&ok);
+                    if (ok && qFuzzyCompare(itemVal, lineHeightMultiplier)) {
+                        ui->m_lineHeightCombo->setCurrentIndex(i);
+                        lhMatched = true;
+                        break;
+                    }
+                }
+                if (!lhMatched) ui->m_lineHeightCombo->setCurrentIndex(-1);
+                m_updatingFormat = false;
+                // 文字颜色回显（按钮文字显示当前颜色）
+                ui->m_colorBtn->setStyleSheet(
+                    QString("color: %1; font-weight: bold; font-size: 13px; padding: 2px 8px;"
+                            "border: 1px solid #DCDFE6; border-radius: 4px; background: white;")
+                        .arg(textColor.name()));
+                m_statusPositionLabel->setText(tr("行: %1 列: %2").arg(line).arg(col));
+            });
+
+    // 双保险：直接连编辑控件的光标/选区信号 → 强制刷新工具栏回显
+    // （即使 ReportEditor 内部连接异常，光标切换/选中变化也能驱动回显）
+    connect(m_editor->textEdit(), &QTextEdit::cursorPositionChanged,
+            this, [this]() { m_editor->refreshFormattingState(); });
+    connect(m_editor->textEdit(), &QTextEdit::selectionChanged,
+            this, [this]() { m_editor->refreshFormattingState(); });
 
     // 工具菜单
     connect(m_actionVersionHistory, &QAction::triggered,
@@ -229,6 +394,12 @@ void ReportEditorWindow::onSave()
         m_statusSaveLabel->setStyleSheet(
             QString("color: %1; padding: 0 %2px;")
                 .arg(AppTheme::Color::Success).arg(AppTheme::Spacing::Normal));
+        // 手动保存时自动生成版本快照（自动保存不生成，避免版本过多）
+        if (m_report && m_report->id() > 0) {
+            const QString snapshotName = QDateTime::currentDateTime()
+                .toString("yyyy-MM-dd hh:mm:ss");
+            ReportService::saveVersion(m_report->id(), snapshotName);
+        }
         // 保存成功弹出提示框
         UiHelper::info(this, tr("保存成功"),
             tr("报告「%1」已成功保存。").arg(m_report->title().isEmpty() ? tr("未命名报告") : m_report->title()));
@@ -248,12 +419,13 @@ void ReportEditorWindow::onSaveAs()
         copy->setCreatedBy(UserSession::instance().userId());
         copy->setExperimentDate(m_report->experimentDate());
 
-        // 复制内容块
-        for (int i = 0; i < m_report->blockCount(); ++i) {
-            ContentBlock block = m_report->blockAt(i);
-            block.id = Report::generateBlockId();
-            copy->appendBlock(block);
+        // 复制内容（连续文档 + 对象）
+        copy->setDocument(m_report->document());
+        QList<ContentBlock> objects = m_report->objects();
+        for (ContentBlock& obj : objects) {
+            obj.id = Report::generateObjectId();
         }
+        copy->setObjects(objects);
 
         if (ReportService::save(copy)) {
             UiHelper::info(this, tr("另存为"),
@@ -265,72 +437,45 @@ void ReportEditorWindow::onSaveAs()
 
 void ReportEditorWindow::onExport()
 {
-    // 先保存当前报告
-    if (!saveReport()) {
+    if (!m_report) return;
+
+    // 可编辑时先保存当前报告；只读模式直接用当前内容导出
+    if (!m_readOnly && !saveReport()) {
         UiHelper::warning(this, tr("导出失败"), tr("保存报告失败，无法导出"));
         return;
     }
 
-    // 显示导出文件对话框
-    const QString defaultName = m_report->title().isEmpty()
-        ? tr("未命名报告") : m_report->title();
-    const auto result = ExportManager::getSaveFilePath(this, defaultName);
-
-    if (result.first.isEmpty()) {
-        return;  // 用户取消
-    }
-
-    // 执行导出
-    ExportManager exporter;
-    ExportConfig config;
-    config.format = result.second;
-    config.filePath = result.first;
-
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    const bool success = exporter.exportReport(m_report, config, this);
-    QApplication::restoreOverrideCursor();
-
-    if (success) {
-        UiHelper::info(this, tr("导出成功"),
-            tr("报告已导出到:\n%1").arg(result.first));
-        showStatusMessage(tr("导出成功: %1").arg(result.first));
-    } else {
-        UiHelper::error(this, tr("导出失败"),
-            tr("导出报告时发生错误，请查看日志"));
-    }
+    if (m_exportController) m_exportController->exportReport(m_report);
 }
 
 void ReportEditorWindow::onPrint()
 {
     if (!m_report) return;
 
-    // 先保存
-    if (!saveReport()) {
+    // 可编辑时先保存；只读模式直接用当前内容打印
+    if (!m_readOnly && !saveReport()) {
         UiHelper::warning(this, tr("打印失败"), tr("保存报告失败，无法打印"));
         return;
     }
 
-    m_printManager->print(m_report, this);
+    if (m_exportController) m_exportController->print(m_report);
 }
 
 void ReportEditorWindow::onPrintPreview()
 {
     if (!m_report) return;
 
-    if (!saveReport()) {
+    if (!m_readOnly && !saveReport()) {
         UiHelper::warning(this, tr("打印预览失败"), tr("保存报告失败，无法预览"));
         return;
     }
 
-    m_printManager->printPreview(m_report, this);
+    if (m_exportController) m_exportController->printPreview(m_report);
 }
 
 void ReportEditorWindow::onPageSetup()
 {
-    PrintConfig config = m_printManager->currentConfig();
-    if (m_printManager->pageSetup(config, this)) {
-        showStatusMessage(tr("页面设置已更新"));
-    }
+    if (m_exportController) m_exportController->pageSetup();
 }
 
 void ReportEditorWindow::onVersionHistory()
@@ -350,6 +495,16 @@ void ReportEditorWindow::onVersionHistory()
         if (updated) {
             m_report = updated;
             m_editor->loadReport(m_report);
+            // 权限：非创建者且非管理员 → 只读
+            m_readOnly = (m_report->createdBy() > 0
+                && m_report->createdBy() != UserSession::instance().userId()
+                && !UserSession::instance().isAdmin());
+            m_editor->setReadOnly(m_readOnly);
+            m_actionSave->setEnabled(!m_readOnly);   // 只读时禁用保存按钮
+            ui->m_lineHeightCombo->setEnabled(!m_readOnly);
+            m_actionAlignLeft->setEnabled(!m_readOnly);
+            m_actionAlignCenter->setEnabled(!m_readOnly);
+            m_actionAlignRight->setEnabled(!m_readOnly);
             updateWindowTitle();
             showStatusMessage(tr("版本已恢复"));
         }
@@ -362,17 +517,28 @@ void ReportEditorWindow::onVersionHistory()
 
 void ReportEditorWindow::onUndo()
 {
-    // 撤销（待实现完整的撤销/重做栈）
+    if (m_editor) m_editor->undo();
 }
 
 void ReportEditorWindow::onRedo()
 {
+    if (m_editor) m_editor->redo();
 }
 
 void ReportEditorWindow::onFind()
 {
-    UiHelper::info(this, tr("查找"),
-        tr("查找功能将在后续版本中实现。"));
+    if (!m_editor) return;
+
+    // 收集文档段落纯文本（连续文档按段落切分）
+    const QStringList paragraphs = m_editor->documentParagraphs();
+
+    FindTextDialog dialog(this);
+    dialog.setBlocks(paragraphs);
+    connect(&dialog, &FindTextDialog::jumpRequested, this,
+            [this](int paragraphIndex) {
+                m_editor->scrollToParagraph(paragraphIndex);
+            });
+    dialog.exec();
 }
 
 void ReportEditorWindow::onManageAttachments()
@@ -395,77 +561,98 @@ void ReportEditorWindow::onManageAttachments()
 
 void ReportEditorWindow::onBold()
 {
-    applyFormatToCurrentBlock("bold");
+    if (m_editor) m_editor->setBold(m_actionBold->isChecked());
 }
 
 void ReportEditorWindow::onItalic()
 {
-    applyFormatToCurrentBlock("italic");
+    if (m_editor) m_editor->setItalic(m_actionItalic->isChecked());
 }
 
 void ReportEditorWindow::onUnderline()
 {
-    applyFormatToCurrentBlock("underline");
+    if (m_editor) m_editor->setUnderline(m_actionUnderline->isChecked());
 }
 
-void ReportEditorWindow::onHeading(int level)
+void ReportEditorWindow::onFontSize(int size)
 {
-    const int idx = m_editor->currentBlockIndex();
-    if (idx < 0) return;
+    if (size <= 0) return;
+    if (m_editor) m_editor->setFontSize(size);
+}
 
-    BlockType type = BlockType::Paragraph;
-    switch (level) {
-    case 1: type = BlockType::Heading1; break;
-    case 2: type = BlockType::Heading2; break;
-    case 3: type = BlockType::Heading3; break;
-    default: type = BlockType::Paragraph; break;
+QIcon ReportEditorWindow::makeAlignIcon(Qt::Alignment align) const
+{
+    QPixmap pixmap(28, 28);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(QPalette().color(QPalette::WindowText), 2);
+    painter.setPen(pen);
+    const int x1 = 4, x2 = 24, yTop = 7, gap = 8;
+    // 三条线：左对齐全部靠左；居中按文本宽度居中；右对齐靠右
+    const int widths[3] = { 14, 18, 10 };
+    for (int i = 0; i < 3; ++i) {
+        const int y = yTop + i * gap;
+        int lx = x1, rx = x1 + widths[i];
+        if (align == Qt::AlignCenter) {
+            lx = x1 + (x2 - x1 - widths[i]) / 2;
+            rx = lx + widths[i];
+        } else if (align == Qt::AlignRight) {
+            lx = x2 - widths[i];
+            rx = x2;
+        }
+        painter.drawLine(lx, y, rx, y);
     }
+    return QIcon(pixmap);
+}
 
-    m_editor->convertBlock(idx, type);
+void ReportEditorWindow::onTextColor()
+{
+    const QColor color = QColorDialog::getColor(Qt::black, this, tr("选择文字颜色"));
+    if (!color.isValid()) return;
+
+    if (m_editor) m_editor->setTextColor(color);
 }
 
 void ReportEditorWindow::onList(bool numbered)
 {
-    const int idx = m_editor->currentBlockIndex();
-    if (idx < 0) return;
-    m_editor->convertBlock(idx, numbered ? BlockType::NumberedList : BlockType::BulletList);
+    if (m_editor) m_editor->setList(numbered);
 }
 
 void ReportEditorWindow::onQuote()
 {
-    const int idx = m_editor->currentBlockIndex();
-    if (idx < 0) return;
-    m_editor->convertBlock(idx, BlockType::Quote);
-}
-
-void ReportEditorWindow::onCodeBlock()
-{
-    const int idx = m_editor->currentBlockIndex();
-    if (idx < 0) {
-        m_editor->appendBlock(BlockType::CodeBlock);
-    } else {
-        m_editor->convertBlock(idx, BlockType::CodeBlock);
-    }
+    if (m_editor) m_editor->setQuote();
 }
 
 void ReportEditorWindow::onInsertTable()
 {
-    const int idx = m_editor->currentBlockIndex();
-    m_editor->insertBlock(idx + 1, BlockType::Table);
+    if (m_insertionController) m_insertionController->insertTable();
 }
 
 void ReportEditorWindow::onInsertImage()
 {
-    const int idx = m_editor->currentBlockIndex();
-    m_editor->insertBlock(idx + 1, BlockType::Image);
+    if (m_insertionController) m_insertionController->insertImage();
+}
+
+void ReportEditorWindow::onInsertChart()
+{
+    if (m_insertionController) m_insertionController->insertChart();
+}
+
+void ReportEditorWindow::onInsertFormula()
+{
+    if (m_insertionController) m_insertionController->insertFormula();
 }
 
 void ReportEditorWindow::onInsertDivider()
 {
-    const int idx = m_editor->currentBlockIndex();
-    m_editor->insertBlock(idx + 1, BlockType::Divider);
+    if (m_insertionController) m_insertionController->insertDivider();
 }
 
+void ReportEditorWindow::onObjectEdit(const QString& objectId)
+{
+    if (m_insertionController) m_insertionController->editObject(objectId);
+}
 // ===========================================================================
 // 视图操作
 // ===========================================================================
@@ -500,7 +687,7 @@ void ReportEditorWindow::onContentChanged()
 {
     updateWindowTitle();
     m_statusWordLabel->setText(tr("字数: %1").arg(m_editor->wordCount()));
-    m_statusBlockLabel->setText(tr("块: %1").arg(m_editor->blockCount()));
+    m_statusBlockLabel->setText(tr("对象: %1").arg(m_editor->objectCount()));
 }
 
 void ReportEditorWindow::onTitleChanged(const QString& title)
@@ -543,10 +730,13 @@ void ReportEditorWindow::onSaveStateChanged(bool saved)
 
 bool ReportEditorWindow::saveReport()
 {
+    LOG_DEBUG(QString("保存报告开始: %1").arg(m_report ? m_report->title() : QStringLiteral("(空)")));
     m_report = m_editor->saveToReport();
 
     bool success = false;
     if (m_isNewReport) {
+        // 新建报告：修改者 = 当前创建用户
+        m_report->setModifiedBy(UserSession::instance().userId());
         success = ReportService::save(m_report);
         if (success) {
             m_isNewReport = false;
@@ -561,10 +751,14 @@ bool ReportEditorWindow::saveReport()
                 tr("您没有权限修改此报告。\n只有创建者或管理员可以修改。"));
             return false;
         }
+        // 记录最后修改者
+        m_report->setModifiedBy(UserSession::instance().userId());
         success = ReportService::save(m_report);
     }
 
     if (success) {
+        m_editor->saveReportTags();   // 报告入库后保存标签
+        m_editor->setModified(false); // 保存成功清除修改标记（关闭不再误弹未保存提示）
         emit reportSaved(m_report->id());
         updateWindowTitle();
     } else {
@@ -603,16 +797,6 @@ bool ReportEditorWindow::isModified() const
     return m_editor ? m_editor->isModified() : false;
 }
 
-void ReportEditorWindow::applyFormatToCurrentBlock(const QString& format)
-{
-    const int idx = m_editor->currentBlockIndex();
-    if (idx < 0) return;
-
-    BlockEditor* editor = m_editor->blockEditorAt(idx);
-    if (TextBlockEditor* textEditor = qobject_cast<TextBlockEditor*>(editor)) {
-        textEditor->applyFormat(format);
-    }
-}
 
 // ===========================================================================
 // 事件处理

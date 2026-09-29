@@ -18,14 +18,11 @@
 
 User::Ptr UserRepository::findById(qint64 userId)
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
     query.prepare("SELECT * FROM users WHERE id = :id");
     query.bindValue(":id", userId);
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("查询用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return nullptr;
-    }
+    if (!BaseRepository::execChecked(query, "查询用户")) return nullptr;
 
     if (query.next()) {
         return mapToUser(query);
@@ -35,14 +32,11 @@ User::Ptr UserRepository::findById(qint64 userId)
 
 User::Ptr UserRepository::findByUsername(const QString& username)
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
     query.prepare("SELECT * FROM users WHERE username = :username");
     query.bindValue(":username", username);
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("查询用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return nullptr;
-    }
+    if (!BaseRepository::execChecked(query, "查询用户")) return nullptr;
 
     if (query.next()) {
         return mapToUser(query);
@@ -53,7 +47,7 @@ User::Ptr UserRepository::findByUsername(const QString& username)
 User::List UserRepository::findAll()
 {
     User::List users;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
     query.exec("SELECT * FROM users ORDER BY username");
 
     while (query.next()) {
@@ -66,7 +60,7 @@ bool UserRepository::save(User::Ptr user)
 {
     if (!user) return false;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
 
     if (user->isNew()) {
         // 新建
@@ -94,10 +88,7 @@ bool UserRepository::save(User::Ptr user)
     query.bindValue(":must_change_password", user->mustChangePassword());
     query.bindValue(":last_login_at", user->lastLoginAt());
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("保存用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "保存用户")) return false;
 
     if (user->isNew()) {
         user->setId(query.lastInsertId().toLongLong());
@@ -107,20 +98,17 @@ bool UserRepository::save(User::Ptr user)
 
 bool UserRepository::remove(qint64 userId)
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
     query.prepare("DELETE FROM users WHERE id = :id");
     query.bindValue(":id", userId);
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("删除用户失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "删除用户")) return false;
     return true;
 }
 
 bool UserRepository::exists(const QString& username, qint64 excludeId)
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
     if (excludeId > 0) {
         query.prepare("SELECT COUNT(*) FROM users WHERE username = :username AND id != :id");
         query.bindValue(":id", excludeId);
@@ -162,11 +150,13 @@ bool UserRepository::changePassword(qint64 userId, const QString& newPassword)
 
 void UserRepository::updateLastLogin(qint64 userId)
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
     query.prepare("UPDATE users SET last_login_at = :time WHERE id = :id");
     query.bindValue(":time", QDateTime::currentDateTime());
     query.bindValue(":id", userId);
-    query.exec();
+    if (!query.exec()) {
+        LOG_WARNING(QString("更新最后登录时间失败: id=%1, %2").arg(userId).arg(query.lastError().text()));
+    }
 }
 
 bool UserRepository::resetPassword(qint64 userId)
@@ -186,10 +176,10 @@ bool UserRepository::resetPassword(qint64 userId)
 void UserRepository::initializeDefaultUsers()
 {
     // 检查是否已有用户
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(BaseRepository::db());
     query.exec("SELECT COUNT(*) FROM users");
     if (query.next() && query.value(0).toInt() > 0) {
-        LOG_INFO("用户表已有数据，跳过默认用户初始化");
+        LOG_DEBUG("用户表已有数据，跳过默认用户初始化");
         return;
     }
 
@@ -202,7 +192,7 @@ void UserRepository::initializeDefaultUsers()
     admin->setMustChangePassword(false);
     admin->setCreatedAt(QDateTime::currentDateTime());
     if (save(admin)) {
-        LOG_INFO("默认管理员账号已创建: admin / admin123");
+        LOG_DEBUG("默认管理员账号已创建: admin（首次登录需改密码）");
     }
 
     // 创建测试账号
@@ -214,7 +204,7 @@ void UserRepository::initializeDefaultUsers()
     test->setMustChangePassword(true);  // 首次登录必须改密码
     test->setCreatedAt(QDateTime::currentDateTime());
     if (save(test)) {
-        LOG_INFO("默认测试账号已创建: test / 123456（首次登录需改密码）");
+        LOG_DEBUG("默认测试账号已创建: test");
     }
 }
 

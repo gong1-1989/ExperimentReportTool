@@ -15,6 +15,7 @@
 #include <QDateTime>
 
 #include "core/models/Report.h"
+#include "core/models/Tag.h"
 #include "data/repositories/ReportRepository.h"
 
 /**
@@ -122,6 +123,7 @@ private:
      * @brief 元数据搜索（标题、作者、标签、状态）
      */
     QList<SearchResultItem> metadataSearch(const SearchQuery& query);
+    void contentSearch(const SearchQuery& query, QList<SearchResultItem>& existing);
 
     /**
      * @brief 生成匹配字段描述
@@ -129,7 +131,8 @@ private:
      * @param keyword 关键词
      * @return 匹配字段描述，如"匹配字段: 标题、标签"
      */
-    QString buildMatchDescription(const Report::Ptr& report, const QString& keyword);
+    QString buildMatchDescription(const Report::Ptr& report, const QString& keyword,
+                                  const QHash<qint64, Tag::List>& tagsMap);
 
     /**
      * @brief 为搜索结果补充项目名称等信息

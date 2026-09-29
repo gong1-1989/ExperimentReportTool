@@ -26,8 +26,15 @@ DataImportDialog::DataImportDialog(const DataTable::Ptr& table, QWidget* parent)
     , m_importMode(ImportMode::Append)
 {
     ui->setupUi(this);
+    // 表格内容与表头居中
+    UiHelper::centerTableWidget(ui->m_previewTable);
     setWindowTitle(tr("导入数据"));
     resize(AppDimensions::Window::DialogMediumWidth, AppDimensions::Window::DialogMediumHeight);
+
+    // 后台解析监视器：解析在 QtConcurrent 线程池执行，完成后回主线程更新预览
+    m_watcher = new QFutureWatcher<CsvParseResult>(this);
+    connect(m_watcher, &QFutureWatcher<CsvParseResult>::finished,
+            this, &DataImportDialog::onParseFinished);
 }
 
 DataImportDialog::~DataImportDialog()
@@ -76,21 +83,36 @@ bool DataImportDialog::loadAndPreview()
         return false;
     }
 
+    // 异步解析：解析（纯函数，不碰 UI/数据库）在后台线程执行，
+    // 大 CSV 不再卡界面；setFuture 替换后旧任务完成信号不再触发，天然只响应最新一次
+    const QString filePath = m_currentFilePath;                   // 快照（后台线程安全使用）
+    const bool hasHeader = ui->m_hasHeaderCheck->isChecked();     // 快照解析配置
+    const QChar delimiter = ui->m_delimiterCombo->currentData().toChar();
+
+    ui->m_infoLabel->setText(tr("正在解析 CSV..."));
+    ui->m_importBtn->setEnabled(false);
+    ui->m_previewBtn->setEnabled(false);
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
-    CsvParser parser;
-    parser.setHasHeader(ui->m_hasHeaderCheck->isChecked());
+    m_watcher->setFuture(QtConcurrent::run(
+        [filePath, hasHeader, delimiter]() -> CsvParseResult {
+            CsvParser parser;
+            parser.setHasHeader(hasHeader);
+            if (delimiter != QChar(0)) {
+                parser.setDelimiter(delimiter);
+                parser.setAutoDetect(false);
+            }
+            return parser.parseFile(filePath);
+        }));
+    return true;
+}
 
-    // 设置分隔符
-    const QChar delimiter = ui->m_delimiterCombo->currentData().toChar();
-    if (delimiter != QChar(0)) {
-        parser.setDelimiter(delimiter);
-        parser.setAutoDetect(false);
-    }
-
-    m_parseResult = parser.parseFile(m_currentFilePath);
-
+void DataImportDialog::onParseFinished()
+{
     QApplication::restoreOverrideCursor();
+    ui->m_previewBtn->setEnabled(true);
+
+    m_parseResult = m_watcher->result();
 
     if (!m_parseResult.success) {
         UiHelper::error(this, tr("解析失败"),
@@ -98,7 +120,7 @@ bool DataImportDialog::loadAndPreview()
                                         .arg(m_parseResult.errorLine));
         ui->m_infoLabel->setText(tr("解析失败"));
         ui->m_importBtn->setEnabled(false);
-        return false;
+        return;
     }
 
     updatePreviewTable();
@@ -106,8 +128,6 @@ bool DataImportDialog::loadAndPreview()
 
     ui->m_infoLabel->setText(tr("共 %1 行，%2 列")
         .arg(m_parseResult.rowCount).arg(m_parseResult.columnCount));
-
-    return true;
 }
 
 void DataImportDialog::updatePreviewTable()
@@ -217,6 +237,7 @@ void DataImportDialog::applyImport()
 
     if (m_importMode == ImportMode::NewTable || !m_targetTable) {
         table = DataTable::create();
+        table->setReportId(m_targetTable ? m_targetTable->reportId() : -1);
         table->setName(tr("导入的数据表"));
     } else {
         table = m_targetTable;

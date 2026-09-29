@@ -1,33 +1,50 @@
 /**
  * @file ReportEditor.cpp
- * @brief 报告编辑器主组件实现文件
+ * @brief 报告编辑器主组件实现（连续文档 + 结构化对象）
  */
 
 #include "ReportEditor.h"
-#include "ui_ReportEditor.h"  // 由 uic 工具从 .ui 文件自动生成
-#include "editor/TextBlockEditor.h"
-#include "editor/OtherBlockEditors.h"
+#include "ui_ReportEditor.h"
+#include "editor/DocumentTextEdit.h"
+#include "editor/ObjectPreviewRenderer.h"
 #include "editor/AutoSaveManager.h"
-#include "editor/DataTableEditorDialog.h"
-#include "service/DataTableService.h"
-#include "data/repositories/DataTableRepository.h"
-#include "service/TagService.h"
-#include "data/repositories/TagRepository.h"
-#include "core/models/DataTable.h"
-#include "core/models/Tag.h"
-#include "core/utils/UserSession.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/AppConfig.h"
+#include "data/repositories/DataTableRepository.h"
+#include "core/models/DataTable.h"
+#include "service/DataTableService.h"
+#include "service/TagService.h"
+#include "service/UserService.h"
+#include "core/models/User.h"
+#include "core/models/Tag.h"
+#include "chart/ChartRenderer.h"
+#include "chart/ChartConfigDialog.h"
 
+#include <QTextEdit>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QUrl>
+#include <QTextBlock>
+#include <QTextBlockFormat>
+#include <QTextFragment>
+#include <QTextCharFormat>
+#include <QTextImageFormat>
+#include <QTextList>
+#include <QColor>
+#include <QTextListFormat>
 #include <QScrollBar>
-#include <QMenu>
-#include <QMessageBox>
-#include "ui/UiHelper.h"
-#include <QApplication>
-#include <QClipboard>
-#include <QInputDialog>
+#include <QPainter>
+#include <QFont>
+#include <QDateTime>
+#include <QRegularExpression>
+#include <QSet>
+#include <QMap>
+#include <QJsonArray>
+#include <QFile>
+#include <QUrl>
+#include <QImageReader>
 
 // ===========================================================================
 // 构造与析构
@@ -35,64 +52,61 @@
 
 ReportEditor::ReportEditor(QWidget* parent)
     : QWidget(parent)
-    , ui(new Ui::ReportEditor)  // 创建 UI 界面对象
-    , m_currentBlockIndex(-1)
+    , ui(new Ui::ReportEditor)
     , m_modified(false)
     , m_readOnly(false)
     , m_loading(false)
-    , m_autoSave(nullptr)
 {
-    ui->setupUi(this);  // 从 .ui 文件加载界面
+    ui->setupUi(this);
 
-    // 初始化标签下拉列表（单选）
-    ui->m_tagCombo->addItem(tr("无标签"), -1);
-    {
-        const Tag::List allTags = TagService::listAll();
-        for (const Tag::Ptr& tag : allTags) {
-            ui->m_tagCombo->addItem(
-                QString("■ %1").arg(tag->name()),
-                tag->id());
-        }
-    }
-    connect(ui->m_tagCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    // 连续文档编辑控件：绑定宿主，支持对象锚点
+    ui->m_textEdit->setHost(this);
+
+    // 默认样式
+    ui->m_textEdit->setStyleSheet(
+        "QTextEdit { background: #ffffff; border: 1px solid #e0e0e0;"
+        " border-radius: 6px; padding: 12px; font-size: 14px; }");
+    ui->m_textEdit->setPlaceholderText(tr("在此输入报告内容…"));
+
+    // 信号连接
+    connect(ui->m_textEdit, &DocumentTextEdit::textChanged,
+            this, &ReportEditor::onTextChanged);
+    connect(ui->m_textEdit, &DocumentTextEdit::cursorPositionChanged,
+            this, &ReportEditor::onCursorPositionChanged);
+    connect(ui->m_textEdit, &DocumentTextEdit::selectionChanged,
+            this, &ReportEditor::onCursorPositionChanged);   // 选中变化也刷新工具栏
+    connect(ui->m_textEdit, &DocumentTextEdit::undoAvailable,
+            this, &ReportEditor::onUndoAvailableChanged);
+    connect(ui->m_textEdit, &DocumentTextEdit::redoAvailable,
+            this, &ReportEditor::onRedoAvailableChanged);
+    connect(ui->m_textEdit, &DocumentTextEdit::objectDoubleClicked,
+            this, &ReportEditor::onDocumentObjectClicked);
+
+    // 标题栏
+    connect(ui->m_titleEdit, &QLineEdit::textChanged,
+            this, &ReportEditor::onTitleChanged);
+    connect(ui->m_statusCombo, &QComboBox::currentIndexChanged,
+            this, &ReportEditor::onStatusChanged);
+    connect(ui->m_dateEdit, &QDateEdit::dateChanged,
+            this, &ReportEditor::onDateChanged);
+    connect(ui->m_tagCombo, &QComboBox::currentIndexChanged,
             this, &ReportEditor::on_m_tagCombo_currentIndexChanged);
 
-    // 布局设置（.ui 文件中已经是正确的结构：scrollArea > scrollAreaWidgetContents > m_blocksLayout）
-    ui->scrollArea->setWidgetResizable(true);
-    // scrollAreaWidgetContents：高度由内容决定（Minimum）
-    ui->scrollAreaWidgetContents->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    ui->m_blocksLayout->setAlignment(Qt::AlignTop);
-    ui->m_blocksLayout->addStretch(1);
-
-    // 初始更新空提示标签显示状态
-    updateEmptyLabelVisibility();
-
-    // 设置状态下拉框的 itemData
-    ui->m_statusCombo->setItemData(0, static_cast<int>(ReportStatus::Draft));
-    ui->m_statusCombo->setItemData(1, static_cast<int>(ReportStatus::Submitted));
-    ui->m_statusCombo->setItemData(2, static_cast<int>(ReportStatus::Reviewed));
-
-    // 连接信号
-    connect(ui->m_titleEdit, &QLineEdit::textChanged, this, &ReportEditor::onTitleChanged);
-    connect(ui->m_statusCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &ReportEditor::onStatusChanged);
-    connect(ui->m_dateEdit, &QDateEdit::dateChanged, this, &ReportEditor::onDateChanged);
-    connect(ui->m_addBlockBtn, &QPushButton::clicked, this, &ReportEditor::onAddBlock);
-
-    // 初始化自动保存管理器
+    // 自动保存
     m_autoSave = new AutoSaveManager(this);
+    m_autoSave->setEnabled(AppConfig::instance().autoSaveEnabled());
+    m_autoSave->setAutoSaveInterval(AppConfig::instance().autoSaveInterval());
     connect(m_autoSave, &AutoSaveManager::saveTriggered,
             this, &ReportEditor::saveRequested);
-    connect(m_autoSave, &AutoSaveManager::saveStateChanged,
-            this, &ReportEditor::saveStateChanged);
     connect(this, &ReportEditor::contentChanged,
             m_autoSave, &AutoSaveManager::notifyContentChanged);
+
+    setModified(false);
+    LOG_DEBUG("ReportEditor 初始化完成（连续文档 + 对象模型）");
 }
 
 ReportEditor::~ReportEditor()
 {
-    // 块编辑器是 ui 的子对象，delete ui 时会自动删除
-    m_blockEditors.clear();
     delete ui;
 }
 
@@ -102,407 +116,463 @@ ReportEditor::~ReportEditor()
 
 void ReportEditor::loadReport(const Report::Ptr& report)
 {
-    m_loading = true;
+    if (!report) return;
     m_report = report;
+    m_loading = true;
 
-    // 加载元信息
+    // 标题与元信息
     ui->m_titleEdit->setText(report->title());
+    ui->m_authorEdit->setText(report->author());  // 创建者纯展示（QLabel，不可编辑）
 
-    // 创建者：新建报告时自动填充当前用户显示名称，不允许修改
-    const QString currentUserName = UserSession::instance().displayName();
-    const bool isNewReport = (report->id() <= 0) || report->author().isEmpty();
-    if (isNewReport && !currentUserName.isEmpty()) {
-        ui->m_authorEdit->setText(currentUserName);
+    // 修改者显示（最后修改该报告的用户名）
+    if (report->modifiedBy() > 0) {
+        const User::Ptr modifier = UserService::getById(report->modifiedBy());
+        ui->m_modifiedByLabel->setText(modifier
+            ? modifier->displayNameOrUsername() : tr("未知用户"));
     } else {
-        ui->m_authorEdit->setText(report->author());
+        ui->m_modifiedByLabel->setText(tr("未分配"));
     }
-    ui->m_authorEdit->setReadOnly(true);
+    if (report->experimentDate().isValid()) {
+        ui->m_dateEdit->setDate(report->experimentDate());
+    }
+    ui->m_statusCombo->setCurrentIndex(static_cast<int>(report->status()));
+    populateTags();   // 填充标签下拉
 
-    ui->m_dateEdit->setDate(report->experimentDate());
+    // 内容：连续文档 + 对象
+    syncObjectsFromReport();
+    loadDocument();
 
-    // 设置状态
-    const int statusIdx = ui->m_statusCombo->findData(static_cast<int>(report->status()));
-    if (statusIdx >= 0) ui->m_statusCombo->setCurrentIndex(statusIdx);
-
-    // 重建块编辑器
-    rebuildBlocks();
-
-    // 设置标签下拉列表的勾选状态
-    updateTagDisplay();
-
-    m_modified = false;
     m_loading = false;
-
-    LOG_INFO(QString("报告已加载到编辑器: id=%1, title='%2'")
+    m_autoSave->markSaveSuccess();
+    setModified(false);
+    emit objectCountChanged(m_objects.size());
+    refreshFormattingState();   // 加载后按真实光标位置同步工具栏（首段通常是标题）
+    LOG_DEBUG(QString("报告已加载到编辑器: id=%1, title='%2'")
                  .arg(report->id()).arg(report->title()));
-}
-
-QString ReportEditor::reportTitle() const
-{
-    // 通过 ui 指针访问 .ui 文件中定义的标题编辑框控件
-    // 此函数不能在头文件中内联实现，因为 Ui::ReportEditor 在头文件中只有前向声明
-    return ui->m_titleEdit->text();
 }
 
 Report::Ptr ReportEditor::saveToReport()
 {
-    if (!m_report) {
-        m_report = Report::create();
-    }
+    if (!m_report) return nullptr;
 
-    // 确保创建者为当前登录用户（新建报告或旧数据未设置时）
-    if (m_report->createdBy() <= 0) {
-        m_report->setCreatedBy(UserSession::instance().userId());
-    }
+    collectDocument();  // 从编辑控件收集 document + 清理孤儿对象
 
+    // 标题与元信息回写（创建者 author 固定为创建时用户名，不在此回写）
     m_report->setTitle(ui->m_titleEdit->text().trimmed());
-    // 创建者从输入框读取（只读，加载时已设置）
-    m_report->setAuthor(ui->m_authorEdit->text().trimmed());
+    m_report->setStatus(static_cast<ReportStatus>(ui->m_statusCombo->currentIndex()));
     m_report->setExperimentDate(ui->m_dateEdit->date());
-    m_report->setStatus(static_cast<ReportStatus>(
-        ui->m_statusCombo->currentData().toInt()));
-
-    // 收集所有块的内容
-    m_report->clearBlocks();
-    for (BlockEditor* editor : m_blockEditors) {
-        m_report->appendBlock(editor->contentBlock());
-    }
-
-    // 保存编辑器统计的字数，避免主界面重新解析计算
-    m_report->setWordCount(wordCount());
-
-    m_modified = false;
+    m_report->setWordCount(computeWordCount());
 
     return m_report;
 }
 
-// ===========================================================================
-// 块操作
-// ===========================================================================
-
-BlockEditor* ReportEditor::blockEditorAt(int index) const
+QString ReportEditor::reportTitle() const
 {
-    if (index >= 0 && index < m_blockEditors.size()) {
-        return m_blockEditors.at(index);
-    }
-    return nullptr;
+    return ui->m_titleEdit->text().trimmed();
 }
 
-BlockEditor* ReportEditor::insertBlock(int index, BlockType type)
+// ===========================================================================
+// 文档与对象操作
+// ===========================================================================
+
+DocumentTextEdit* ReportEditor::textEdit() const
 {
-    if (index < 0) index = 0;
-    if (index > m_blockEditors.size()) index = m_blockEditors.size();
+    return ui->m_textEdit;
+}
 
-    // 创建内容块
-    ContentBlock block(type);
-    block.id = Report::generateBlockId();
+QString ReportEditor::insertObject(BlockType type, const QJsonObject& data)
+{
+    if (m_readOnly) return QString();
 
-    // 创建块编辑器
-    BlockEditor* editor = BlockEditorFactory::createEditor(block, this);
-    // 空指针检查：确保块编辑器创建成功
-    if (!editor) {
-        LOG_ERROR(QString("创建块编辑器失败，类型: %1").arg(static_cast<int>(type)));
-        return nullptr;
-    }
-    connectBlockEditor(editor);
+    ContentBlock object(type);
+    object.id = Report::generateObjectId();
+    object.data = data;
 
-    // 插入到布局和列表
-    m_blockEditors.insert(index, editor);
-    // 插入到 m_emptyLabel 之后（m_emptyLabel 在 index 0）
-    ui->m_blocksLayout->insertWidget(index + 1, editor);
+    m_objects.append(object);
+    refreshObjectPreview(object);
+    registerObjectResource(object);
 
-    // 隐藏空提示标签
-    updateEmptyLabelVisibility();
+    // 在光标处插入锚点
+    const QPixmap preview = m_previewCache.value(
+        QString("object://%1/%2").arg(ContentBlock::blockTypeToString(type), object.id));
+    const int width = 560;
+    const int height = preview.isNull() ? 100 : qBound(60, preview.height(), 400);
+    ui->m_textEdit->insertObjectAnchor(
+        ContentBlock::blockTypeToString(type), object.id, width, height);
 
-    // 设置焦点到新块
-    m_currentBlockIndex = index;
-    editor->setFocusToEditor();
-
-    updateBlockSelection();
     setModified(true);
     emit contentChanged();
-    emit blockCountChanged(m_blockEditors.size());
-    updateChartBlockReportId();
-
-    return editor;
+    emit objectCountChanged(m_objects.size());
+    return object.id;
 }
 
-BlockEditor* ReportEditor::appendBlock(BlockType type)
+void ReportEditor::removeObjectById(const QString& objectId)
 {
-    return insertBlock(m_blockEditors.size(), type);
-}
+    if (m_readOnly) return;
 
-void ReportEditor::removeBlock(int index)
-{
-    if (index < 0 || index >= m_blockEditors.size()) return;
-
-    // 至少保留一个块
-    if (m_blockEditors.size() <= 1) {
-        // 如果只剩一个块，清空其内容而不是删除
-        BlockEditor* editor = m_blockEditors.first();
-        if (TextBlockEditor* textEditor = qobject_cast<TextBlockEditor*>(editor)) {
-            textEditor->setPlainText("");
+    // 从文档中删除对应锚点（遍历文档中的图片字符，匹配 object://.../id）
+    QTextDocument* doc = ui->m_textEdit->document();
+    for (QTextBlock block = doc->begin(); block != doc->end(); block = block.next()) {
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            const QTextCharFormat fmt = fragment.charFormat();
+            if (!fmt.isImageFormat()) continue;
+            const QString imageName = fmt.toImageFormat().name();
+            if (imageName.startsWith("object://") && imageName.endsWith("/" + objectId)) {
+                QTextCursor cursor(doc);
+                cursor.setPosition(fragment.position());
+                cursor.setPosition(fragment.position() + fragment.length(),
+                                    QTextCursor::KeepAnchor);
+                cursor.removeSelectedText();
+                block = doc->begin();  // 重启遍历（文档已变）
+                break;
+            }
         }
-        return;
     }
 
-    BlockEditor* editor = m_blockEditors.takeAt(index);
-    ui->m_blocksLayout->removeWidget(editor);
-    editor->deleteLater();
-
-    // 调整当前焦点索引
-    if (m_currentBlockIndex >= m_blockEditors.size()) {
-        m_currentBlockIndex = m_blockEditors.size() - 1;
+    // 从对象列表移除
+    for (int i = m_objects.size() - 1; i >= 0; --i) {
+        if (m_objects.at(i).id == objectId) m_objects.removeAt(i);
     }
+    m_previewCache.remove(QString("object://%1").arg(objectId));
 
-    updateEmptyLabelVisibility();  // 更新空提示标签显示状态
-    updateBlockSelection();
     setModified(true);
     emit contentChanged();
-    emit blockCountChanged(m_blockEditors.size());
+    emit objectCountChanged(m_objects.size());
 }
 
-void ReportEditor::moveBlock(int from, int to)
+void ReportEditor::updateObjectData(const QString& objectId, const QJsonObject& data)
 {
-    if (from < 0 || from >= m_blockEditors.size()) return;
-    if (to < 0 || to >= m_blockEditors.size()) return;
-    if (from == to) return;
-
-    // 移动列表中的元素
-    BlockEditor* editor = m_blockEditors.takeAt(from);
-    m_blockEditors.insert(to, editor);
-
-    // 重新排列布局（移除并重新插入）
-    ui->m_blocksLayout->removeWidget(editor);
-    ui->m_blocksLayout->insertWidget(to + 1, editor);  // +1 因为 m_emptyLabel 在 index 0
-
-    m_currentBlockIndex = to;
-    updateBlockSelection();
-    setModified(true);
-    emit contentChanged();
-}
-
-void ReportEditor::convertBlock(int index, BlockType newType)
-{
-    if (index < 0 || index >= m_blockEditors.size()) return;
-
-    BlockEditor* oldEditor = m_blockEditors.at(index);
-
-    // 保存旧块的 ID 和文本内容（用于转换时保留）
-    const QString blockId = oldEditor->blockId();
-    const QString plainText = oldEditor->plainText();
-
-    // 创建新块
-    ContentBlock newBlock(newType);
-    newBlock.id = blockId;
-    if (!plainText.isEmpty()) {
-        newBlock.data["text"] = plainText;
+    for (ContentBlock& object : m_objects) {
+        if (object.id == objectId) {
+            object.data = data;
+            refreshObjectPreview(object);
+            registerObjectResource(object);
+            ui->m_textEdit->viewport()->update();
+            setModified(true);
+            emit contentChanged();
+            return;
+        }
     }
+}
 
-    BlockEditor* newEditor = BlockEditorFactory::createEditor(newBlock, this);
-    connectBlockEditor(newEditor);
-
-    // 替换
-    m_blockEditors.replace(index, newEditor);
-    ui->m_blocksLayout->removeWidget(oldEditor);
-    ui->m_blocksLayout->insertWidget(index + 1, newEditor);  // +1 因为 m_emptyLabel 在 index 0
-    oldEditor->deleteLater();
-
-    m_currentBlockIndex = index;
-    newEditor->setFocusToEditor();
-    updateBlockSelection();
+void ReportEditor::insertDividerAtCursor()
+{
+    if (m_readOnly) return;
+    QTextCursor cursor = ui->m_textEdit->textCursor();
+    cursor.insertHtml("<hr/>");
     setModified(true);
     emit contentChanged();
 }
 
-void ReportEditor::duplicateBlock(int index)
+ContentBlock ReportEditor::objectById(const QString& objectId) const
 {
-    if (index < 0 || index >= m_blockEditors.size()) return;
+    for (const ContentBlock& object : m_objects) {
+        if (object.id == objectId) return object;
+    }
+    return ContentBlock();
+}
 
-    BlockEditor* source = m_blockEditors.at(index);
-    ContentBlock block = source->contentBlock();
-    block.id = Report::generateBlockId();  // 新 ID
+QPixmap ReportEditor::objectPreviewPixmap(const QString& imageName)
+{
+    const QPixmap cached = m_previewCache.value(imageName);
+    if (!cached.isNull()) return cached;
 
-    BlockEditor* newEditor = BlockEditorFactory::createEditor(block, this);
-    connectBlockEditor(newEditor);
+    // 缓存缺失（如文档加载后对象新增）→ 自动重建预览
+    const ContentBlock object = objectFromImageName(imageName);
+    if (!object.id.isEmpty()) {
+        refreshObjectPreview(object);
+        registerObjectResource(object);
+        return m_previewCache.value(imageName);
+    }
+    return cached;
+}
 
-    const int insertIdx = index + 1;
-    m_blockEditors.insert(insertIdx, newEditor);
-    ui->m_blocksLayout->insertWidget(insertIdx + 1, newEditor);  // +1 因为 m_emptyLabel 在 index 0
+/// 将对象预览图预注册到文档资源表（渲染时 QTextDocument 直接从资源表取图，
+/// 与资源提供者双保险，确保锚点任何情况下都有图可显）
+void ReportEditor::registerObjectResource(const ContentBlock& object)
+{
+    const QString name = QString("object://%1/%2")
+        .arg(ContentBlock::blockTypeToString(object.type), object.id);
+    const QPixmap preview = m_previewCache.value(name);
+    if (!preview.isNull()) {
+        ui->m_textEdit->document()->addResource(
+            QTextDocument::ImageResource, QUrl(name), QVariant(preview));
+    }
+}
 
-    m_currentBlockIndex = insertIdx;
-    newEditor->setFocusToEditor();
-    updateEmptyLabelVisibility();  // 更新空提示标签显示状态
-    updateBlockSelection();
-    setModified(true);
-    emit contentChanged();
+// ===========================================================================
+// 查找辅助
+// ===========================================================================
+
+QStringList ReportEditor::documentParagraphs() const
+{
+    QStringList paragraphs;
+    QTextDocument* doc = ui->m_textEdit->document();
+    for (QTextBlock block = doc->begin(); block != doc->end(); block = block.next()) {
+        const QString text = block.text().trimmed();
+        if (!text.isEmpty()) paragraphs.append(text);
+    }
+    return paragraphs;
+}
+
+void ReportEditor::healMissingObjects()
+{
+    if (!m_report) return;
+
+    // 收集 document 中所有对象锚点（object://<type>/<id>）
+    QRegularExpression anchorRe(QStringLiteral("object://([a-z_0-9]+)/([0-9a-fA-F-]+)"));
+    QMap<QString, BlockType> anchorTypes;
+    QRegularExpressionMatchIterator it = anchorRe.globalMatch(ui->m_textEdit->toHtml());
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        const QString id = m.captured(2);
+        if (id.isEmpty()) continue;
+        const BlockType t = ContentBlock::blockTypeFromString(m.captured(1));
+        // 仅结构化对象类型需要自愈（段落/标题等不是锚点）
+        if (t == BlockType::Table || t == BlockType::Image || t == BlockType::Chart
+            || t == BlockType::Formula || t == BlockType::DataReference) {
+            anchorTypes.insert(id, t);
+        }
+    }
+    if (anchorTypes.isEmpty()) return;
+
+    // 补齐缺失对象
+    bool changed = false;
+    QSet<QString> existing;
+    for (const ContentBlock& o : m_objects) existing.insert(o.id);
+    for (auto typeIt = anchorTypes.begin(); typeIt != anchorTypes.end(); ++typeIt) {
+        if (!existing.contains(typeIt.key())) {
+            ContentBlock obj(typeIt.value());
+            obj.id = typeIt.key();
+            m_objects.append(obj);
+            changed = true;
+        }
+    }
+    if (!changed) return;
+
+    // 刷新预览并注册资源
+    m_previewCache.clear();
+    for (const ContentBlock& object : m_objects) {
+        refreshObjectPreview(object);
+        registerObjectResource(object);
+    }
+    ui->m_textEdit->viewport()->update();
+
+    // 同步回报告，保存时写入，避免数据再次丢失
+    if (m_report) m_report->setObjects(m_objects);
+}
+
+/// 表格自愈：Table/DataReference 对象未关联数据表时自动创建空表并回填 tableId，
+/// 使模板自带/占位表格可直接被图表选择，点开即可编辑
+void ReportEditor::healTableObjects()
+{
+    if (!m_report) return;
+    bool changed = false;
+    for (ContentBlock& object : m_objects) {
+        if (object.type != BlockType::Table && object.type != BlockType::DataReference) continue;
+        const qint64 tid = static_cast<qint64>(object.data.value("tableId").toDouble());
+        if (tid > 0) continue;
+        DataTable::Ptr table = DataTable::create();
+        table->setReportId(m_report->id());
+        QString caption = object.data.value("caption").toString().trimmed();
+        table->setName(caption.isEmpty()
+            ? tr("数据表 %1").arg(QDateTime::currentDateTime().toString("yyyyMMddHHmmss"))
+            : caption);
+        if (DataTableService::save(table)) {
+            object.data["tableId"] = table->id();
+            changed = true;
+        }
+    }
+    if (!changed) return;
+    for (const ContentBlock& object : m_objects) {
+        refreshObjectPreview(object);
+        registerObjectResource(object);
+    }
+    ui->m_textEdit->viewport()->update();
+    if (m_report) m_report->setObjects(m_objects);
+}
+
+void ReportEditor::scrollToParagraph(int paragraphIndex)
+{
+    QTextDocument* doc = ui->m_textEdit->document();
+    int current = 0;
+    for (QTextBlock block = doc->begin(); block != doc->end(); block = block.next()) {
+        if (!block.text().trimmed().isEmpty()) {
+            if (current == paragraphIndex) {
+                QTextCursor cursor(block);
+                ui->m_textEdit->setTextCursor(cursor);
+                ui->m_textEdit->setFocus();
+                return;
+            }
+            ++current;
+        }
+    }
 }
 
 // ===========================================================================
 // 编辑操作
 // ===========================================================================
 
-void ReportEditor::focusBlock(int index)
+void ReportEditor::undo()
 {
-    if (index >= 0 && index < m_blockEditors.size()) {
-        m_currentBlockIndex = index;
-        m_blockEditors.at(index)->setFocusToEditor();
-        updateBlockSelection();
+    if (ui->m_textEdit->document()->isUndoAvailable()) {
+        ui->m_textEdit->undo();
     }
+}
+
+void ReportEditor::redo()
+{
+    if (ui->m_textEdit->document()->isRedoAvailable()) {
+        ui->m_textEdit->redo();
+    }
+}
+
+bool ReportEditor::canUndo() const
+{
+    return ui->m_textEdit->document()->isUndoAvailable();
+}
+
+bool ReportEditor::canRedo() const
+{
+    return ui->m_textEdit->document()->isRedoAvailable();
+}
+
+void ReportEditor::focusDocument()
+{
+    ui->m_textEdit->setFocus();
 }
 
 void ReportEditor::setReadOnly(bool readOnly)
 {
     m_readOnly = readOnly;
+    ui->m_textEdit->setReadOnly(readOnly);
     ui->m_titleEdit->setReadOnly(readOnly);
-    ui->m_authorEdit->setReadOnly(readOnly);
-    ui->m_dateEdit->setReadOnly(readOnly);
     ui->m_statusCombo->setEnabled(!readOnly);
-    ui->m_addBlockBtn->setEnabled(!readOnly);
-
-    for (BlockEditor* editor : m_blockEditors) {
-        editor->setReadOnly(readOnly);
-    }
+    ui->m_dateEdit->setEnabled(!readOnly);
+    ui->m_tagCombo->setEnabled(!readOnly);
 }
 
 void ReportEditor::setModified(bool modified)
 {
     if (m_modified == modified) return;
     m_modified = modified;
-
     emit saveStateChanged(!modified);
 }
 
 int ReportEditor::wordCount() const
 {
-    // 收集所有块的纯文本
-    QString allText;
-    for (BlockEditor* editor : m_blockEditors) {
-        const QString text = editor->plainText();
-        if (!text.isEmpty()) {
-            allText += text + " ";
-        }
-    }
-    // 标题也算入
-    allText += ui->m_titleEdit->text();
-
-    if (allText.isEmpty()) return 0;
-
-    int count = 0;
-
-    // 统计中文字符（CJK 统一表意文字范围）
-    QRegularExpression cjkRegex(QStringLiteral("[\u4e00-\u9fff]"));
-    auto cjkIt = cjkRegex.globalMatch(allText);
-    while (cjkIt.hasNext()) {
-        cjkIt.next();
-        ++count;
-    }
-
-    // 统计英文单词（连续的字母数字序列）
-    QRegularExpression wordRegex(QStringLiteral("[a-zA-Z0-9]+"));
-    auto wordIt = wordRegex.globalMatch(allText);
-    while (wordIt.hasNext()) {
-        wordIt.next();
-        ++count;
-    }
-
-    return count;
+    return computeWordCount();
 }
 
 // ===========================================================================
-// 块编辑器信号处理
+// 槽：文档信号
 // ===========================================================================
 
-void ReportEditor::onBlockContentChanged()
+void ReportEditor::onTextChanged()
 {
     if (m_loading) return;
     setModified(true);
     emit contentChanged();
+    refreshFormattingState();   // 格式操作（加粗/颜色/字号等）后工具栏状态及时刷新
 }
 
-void ReportEditor::onBlockFocused(BlockEditor* editor)
+void ReportEditor::applyParagraphAlignment(Qt::Alignment align)
 {
-    const int idx = indexOfBlockEditor(editor);
-    if (idx >= 0) {
-        m_currentBlockIndex = idx;
-        updateBlockSelection();
-    }
+    if (m_readOnly) return;
+    QTextCursor cursor = ui->m_textEdit->textCursor();
+    QTextBlockFormat fmt = cursor.blockFormat();
+    fmt.setAlignment(align);
+    cursor.setBlockFormat(fmt);   // 触发 textChanged → 自动进入撤销栈并标记修改
 }
 
-void ReportEditor::onRequestInsertAfter(BlockEditor* editor, BlockType type)
+void ReportEditor::applyLineHeight(qreal multiplier)
 {
-    const int idx = indexOfBlockEditor(editor);
-    if (idx >= 0) {
-        insertBlock(idx + 1, type);
-    }
+    if (m_readOnly) return;
+    if (multiplier < 0.5 || multiplier > 5.0) return;
+    QTextCursor cursor = ui->m_textEdit->textCursor();
+    // Word 式行为：有选区 → 行高应用到所有选中段；无选区 → 只修改光标所在段。
+    // 不要 clearSelection——那会导致拖选多段时只剩光标段被改。
+    QTextBlockFormat fmt = cursor.blockFormat();
+    fmt.setLineHeight(qRound(multiplier * 100.0),
+                      QTextBlockFormat::ProportionalHeight);
+    cursor.setBlockFormat(fmt);
 }
 
-void ReportEditor::onRequestInsertBefore(BlockEditor* editor, BlockType type)
+void ReportEditor::onCursorPositionChanged()
 {
-    const int idx = indexOfBlockEditor(editor);
-    if (idx >= 0) {
-        insertBlock(idx, type);
-    }
+    refreshFormattingState();
 }
 
-void ReportEditor::onRequestDelete(BlockEditor* editor)
+void ReportEditor::refreshFormattingState()
 {
-    const int idx = indexOfBlockEditor(editor);
-    if (idx >= 0) {
-        removeBlock(idx);
+    if (m_loading) return;
+
+    QTextCursor cursor = ui->m_textEdit->textCursor();
+    const QTextCharFormat fmt = cursor.charFormat();
+    const QTextCharFormat blockCharFmt = cursor.blockCharFormat();
+
+    // 字号：显式字号优先，无显式字号回退到编辑器当前字体
+    int fontSize = AppTheme::FontSize::Normal;
+    if (fmt.fontPointSize() > 0) {
+        fontSize = qRound(fmt.fontPointSize());
+    } else if (blockCharFmt.fontPointSize() > 0) {
+        fontSize = qRound(blockCharFmt.fontPointSize());
+    } else {
+        fontSize = qRound(ui->m_textEdit->currentFont().pointSizeF());
+        if (fontSize <= 0) fontSize = AppTheme::FontSize::Normal;
     }
+
+    // 注意：QTextCursor::blockFormat() 在有选区时返回"选区第一个块"的格式，
+    // 导致拖动选择其他段落时读到的是起点段（如第一行 1.75）。
+    // 改用 cursor.block()（光标所在块=选区终点），保证显示与当前选中段一致。
+    const QTextBlockFormat blockFmt = cursor.block().blockFormat();
+    const qreal lineHeight = blockFmt.lineHeightType() == QTextBlockFormat::ProportionalHeight
+        ? blockFmt.lineHeight() / 100.0 : 1.0;
+    // 不再区分段落样式（标题/正文），headingLevel 恒为 0
+    const int headingLevel = 0;
+    // 文字颜色
+    const QColor textColor = fmt.foreground().color();
+
+    emit formattingStateChanged(
+        fontSize,
+        fmt.fontWeight() >= QFont::Bold,
+        fmt.fontItalic(),
+        fmt.fontUnderline(),
+        cursor.blockNumber() + 1,
+        cursor.positionInBlock() + 1,
+        blockFmt.alignment(),
+        lineHeight,
+        headingLevel,
+        textColor);
 }
 
-void ReportEditor::onRequestConvert(BlockEditor* editor, BlockType newType)
+void ReportEditor::onUndoAvailableChanged(bool available)
 {
-    const int idx = indexOfBlockEditor(editor);
-    if (idx >= 0) {
-        convertBlock(idx, newType);
-    }
+    emit undoAvailableChanged(available);
 }
 
-void ReportEditor::onRequestFocusPrevious(BlockEditor* editor)
+void ReportEditor::onRedoAvailableChanged(bool available)
 {
-    const int idx = indexOfBlockEditor(editor);
-    if (idx > 0) {
-        focusBlock(idx - 1);
-    }
+    emit redoAvailableChanged(available);
 }
 
-void ReportEditor::onRequestFocusNext(BlockEditor* editor)
+void ReportEditor::onDocumentObjectClicked(const QString& objectId)
 {
-    const int idx = indexOfBlockEditor(editor);
-    if (idx >= 0 && idx < m_blockEditors.size() - 1) {
-        focusBlock(idx + 1);
-    }
-}
-
-void ReportEditor::onRequestMoveUp(BlockEditor* editor)
-{
-    const int idx = indexOfBlockEditor(editor);
-    if (idx > 0) {
-        moveBlock(idx, idx - 1);
-    }
-}
-
-void ReportEditor::onRequestMoveDown(BlockEditor* editor)
-{
-    const int idx = indexOfBlockEditor(editor);
-    if (idx >= 0 && idx < m_blockEditors.size() - 1) {
-        moveBlock(idx, idx + 1);
-    }
+    if (m_readOnly) return;   // 只读模式下不打开对象编辑窗口
+    emit objectDoubleClicked(objectId);
 }
 
 // ===========================================================================
-// 标题栏信号
+// 槽：标题栏
 // ===========================================================================
 
 void ReportEditor::onTitleChanged(const QString& title)
 {
     if (m_loading) return;
-    setModified(true);
     emit titleChanged(title);
     emit contentChanged();
+    setModified(true);
 }
 
 void ReportEditor::onStatusChanged(int index)
@@ -521,245 +591,305 @@ void ReportEditor::onDateChanged(const QDate& date)
     emit contentChanged();
 }
 
-// ===========================================================================
-// 工具栏
-// ===========================================================================
-
-void ReportEditor::onAddBlock()
+void ReportEditor::on_m_tagCombo_currentIndexChanged(int index)
 {
-    // 显示块类型选择菜单
-    QMenu menu(this);
-    menu.setTitle(tr("添加块"));
-
-    const QList<BlockType> types = BlockEditorFactory::supportedTypes();
-    for (BlockType type : types) {
-        QAction* action = menu.addAction(BlockEditorFactory::typeDisplayName(type));
-        connect(action, &QAction::triggered, this, [this, type]() {
-            appendBlock(type);
-        });
-    }
-
-    // 添加分隔线
-    menu.addSeparator();
-
-    // 添加"新建数据表"选项（不是块类型，而是创建数据表供图表引用）
-    QAction* newDataTableAction = menu.addAction(tr("📊 新建数据表..."));
-    connect(newDataTableAction, &QAction::triggered, this, [this]() {
-        createNewDataTable();
-    });
-
-    menu.exec(ui->m_addBlockBtn->mapToGlobal(QPoint(0, ui->m_addBlockBtn->height())));
+    Q_UNUSED(index);
+    if (m_loading) return;
+    m_tagsDirty = true;
+    setModified(true);
+    emit contentChanged();
 }
 
-void ReportEditor::createNewDataTable()
+void ReportEditor::populateTags()
 {
-    if (!m_report) return;
-
-    // 弹出对话框让用户输入数据表名称
-    bool ok;
-    const QString tableName = QInputDialog::getText(
-        this, tr("新建数据表"),
-        tr("请输入数据表名称:"), QLineEdit::Normal,
-        tr("数据表 %1").arg(QDateTime::currentDateTime().toString("MMddHHmm")),
-        &ok);
-
-    if (!ok || tableName.trimmed().isEmpty()) return;
-
-    // 创建新的数据表
-    DataTable::Ptr table = DataTable::create();
-    table->setName(tableName.trimmed());
-    table->setReportId(m_report->id());
-    table->setDescription(tr("由报告编辑器创建的数据表"));
-
-    // 默认创建 3 列 3 行
-    QList<ColumnDefinition> columns;
-    for (int i = 0; i < 3; ++i) {
-        ColumnDefinition col;
-        col.name = QString("列%1").arg(i + 1);
-        col.type = ColumnType::Text;
-        columns.append(col);
+    ui->m_tagCombo->clear();
+    ui->m_tagCombo->addItem(tr("（无标签）"), 0);
+    const Tag::List allTags = TagService::listAll();
+    for (const Tag::Ptr& tag : allTags) {
+        ui->m_tagCombo->addItem(tag->name(), tag->id());
     }
-    table->setColumns(columns);
-
-    // 添加 3 行空数据
-    for (int row = 0; row < 3; ++row) {
-        QVariantList rowData;
-        for (int col = 0; col < 3; ++col) {
-            rowData.append(QString(""));
+    // 选中当前报告已设置的标签（取第一个）
+    if (m_report && m_report->id() > 0) {
+        const Tag::List reportTags = TagService::findByReport(m_report->id());
+        if (!reportTags.isEmpty()) {
+            const int idx = ui->m_tagCombo->findData(reportTags.first()->id());
+            if (idx >= 0) ui->m_tagCombo->setCurrentIndex(idx);
         }
-        table->appendRow(rowData);
     }
-
-    // 保存到数据库
-    if (DataTableService::save(table)) {
-        LOG_INFO(QString("数据表创建成功: %1 (ID=%2)").arg(tableName).arg(table->id()));
-
-        // 打开数据表编辑器
-        DataTableEditorDialog dialog(table, this);
-        if (dialog.exec() == QDialog::Accepted) {
-            // 更新数据表
-            DataTableService::save(dialog.tableData());
-            UiHelper::info(this, tr("提示"),
-                tr("数据表已创建！\n现在可以添加图表块并引用此数据表。"));
-        }
-    } else {
-        UiHelper::warning(this, tr("错误"), tr("数据表创建失败！"));
-    }
+    m_tagsDirty = false;
 }
+
+void ReportEditor::saveReportTags()
+{
+    if (!m_report || m_report->id() <= 0 || !m_tagsDirty) return;
+    const qint64 tagId = ui->m_tagCombo->currentData().toLongLong();
+    QList<qint64> ids;
+    if (tagId > 0) ids.append(tagId);
+    TagService::setReportTags(m_report->id(), ids);
+    m_tagsDirty = false;
+}
+
+// ===========================================================================
+// 槽：工具栏
+// ===========================================================================
 
 void ReportEditor::onUndo()
 {
-    // 撤销功能（简化版，后续实现完整的撤销/重做栈）
-    LOG_INFO("撤销功能待实现");
+    undo();
 }
 
 void ReportEditor::onRedo()
 {
-    LOG_INFO("重做功能待实现");
+    redo();
 }
 
 // ===========================================================================
 // 内部方法
 // ===========================================================================
 
-void ReportEditor::rebuildBlocks()
+void ReportEditor::syncObjectsFromReport()
 {
-    clearBlocks();
+    m_objects = m_report ? m_report->objects() : QList<ContentBlock>();
+    m_previewCache.clear();
+    for (const ContentBlock& object : m_objects) {
+        refreshObjectPreview(object);
+        registerObjectResource(object);
+    }
+}
 
+void ReportEditor::loadDocument()
+{
+    m_previewCache.clear();
+    syncObjectsFromReport();
+
+    if (m_report && !m_report->document().isEmpty()) {
+        ui->m_textEdit->setHtml(m_report->document());
+    } else {
+        ui->m_textEdit->clear();
+    }
+
+    // 锚点对象自愈：补全 document 中缺失的对象（旧版本报告数据丢失时自动恢复）
+    healMissingObjects();
+
+    // 表格自愈：Table 对象无数据表引用时自动创建并回填 tableId
+    healTableObjects();
+
+    ui->m_textEdit->document()->clearUndoRedoStacks();
+}
+
+void ReportEditor::collectDocument()
+{
     if (!m_report) return;
 
-    const QList<ContentBlock>& blocks = m_report->blocks();
-    for (const ContentBlock& block : blocks) {
-        BlockEditor* editor = BlockEditorFactory::createEditor(block, this);
-        connectBlockEditor(editor);
-        m_blockEditors.append(editor);
-        // 插入到 m_emptyLabel 之后（m_emptyLabel 在 index 0）
-        ui->m_blocksLayout->insertWidget(m_blockEditors.size(), editor);
+    // 从编辑控件收集 HTML
+    const QString html = ui->m_textEdit->toHtml();
+    m_report->setDocument(html);
+
+    // 清理孤儿对象：文档中不再有锚点的对象移除
+    // 单次正则收集文档中全部锚点（避免对每个对象做一次全文 contains，O(n×m) → O(n+m)）
+    QSet<QString> anchorsInDoc;
+    {
+        const QRegularExpression anchorRe(QStringLiteral("object://([a-z_0-9]+)/([0-9a-fA-F-]+)"));
+        QRegularExpressionMatchIterator it = anchorRe.globalMatch(html);
+        while (it.hasNext()) {
+            const QRegularExpressionMatch match = it.next();
+            anchorsInDoc.insert(match.captured(0));  // 完整锚点串，与下方构造格式一致
+        }
     }
 
-    // 如果报告没有块，添加一个空段落
-    if (m_blockEditors.isEmpty()) {
-        appendBlock(BlockType::Paragraph);
+    QList<ContentBlock> kept;
+    QList<ContentBlock> removed;
+    for (const ContentBlock& object : m_objects) {
+        const QString anchor = QString("object://%1/%2")
+            .arg(ContentBlock::blockTypeToString(object.type), object.id);
+        if (anchorsInDoc.contains(anchor)) {
+            kept.append(object);
+        } else {
+            removed.append(object);
+        }
     }
+    m_objects = kept;
+    m_report->setObjects(m_objects);
 
-    m_currentBlockIndex = 0;
-    updateEmptyLabelVisibility();  // 更新空提示标签显示状态
-    updateBlockSelection();
-    updateChartBlockReportId();
-}
-
-void ReportEditor::clearBlocks()
-{
-    for (BlockEditor* editor : m_blockEditors) {
-        ui->m_blocksLayout->removeWidget(editor);
-        editor->deleteLater();
+    // 联动清理：被移除对象引用的数据表，若文档中无其他对象仍引用则删除
+    QSet<qint64> usedTables;
+    for (const ContentBlock& object : m_objects) {
+        const qint64 tid = static_cast<qint64>(object.data.value("tableId").toDouble());
+        if (tid > 0) usedTables.insert(tid);
     }
-    m_blockEditors.clear();
-    m_currentBlockIndex = -1;
-    updateEmptyLabelVisibility();  // 显示空提示标签
+    for (const ContentBlock& object : removed) {
+        if (object.type == BlockType::Table || object.type == BlockType::DataReference
+            || object.type == BlockType::Chart) {
+            const qint64 tid = static_cast<qint64>(object.data.value("tableId").toDouble());
+            if (tid > 0 && !usedTables.contains(tid)) {
+                DataTableService::remove(tid);
+            }
+        }
+    }
 }
 
-int ReportEditor::indexOfBlockEditor(BlockEditor* editor) const
+void ReportEditor::refreshObjectPreview(const ContentBlock& object)
 {
-    return m_blockEditors.indexOf(editor);
+    const QString key = QString("object://%1/%2")
+        .arg(ContentBlock::blockTypeToString(object.type), object.id);
+
+    // 渲染逻辑已提取到 ObjectPreviewRenderer（静态纯渲染，不依赖编辑器实例）
+    m_previewCache.insert(key, ObjectPreviewRenderer::render(object));
 }
 
-void ReportEditor::connectBlockEditor(BlockEditor* editor)
+ContentBlock ReportEditor::objectFromImageName(const QString& imageName) const
 {
-    connect(editor, &BlockEditor::contentChanged,
-            this, &ReportEditor::onBlockContentChanged);
-    connect(editor, &BlockEditor::blockFocused,
-            this, &ReportEditor::onBlockFocused);
-    connect(editor, &BlockEditor::requestInsertBlockAfter,
-            this, &ReportEditor::onRequestInsertAfter);
-    connect(editor, &BlockEditor::requestInsertBlockBefore,
-            this, &ReportEditor::onRequestInsertBefore);
-    connect(editor, &BlockEditor::requestDeleteBlock,
-            this, &ReportEditor::onRequestDelete);
-    connect(editor, &BlockEditor::requestConvertBlock,
-            this, &ReportEditor::onRequestConvert);
-    connect(editor, &BlockEditor::requestFocusPrevious,
-            this, &ReportEditor::onRequestFocusPrevious);
-    connect(editor, &BlockEditor::requestFocusNext,
-            this, &ReportEditor::onRequestFocusNext);
-    connect(editor, &BlockEditor::requestMoveUp,
-            this, &ReportEditor::onRequestMoveUp);
-    connect(editor, &BlockEditor::requestMoveDown,
-            this, &ReportEditor::onRequestMoveDown);
+    // object://<type>/<id>
+    const int slash = imageName.lastIndexOf('/');
+    if (slash < 0) return ContentBlock();
+    const QString id = imageName.mid(slash + 1);
+    return objectById(id);
+}
+
+int ReportEditor::computeWordCount() const
+{
+    const QString plain = ui->m_textEdit->toPlainText();
+    if (plain.isEmpty()) return 0;
+
+    int count = 0;
+    QRegularExpression cjkRegex(QStringLiteral("[\u4e00-\u9fff]"));
+    auto cjkIt = cjkRegex.globalMatch(plain);
+    while (cjkIt.hasNext()) { cjkIt.next(); ++count; }
+
+    QRegularExpression wordRegex(QStringLiteral("[a-zA-Z0-9]+"));
+    auto wordIt = wordRegex.globalMatch(plain);
+    while (wordIt.hasNext()) { wordIt.next(); ++count; }
+
+    return count;
 }
 
 void ReportEditor::updateEmptyLabelVisibility()
 {
-    // 有块编辑器时隐藏空提示标签，无块时显示
-    if (ui->m_emptyLabel) {
-        ui->m_emptyLabel->setVisible(m_blockEditors.isEmpty());
-    }
-}
-
-void ReportEditor::updateBlockSelection()
-{
-    for (int i = 0; i < m_blockEditors.size(); ++i) {
-        m_blockEditors.at(i)->setBlockSelected(i == m_currentBlockIndex);
-    }
-}
-
-void ReportEditor::updateChartBlockReportId()
-{
-    if (!m_report) return;
-    const qint64 reportId = m_report->id();
-
-    // 前向声明 ChartBlockEditor，避免循环 include
-    // 实际类型在 OtherBlockEditors.h 中定义
-    // 我们通过 blockType() 判断，然后使用 QMetaObject 调用 setReportId
-    for (BlockEditor* editor : m_blockEditors) {
-        if (editor->blockType() == BlockType::Chart) {
-            // 使用 Qt 元对象系统调用 setReportId
-            // ChartBlockEditor 声明了 Q_INVOKABLE void setReportId(qint64)
-            QMetaObject::invokeMethod(editor, "setReportId",
-                                       Qt::DirectConnection,
-                                       Q_ARG(qint64, reportId));
-        }
-    }
+    // 连续文档无需空提示（QTextEdit 自带 placeholder）
 }
 
 // ===========================================================================
-// 标签下拉列表（单选）
+// 格式操作（Word 式块级应用：无选区时作用于整个段落）
+// 自 ReportEditorWindow 下沉：逻辑归属编辑器，窗口仅负责按钮/对话框 UI
 // ===========================================================================
 
-void ReportEditor::updateTagDisplay()
+void ReportEditor::setBold(bool bold)
 {
-    if (!m_report || m_report->id() <= 0) {
-        ui->m_tagCombo->setCurrentIndex(0);  // 无标签
-        return;
-    }
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
 
-    // 获取当前报告的标签（取第一个，单选模式）
-    const Tag::List tags = TagService::findByReport(m_report->id());
-    if (tags.isEmpty()) {
-        ui->m_tagCombo->setCurrentIndex(0);  // 无标签
-        return;
-    }
-
-    // 在下拉列表中找到对应标签并选中
-    const qint64 tagId = tags.first()->id();
-    for (int i = 1; i < ui->m_tagCombo->count(); ++i) {
-        if (ui->m_tagCombo->itemData(i).toLongLong() == tagId) {
-            ui->m_tagCombo->setCurrentIndex(i);
-            return;
-        }
-    }
-    ui->m_tagCombo->setCurrentIndex(0);  // 没找到则显示无标签
+    QTextCharFormat fmt = edit->textCursor().charFormat();
+    fmt.setFontWeight(bold ? QFont::Bold : QFont::Normal);
+    applyCharFormat(fmt);
 }
 
-void ReportEditor::on_m_tagCombo_currentIndexChanged(int index)
+void ReportEditor::setItalic(bool italic)
 {
-    if (m_loading) return;  // 加载期间不保存
-    if (!m_report || m_report->id() <= 0) return;
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
 
-    const qint64 tagId = ui->m_tagCombo->itemData(index).toLongLong();
-    QList<qint64> tagIds;
-    if (tagId > 0) {
-        tagIds.append(tagId);
+    QTextCharFormat fmt = edit->textCursor().charFormat();
+    fmt.setFontItalic(italic);
+    applyCharFormat(fmt);
+}
+
+void ReportEditor::setUnderline(bool underline)
+{
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
+
+    QTextCharFormat fmt = edit->textCursor().charFormat();
+    fmt.setFontUnderline(underline);
+    applyCharFormat(fmt);
+}
+
+void ReportEditor::setFontSize(int pointSize)
+{
+    if (pointSize <= 0) return;
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
+
+    // 从当前格式拷贝（保留加粗/斜体/颜色等），只改字号并清除相对字号调整
+    QTextCharFormat fmt = edit->textCursor().charFormat();
+    fmt.setFontPointSize(pointSize);
+    fmt.clearProperty(QTextFormat::FontSizeAdjustment);    // 清掉 h1 标题等相对字号，否则绝对字号不生效
+    applyCharFormat(fmt);
+}
+
+void ReportEditor::setTextColor(const QColor& color)
+{
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
+
+    QTextCharFormat fmt = edit->textCursor().charFormat();
+    fmt.setForeground(color);
+    applyCharFormat(fmt);
+}
+
+void ReportEditor::setList(bool numbered)
+{
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
+
+    QTextCursor cursor = edit->textCursor();
+    QTextListFormat listFormat;
+    listFormat.setStyle(numbered ? QTextListFormat::ListDecimal
+                                 : QTextListFormat::ListDisc);
+    cursor.createList(listFormat);
+    edit->setTextCursor(cursor);
+    edit->setFocus();
+}
+
+void ReportEditor::setQuote()
+{
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
+
+    QTextCursor cursor = edit->textCursor();
+    QTextBlockFormat blockFmt = cursor.blockFormat();
+    blockFmt.setIndent(blockFmt.indent() == 0 ? 1 : 0);
+    cursor.setBlockFormat(blockFmt);
+    edit->setTextCursor(cursor);
+    edit->setFocus();
+}
+
+void ReportEditor::applyCharFormat(const QTextCharFormat& fmt)
+{
+    DocumentTextEdit* edit = textEdit();
+    if (!edit) return;
+
+    QTextCursor cursor = edit->textCursor();
+    if (cursor.hasSelection()) {
+        // 有选中：应用到选中文字，保留选区（setCharFormat 替换语义，确保相对字号等被清除）
+        cursor.setCharFormat(fmt);
+        // 清除块的标题标记（HeadingLevel）：避免 toHtml 输出 h1，重载后相对字号覆盖绝对字号
+        clearBlockHeading(cursor);
+        edit->setTextCursor(cursor);
+    } else {
+        // 无选中：应用到整个段落，恢复原光标位置（Word 式）
+        // 使用块迭代方式应用，不依赖 QTextCursor::select 在失焦/选区状态下的行为
+        const int pos = cursor.position();
+        QTextBlock block = cursor.block();
+        QTextCursor blockCursor(block);
+        blockCursor.setPosition(block.position() + qMax(0, block.length() - 1));
+        blockCursor.setPosition(block.position(), QTextCursor::KeepAnchor);
+        blockCursor.setCharFormat(fmt);
+        clearBlockHeading(blockCursor);
+        cursor.setPosition(qMin(pos, cursor.document()->characterCount() - 1));
+        edit->setTextCursor(cursor);
     }
-    TagService::setReportTags(m_report->id(), tagIds);
+    // 强制重绘，确保应用立即可见
+    edit->viewport()->update();
+    edit->setFocus();
+}
+
+// 清除光标所在块的标题标记（HeadingLevel）。Qt 的 h1 等标题块带相对字号（FontSizeAdjustment），
+// 会覆盖绝对字号并随 toHtml 序列化导致重载后字号恢复，故应用格式时一并清除。
+void ReportEditor::clearBlockHeading(QTextCursor& cursor)
+{
+    QTextBlockFormat bf = cursor.blockFormat();
+    if (bf.property(QTextFormat::HeadingLevel).toInt() != 0) {
+        bf.clearProperty(QTextFormat::HeadingLevel);
+        cursor.setBlockFormat(bf);
+    }
 }

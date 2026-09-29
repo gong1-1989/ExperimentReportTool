@@ -9,16 +9,19 @@
 #define TAG_REPOSITORY_H
 
 #include <QList>
+#include <QHash>
 #include <QString>
+#include <QStringList>
 #include <QSqlQuery>
 #include "core/models/Tag.h"
+#include "BaseRepository.h"
 
 /**
  * @brief 标签仓储类
  *
  * 封装标签相关的数据库操作。
  */
-class TagRepository
+class TagRepository : public BaseRepository
 {
 public:
     // -----------------------------------------------------------------------
@@ -70,6 +73,11 @@ public:
 
     /// 获取报告的标签名称列表
     static QStringList findReportTagNames(qint64 reportId);
+
+    /** 批量查询多个报告的标签名映射（report_id -> 标签名列表），避免 N+1 查询 */
+    static QHash<qint64, QStringList> findReportTagNamesBatch(const QList<qint64>& reportIds);
+    /// 批量查询多个报告 id → 完整标签对象列表（含颜色，搜索结果/列表渲染用）
+    static QHash<qint64, Tag::List> findReportTagsBatch(const QList<qint64>& reportIds);
 private:
     /// 从 SQL 查询结果创建 Tag 对象
     static Tag::Ptr createFromQuery(const class QSqlQuery& query);

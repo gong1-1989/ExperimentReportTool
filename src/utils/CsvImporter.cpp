@@ -8,6 +8,7 @@
 #include "utils/CsvParser.h"
 #include "core/utils/Logger.h"
 
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QTextStream>
 
@@ -23,8 +24,8 @@ QString CsvImporter::fileFilter()
 
 QString CsvImporter::formatDisplayName(const QString& format)
 {
-    if (format == "csv") return QStringLiteral("CSV 文件");
-    if (format == "txt") return QStringLiteral("文本文件");
+    if (format == "csv") return QCoreApplication::translate("CsvImporter", "CSV 文件");
+    if (format == "txt") return QCoreApplication::translate("CsvImporter", "文本文件");
     return format;
 }
 
@@ -36,7 +37,7 @@ DataTable::Ptr CsvImporter::importFile(const QString& filePath, QString* errorMe
     CsvParseResult result = parser.parseFile(filePath);
 
     if (!result.success) {
-        const QString err = QStringLiteral("CSV 解析失败: %1 (行 %2)")
+        const QString err = QCoreApplication::translate("CsvImporter", "CSV 解析失败: %1 (行 %2)")
                                 .arg(result.errorMessage)
                                 .arg(result.errorLine);
         LOG_ERROR(err);
@@ -45,7 +46,7 @@ DataTable::Ptr CsvImporter::importFile(const QString& filePath, QString* errorMe
     }
 
     if (result.rows.isEmpty()) {
-        const QString err = QStringLiteral("CSV 文件为空");
+        const QString err = QCoreApplication::translate("CsvImporter", "CSV 文件为空");
         LOG_WARNING(err);
         if (errorMessage) *errorMessage = err;
         return nullptr;

@@ -85,7 +85,7 @@ DataTable::Ptr DataTableRepository::findById(qint64 id)
     if (id <= 0) return nullptr;
 
     // 获取数据库连接
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用预处理语句查询，防止 SQL 注入
@@ -117,7 +117,7 @@ DataTable::List DataTableRepository::findByReport(qint64 reportId)
 {
     DataTable::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 按创建时间升序排列，保证显示顺序稳定
@@ -138,7 +138,7 @@ DataTable::List DataTableRepository::findGlobal()
 {
     DataTable::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 全局数据表的 report_id 为 0
@@ -177,7 +177,7 @@ bool DataTableRepository::insert(DataTable::Ptr table)
     // 空指针检查
     if (!table) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备插入语句，使用 R"(...)" 原始字符串字面量避免转义
@@ -196,10 +196,7 @@ bool DataTableRepository::insert(DataTable::Ptr table)
     query.bindValue(":updated_at", now);                        // 更新时间
 
     // 执行插入并检查结果
-    if (!query.exec()) {
-        LOG_ERROR(QString("insert 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "insert ")) return false;
 
     // 获取数据库自动生成的自增 ID，回写到对象
     table->setId(query.lastInsertId().toLongLong());
@@ -228,7 +225,7 @@ bool DataTableRepository::update(const DataTable::Ptr& table)
     // 校验：指针非空且已持久化
     if (!table || !table->isPersisted()) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备更新语句
@@ -246,10 +243,7 @@ bool DataTableRepository::update(const DataTable::Ptr& table)
     query.bindValue(":id", table->id());
 
     // 执行更新
-    if (!query.exec()) {
-        LOG_ERROR(QString("update 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "update ")) return false;
 
     // 同步更新对象的时间戳
     table->setUpdatedAt(QDateTime::currentDateTime());
@@ -271,7 +265,7 @@ bool DataTableRepository::remove(qint64 id)
     // 参数校验
     if (id <= 0) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备删除语句
@@ -279,7 +273,11 @@ bool DataTableRepository::remove(qint64 id)
     query.bindValue(":id", id);
 
     // 执行删除并返回结果
-    return query.exec();
+    if (!query.exec()) {
+        LOG_ERROR(QString("删除数据表失败: id=%1, %2").arg(id).arg(query.lastError().text()));
+        return false;
+    }
+    return true;
 }
 
 // ===========================================================================
@@ -298,7 +296,7 @@ bool DataTableRepository::remove(qint64 id)
  */
 int DataTableRepository::countByReport(qint64 reportId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用 COUNT(*) 聚合查询

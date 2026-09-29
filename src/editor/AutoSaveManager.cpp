@@ -67,7 +67,7 @@ void AutoSaveManager::markSaveSuccess()
     m_saveRetryCount = 0;
     m_lastSaveTime = QDateTime::currentDateTime();
     setSaveState(SaveState::Idle);
-    LOG_INFO("自动保存成功");
+    LOG_DEBUG("自动保存成功");
 }
 
 void AutoSaveManager::markSaveFailed(const QString& error)
@@ -100,7 +100,7 @@ void AutoSaveManager::onTimerTimeout()
     if (!m_enabled) return;
 
     setSaveState(SaveState::Saving);
-    LOG_INFO("触发自动保存");
+    LOG_DEBUG("触发自动保存");
     emit saveTriggered();
 }
 

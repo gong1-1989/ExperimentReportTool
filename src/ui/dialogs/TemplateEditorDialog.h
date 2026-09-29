@@ -71,7 +71,7 @@ private:
     /// 加载模板到编辑器
     void loadTemplate();
     /// 从编辑器收集模板块
-    QList<ContentBlock> collectBlocks() const;
+    QString collectDocument();
 
     // -----------------------------------------------------------------------
     // UI 控件

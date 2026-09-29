@@ -5,12 +5,54 @@
 
 #include "UserService.h"
 #include "core/utils/Logger.h"
+#include "data/database/DatabaseManager.h"
 #include "data/repositories/UserRepository.h"
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QSet>
+#include <QStringList>
 #include <QtGlobal>
 
 User::Ptr UserService::getById(qint64 id)
 {
     return UserRepository::findById(id);
+}
+
+QMap<qint64, QString> UserService::batchDisplayNames(const QList<qint64>& userIds)
+{
+    QMap<qint64, QString> result;
+
+    // 去重并过滤无效 id
+    QList<qint64> uniqueIds;
+    QSet<qint64> seen;
+    for (qint64 id : userIds) {
+        if (id > 0 && !seen.contains(id)) {
+            seen.insert(id);
+            uniqueIds.append(id);
+        }
+    }
+    if (uniqueIds.isEmpty()) return result;
+
+    // id 为纯整数，可直接拼接（避免 QSqlQuery 的 IN 绑定繁琐）；仅出现一次，无注入风险
+    QStringList placeholders;
+    for (qint64 id : uniqueIds) {
+        placeholders << QString::number(id);
+    }
+
+    QSqlQuery query(DatabaseManager::instance().database());
+    const QString sql = QString("SELECT id, display_name, username FROM users WHERE id IN (%1)")
+                            .arg(placeholders.join(QStringLiteral(", ")));
+    if (!query.exec(sql)) {
+        LOG_WARNING(QString("批量查询用户显示名失败: %1").arg(query.lastError().text()));
+        return result;
+    }
+    while (query.next()) {
+        const qint64 id = query.value(0).toLongLong();
+        const QString displayName = query.value(1).toString();
+        const QString username = query.value(2).toString();
+        result.insert(id, displayName.isEmpty() ? username : displayName);
+    }
+    return result;
 }
 
 User::Ptr UserService::getByUsername(const QString& username)

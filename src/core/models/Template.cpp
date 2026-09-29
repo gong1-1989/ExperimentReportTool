@@ -37,26 +37,39 @@ Template::~Template()
 
 QString Template::structureToJson() const
 {
-    QJsonArray array;
-    for (const ContentBlock& block : m_blocks) {
-        array.append(block.toJson());
+    QJsonObject root;
+    root["version"] = 2;
+    root["document"] = m_document;
+    QJsonArray objectArray;
+    for (const ContentBlock& object : m_objects) {
+        objectArray.append(object.toJson());
     }
-    QJsonDocument doc(array);
+    root["objects"] = objectArray;
+    QJsonDocument doc(root);
     return QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 }
 
 void Template::structureFromJson(const QString& json)
 {
-    m_blocks.clear();
+    m_document.clear();
     if (json.isEmpty()) return;
 
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &error);
-    if (error.error != QJsonParseError::NoError || !doc.isArray()) return;
+    if (error.error != QJsonParseError::NoError) return;
 
-    for (const QJsonValue& value : doc.array()) {
-        if (value.isObject()) {
-            m_blocks.append(ContentBlock::fromJson(value.toObject()));
+    m_objects.clear();
+
+    // 仅支持新版格式：顶层对象 { version, document, objects }
+    // （旧版块数组格式不再迁移，直接按空内容处理）
+    if (doc.isObject()) {
+        const QJsonObject root = doc.object();
+        m_document = root.value("document").toString();
+        const QJsonArray objectArray = root.value("objects").toArray();
+        for (const QJsonValue& value : objectArray) {
+            if (value.isObject()) {
+                m_objects.append(ContentBlock::fromJson(value.toObject()));
+            }
         }
     }
 }
@@ -83,11 +96,7 @@ bool Template::exportToFile(const QString& filePath) const
     root["description"] = m_description;
     root["exported_at"] = QDateTime::currentDateTime().toString(Qt::ISODate);
 
-    QJsonArray blocksArray;
-    for (const ContentBlock& block : m_blocks) {
-        blocksArray.append(block.toJson());
-    }
-    root["structure"] = blocksArray;
+    root["structure"] = structureToJson();
 
     QJsonDocument doc(root);
     // 带缩进的格式，方便人工阅读
@@ -125,25 +134,25 @@ Template::Ptr Template::importFromFile(const QString& filePath)
     temp->setCategory(root.value("category").toString());
     temp->setDescription(root.value("description").toString());
 
-    // 解析结构
-    QList<ContentBlock> blocks;
-    const QJsonArray blocksArray = root.value("structure").toArray();
-    for (const QJsonValue& value : blocksArray) {
-        if (value.isObject()) {
-            blocks.append(ContentBlock::fromJson(value.toObject()));
-        }
+    // 解析结构：新版对象 {version, document, objects}
+    const QJsonValue structure = root.value("structure");
+    if (structure.isObject()) {
+        temp->structureFromJson(QString::fromUtf8(
+            QJsonDocument(structure.toObject()).toJson(QJsonDocument::Compact)));
+    } else if (structure.isArray()) {
+        temp->structureFromJson(QString::fromUtf8(
+            QJsonDocument(structure.toArray()).toJson(QJsonDocument::Compact)));
     }
-    temp->setBlocks(blocks);
 
     return temp;
 }
 
 QString Template::toString() const
 {
-    return QString("Template(id=%1, name='%2', category='%3', builtin=%4, blocks=%5)")
+    return QString("Template(id=%1, name='%2', category='%3', builtin=%4, document_len=%5)")
         .arg(m_id)
         .arg(m_name)
         .arg(m_category)
         .arg(m_isBuiltin)
-        .arg(m_blocks.size());
+        .arg(m_document.size());
 }

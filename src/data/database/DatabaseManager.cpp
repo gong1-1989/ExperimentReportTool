@@ -19,6 +19,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QUuid>
 
 // 数据库连接名称（使用唯一名称避免冲突）
 static const char* CONNECTION_NAME = "experiment_report_main";
@@ -73,7 +74,7 @@ bool DatabaseManager::initialize(const QString& dbPath)
         return false;
     }
 
-    LOG_INFO(QString("数据库已打开: %1").arg(dbPath));
+    LOG_DEBUG(QString("数据库已打开: %1").arg(dbPath));
 
     // -----------------------------------------------------------------------
     // SQLite 性能与功能设置
@@ -127,7 +128,7 @@ bool DatabaseManager::initialize(const QString& dbPath)
     const int targetVersion = AppConstants::DATABASE_VERSION;
 
     if (storedVersion < targetVersion) {
-        LOG_INFO(QString("需要数据库迁移: %1 -> %2").arg(storedVersion).arg(targetVersion));
+        LOG_DEBUG(QString("需要数据库迁移: %1 -> %2").arg(storedVersion).arg(targetVersion));
         if (!migrate(storedVersion, targetVersion)) {
             LOG_ERROR("数据库迁移失败");
             return false;
@@ -149,7 +150,7 @@ bool DatabaseManager::initialize(const QString& dbPath)
     UserRepository::initializeDefaultUsers();
 
     m_initialized = true;
-    LOG_INFO(QString("数据库初始化完成，版本: %1").arg(m_currentVersion));
+    LOG_DEBUG(QString("数据库初始化完成，版本: %1").arg(m_currentVersion));
     return true;
 }
 
@@ -192,6 +193,7 @@ bool DatabaseManager::createTables()
             status          TEXT DEFAULT 'draft',
             author          TEXT DEFAULT '',
             created_by      INTEGER DEFAULT -1,
+            modified_by     INTEGER DEFAULT -1,
             version         INTEGER DEFAULT 1,
             word_count      INTEGER DEFAULT 0,
             experiment_date DATE,
@@ -237,13 +239,12 @@ bool DatabaseManager::createTables()
     const QString createDataTables = R"(
         CREATE TABLE IF NOT EXISTS data_tables (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            report_id   INTEGER NOT NULL,
+            report_id   INTEGER NOT NULL DEFAULT 0,
             name        TEXT NOT NULL,
             columns     TEXT DEFAULT '[]',
             rows        TEXT DEFAULT '[]',
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     )";
 
@@ -341,7 +342,7 @@ bool DatabaseManager::createTables()
         }
     }
 
-    LOG_INFO("所有表创建完成");
+    LOG_DEBUG("所有表创建完成");
     return true;
 }
 
@@ -364,7 +365,9 @@ bool DatabaseManager::createIndexes()
         "CREATE INDEX IF NOT EXISTS idx_report_versions_report_id ON report_versions(report_id);",
         "CREATE INDEX IF NOT EXISTS idx_data_tables_report_id ON data_tables(report_id);",
         "CREATE INDEX IF NOT EXISTS idx_attachments_report_id ON attachments(report_id);",
-        "CREATE INDEX IF NOT EXISTS idx_templates_category ON templates(category);"
+        "CREATE INDEX IF NOT EXISTS idx_templates_category ON templates(category);",
+        // 按标签反向查报告（WHERE tag_id=:id）时主键 (report_id, tag_id) 无前缀索引可用
+        "CREATE INDEX IF NOT EXISTS idx_report_tags_tag_id ON report_tags(tag_id);"
     };
 
     for (const QString& sql : indexes) {
@@ -409,6 +412,7 @@ bool DatabaseManager::createFtsTables()
         return true;
     }
 
+    LOG_DEBUG("FTS5 全文索引可用，搜索走全文检索");
     return true;
 }
 
@@ -476,6 +480,13 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
     QSqlDatabase db = database();
     QSqlQuery query(db);
 
+    // 整个迁移过程包在单个事务中：中途任一 ALTER/CREATE 失败则整体回滚，
+    // 避免留下"部分迁移"状态（前几步已执行但数据库版本号未更新）
+    if (!db.transaction()) {
+        LOG_ERROR(QString("迁移事务启动失败: %1").arg(db.lastError().text()));
+        return false;
+    }
+
     // 辅助函数：检查表中是否存在某列
     auto hasColumn = [&](const QString& table, const QString& column) -> bool {
         QSqlQuery colQuery(db);
@@ -483,12 +494,12 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         while (colQuery.next()) {
             if (colQuery.value(1).toString() == column) return true;
         }
-        return false;
+        return false;  // 列不存在（正常判断结果，非迁移失败，不能回滚事务）
     };
 
     // v1 -> v2: tags 表添加 description 和 created_at 字段
     if (fromVersion < 2) {
-        LOG_INFO("执行 v1 -> v2 数据库迁移: tags 表添加字段");
+        LOG_DEBUG("执行 v1 -> v2 数据库迁移: tags 表添加字段");
 
         // 检查列是否已存在（避免重复添加）
         bool hasDescription = false;
@@ -503,6 +514,8 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         if (!hasDescription) {
             if (!query.exec("ALTER TABLE tags ADD COLUMN description TEXT DEFAULT '';")) {
                 LOG_ERROR(QString("迁移失败: 添加 description 列 - %1").arg(query.lastError().text()));
+                db.rollback();
+
                 return false;
             }
         }
@@ -510,16 +523,18 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         if (!hasCreatedAt) {
             if (!query.exec("ALTER TABLE tags ADD COLUMN created_at TEXT DEFAULT '';")) {
                 LOG_ERROR(QString("迁移失败: 添加 created_at 列 - %1").arg(query.lastError().text()));
+                db.rollback();
+
                 return false;
             }
         }
 
-        LOG_INFO("v1 -> v2 迁移完成");
+        LOG_DEBUG("v1 -> v2 迁移完成");
     }
 
     // v2 -> v3: 添加 users 表，projects/reports 表加 created_by 和 version 字段
     if (fromVersion < 3) {
-        LOG_INFO("执行 v2 -> v3 数据库迁移: 多用户支持");
+        LOG_DEBUG("执行 v2 -> v3 数据库迁移: 多用户支持");
 
         // 1. 创建 users 表
         const QString createUsers = R"(
@@ -536,6 +551,8 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         )";
         if (!query.exec(createUsers)) {
             LOG_ERROR(QString("迁移失败: 创建 users 表 - %1").arg(query.lastError().text()));
+            db.rollback();
+
             return false;
         }
 
@@ -543,6 +560,8 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         if (!hasColumn("projects", "created_by")) {
             if (!query.exec("ALTER TABLE projects ADD COLUMN created_by INTEGER DEFAULT -1;")) {
                 LOG_ERROR(QString("迁移失败: projects 添加 created_by - %1").arg(query.lastError().text()));
+                db.rollback();
+
                 return false;
             }
         }
@@ -551,6 +570,8 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         if (!hasColumn("reports", "created_by")) {
             if (!query.exec("ALTER TABLE reports ADD COLUMN created_by INTEGER DEFAULT -1;")) {
                 LOG_ERROR(QString("迁移失败: reports 添加 created_by - %1").arg(query.lastError().text()));
+                db.rollback();
+
                 return false;
             }
         }
@@ -559,11 +580,13 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         if (!hasColumn("reports", "version")) {
             if (!query.exec("ALTER TABLE reports ADD COLUMN version INTEGER DEFAULT 1;")) {
                 LOG_ERROR(QString("迁移失败: reports 添加 version - %1").arg(query.lastError().text()));
+                db.rollback();
+
                 return false;
             }
         }
 
-        LOG_INFO("v2 -> v3 迁移完成");
+        LOG_DEBUG("v2 -> v3 迁移完成");
     }
 
     // v3 -> v4: reports 表加 word_count 字段（字数统计缓存）
@@ -571,14 +594,67 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         if (!hasColumn("reports", "word_count")) {
             if (!query.exec("ALTER TABLE reports ADD COLUMN word_count INTEGER DEFAULT 0;")) {
                 LOG_ERROR(QString("迁移失败: reports 添加 word_count - %1").arg(query.lastError().text()));
+                db.rollback();
+
                 return false;
             }
         }
-        LOG_INFO("v3 -> v4 迁移完成");
+        LOG_DEBUG("v3 -> v4 迁移完成");
+    }
+
+    // v4 -> v5: 重建 data_tables 表，去掉 report_id 外键约束
+    //（全局数据表约定 report_id=0，外键约束下插入失败导致数据表保存失败）
+    if (fromVersion < 5) {
+        LOG_DEBUG("执行 v4 -> v5 数据库迁移: 重建 data_tables 去掉外键");
+        if (query.exec("ALTER TABLE data_tables RENAME TO data_tables_old;")) {
+            const QString recreate = R"(
+                CREATE TABLE data_tables (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    report_id   INTEGER NOT NULL DEFAULT 0,
+                    name        TEXT NOT NULL,
+                    columns     TEXT DEFAULT '[]',
+                    rows        TEXT DEFAULT '[]',
+                    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            )";
+            if (!query.exec(recreate)) {
+                LOG_ERROR(QString("迁移失败: 重建 data_tables - %1").arg(query.lastError().text()));
+                db.rollback();
+                return false;
+            }
+            if (!query.exec("INSERT INTO data_tables (id, report_id, name, columns, rows, created_at, updated_at) "
+                            "SELECT id, report_id, name, columns, rows, created_at, updated_at FROM data_tables_old;")) {
+                LOG_ERROR(QString("迁移失败: 拷贝 data_tables 数据 - %1").arg(query.lastError().text()));
+                db.rollback();
+                return false;
+            }
+            if (!query.exec("DROP TABLE data_tables_old;")) {
+                LOG_ERROR(QString("迁移失败: 删除旧 data_tables - %1").arg(query.lastError().text()));
+                db.rollback();
+                return false;
+            }
+            LOG_DEBUG("v4 -> v5 迁移完成");
+        } else {
+            LOG_WARNING("data_tables 重命名失败（可能表不存在），跳过 v4->v5 迁移");
+        }
+    }
+
+    // v5 -> v6: reports 表加 modified_by（最后修改者用户 ID）
+    if (fromVersion < 6) {
+        if (!hasColumn("reports", "modified_by")) {
+            LOG_DEBUG("执行 v5 -> v6 数据库迁移: reports 添加 modified_by");
+            if (!query.exec("ALTER TABLE reports ADD COLUMN modified_by INTEGER DEFAULT -1;")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 modified_by - %1").arg(query.lastError().text()));
+                db.rollback();
+                return false;
+            }
+        }
     }
 
     Q_UNUSED(toVersion);
-    LOG_INFO("数据库迁移完成");
+    LOG_DEBUG("数据库迁移完成");
+    db.commit();
     return true;
 }
 
@@ -604,7 +680,9 @@ void DatabaseManager::setStoredVersion(int version)
     // INSERT OR REPLACE：不存在则插入，存在则更新
     query.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('database_version', :version);");
     query.bindValue(":version", QString::number(version));
-    query.exec();
+    if (!query.exec()) {
+        LOG_ERROR(QString("写入数据库版本号失败: %1").arg(query.lastError().text()));
+    }
 }
 
 // ===========================================================================
@@ -615,11 +693,21 @@ bool DatabaseManager::seedBuiltinTemplates()
 {
     QSqlDatabase db = database();
 
-    // 检查是否已有内置模板
+    // 检查是否已有内置模板：仅接受最新 v4（纯段落）模板，其余一律重建
     QSqlQuery check(db);
-    check.exec("SELECT COUNT(*) FROM templates WHERE is_builtin = 1;");
-    if (check.next() && check.value(0).toInt() > 0) {
-        return true;  // 已有内置模板，跳过
+    check.exec("SELECT structure FROM templates WHERE is_builtin = 1 LIMIT 1;");
+    if (check.next()) {
+        const QString structure = check.value(0).toString();
+        if (structure.contains("\"version\": 4")) {
+            return true;  // 已是 v4 模板
+        }
+        // 旧版内置模板：删除后重建（保留自定义模板）
+        LOG_DEBUG("检测到旧版内置模板，删除重建为 v4 纯段落模板");
+        QSqlQuery del(db);
+        if (!del.exec("DELETE FROM templates WHERE is_builtin = 1;")) {
+            LOG_ERROR(QString("删除旧版内置模板失败: %1").arg(del.lastError().text()));
+            return false;
+        }
     }
 
     // 插入通用实验报告模板
@@ -629,32 +717,42 @@ bool DatabaseManager::seedBuiltinTemplates()
         VALUES (:name, :category, :description, :structure, 1);
     )");
 
-    // 通用模板结构
-    const QJsonArray generalStructure = {
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "实验名称"}}}},
-        QJsonObject{{"type", "paragraph"}, {"data", QJsonObject{{"text", ""}}}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "实验目的"}}}},
-        QJsonObject{{"type", "paragraph"}, {"data", QJsonObject{{"text", ""}}}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "实验原理"}}}},
-        QJsonObject{{"type", "paragraph"}, {"data", QJsonObject{{"text", ""}}}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "实验器材"}}}},
-        QJsonObject{{"type", "paragraph"}, {"data", QJsonObject{{"text", ""}}}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "实验步骤"}}}},
-        QJsonObject{{"type", "numbered_list"}, {"data", QJsonObject{{"items", QJsonArray()}}}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "实验数据"}}}},
-        QJsonObject{{"type", "table"}, {"data", QJsonObject()}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "数据分析与图表"}}}},
-        QJsonObject{{"type", "chart"}, {"data", QJsonObject()}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "实验结论"}}}},
-        QJsonObject{{"type", "paragraph"}, {"data", QJsonObject{{"text", ""}}}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "误差分析"}}}},
-        QJsonObject{{"type", "paragraph"}, {"data", QJsonObject{{"text", ""}}}},
-        QJsonObject{{"type", "heading1"}, {"data", QJsonObject{{"text", "思考题"}}}},
-        QJsonObject{{"type", "paragraph"}, {"data", QJsonObject{{"text", ""}}}}
-    };
+    // 通用模板结构（新版 v2：连续文档 + 结构化对象锚点）
+    const QString tableObjId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString chartObjId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    // 模板标题全部用普通段落 <p> + 显式字号（不引入 h1/h2/h3 标题语义，
+    // 标题只是大一号的普通文字，与编辑器的"无标题/正文分类"保持一致）
+    const QString documentHtml = QString(
+        "<p style=\"font-size:20pt;\">实验名称</p>\n<p></p>\n"
+        "<p style=\"font-size:20pt;\">实验目的</p>\n<p></p>\n"
+        "<p style=\"font-size:20pt;\">实验原理</p>\n<p></p>\n"
+        "<p style=\"font-size:20pt;\">实验器材</p>\n<p></p>\n"
+        "<p style=\"font-size:20pt;\">实验步骤</p>\n<p></p>\n"
+        "<p style=\"font-size:20pt;\">实验数据</p>\n<p><img src=\"object://table/%1\"/></p>\n"
+        "<p style=\"font-size:20pt;\">数据分析与图表</p>\n<p><img src=\"object://chart/%2\"/></p>\n"
+        "<p style=\"font-size:20pt;\">实验结论</p>\n<p></p>\n"
+        "<p style=\"font-size:20pt;\">误差分析</p>\n<p></p>\n"
+        "<p style=\"font-size:20pt;\">思考题</p>\n<p></p>\n").arg(tableObjId, chartObjId);
+
+    QJsonObject root;
+    root["version"] = 4;
+    root["document"] = documentHtml;
+    QJsonArray objects;
+    QJsonObject tableObj;
+    tableObj["id"] = tableObjId;
+    tableObj["type"] = "table";
+    tableObj["data"] = QJsonObject();
+    QJsonObject chartObj;
+    chartObj["id"] = chartObjId;
+    chartObj["type"] = "chart";
+    chartObj["data"] = QJsonObject();
+    objects.append(tableObj);
+    objects.append(chartObj);
+    root["objects"] = objects;
 
     const QString generalJson = QString::fromUtf8(
-        QJsonDocument(generalStructure).toJson(QJsonDocument::Compact));
+        QJsonDocument(root).toJson(QJsonDocument::Compact));
 
     insert.bindValue(":name", "通用实验报告");
     insert.bindValue(":category", "general");
@@ -666,7 +764,7 @@ bool DatabaseManager::seedBuiltinTemplates()
         return false;
     }
 
-    LOG_INFO("内置模板初始化完成");
+    LOG_DEBUG("内置模板初始化完成");
     return true;
 }
 
@@ -696,7 +794,7 @@ void DatabaseManager::close()
         }
         QSqlDatabase::removeDatabase(m_connectionName);
         m_initialized = false;
-        LOG_INFO("数据库已关闭");
+        LOG_DEBUG("数据库已关闭");
     }
 }
 

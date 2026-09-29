@@ -29,7 +29,6 @@
 #include <QBuffer>
 #include <QImage>
 #include <QPixmap>
-#include <QRegularExpression>
 #include <QXmlStreamWriter>
 #include <QMimeDatabase>
 #include <QMimeType>
@@ -68,6 +67,10 @@ bool ExportManager::exportReport(const Report::Ptr& report,
         UiHelper::error(parent, QObject::tr("导出失败"), QObject::tr("输出路径为空"));
         return false;
     }
+
+    LOG_DEBUG(QString("开始导出: 格式=%1 路径=%2")
+        .arg(static_cast<int>(config.format))
+        .arg(config.filePath));
 
     // 确保输出目录存在
     QDir().mkpath(QFileInfo(config.filePath).absolutePath());
@@ -156,55 +159,15 @@ bool ExportManager::exportToHtml(const Report::Ptr& report,
 // Word 导出（基于 HTML 的 .docx 简化实现）
 // ===========================================================================
 
+
 /**
- * @brief 将 HTML 中的 base64 图片保存到指定目录，并用相对路径替换
- *
- * 用于 Word 导出：Word 对 base64 data: URI 支持有限，
- * 需要将图片保存为本地文件，用相对路径引用。
- *
- * @param html 原始 HTML
- * @param outputDir 输出目录（图片保存到 outputDir/images/）
- * @return 转换后的 HTML
+ * Word 格式说明：当前实现生成 HTML 内容并以 .doc 扩展名保存。
+ * Microsoft Word / WPS 均可正常打开 HTML 格式的 .doc 文件。
+ * 图片以 base64 data URI 内嵌（Word 2016+ / WPS 支持显示），
+ * 不生成额外的 images/ 文件夹。
+ * 如需真正的 .docx（OOXML）格式，后续可引入 QTextDocument::exportToOdf
+ * 或第三方库（如 libdocx）。
  */
-static QString convertBase64ImagesToRelativeFiles(const QString& html, const QString& outputDir)
-{
-    QString result = html;
-    const QString imagesDir = QDir(outputDir).filePath("images");
-    QDir().mkpath(imagesDir);
-
-    QRegularExpression regex("src=\"data:([^;]+);base64,([^\"]+)\"");
-    QRegularExpressionMatchIterator it = regex.globalMatch(html);
-    int imageIndex = 0;
-
-    while (it.hasNext()) {
-        const QRegularExpressionMatch match = it.next();
-        const QString mimeType = match.captured(1);
-        const QString base64Data = match.captured(2);
-
-        // 确定文件扩展名
-        QString ext = "png";
-        if (mimeType.contains("jpeg") || mimeType.contains("jpg")) ext = "jpg";
-        else if (mimeType.contains("gif")) ext = "gif";
-        else if (mimeType.contains("bmp")) ext = "bmp";
-
-        // 保存图片文件
-        const QString fileName = QString("image_%1.%2").arg(imageIndex++).arg(ext);
-        const QString filePath = QDir(imagesDir).filePath(fileName);
-
-        QFile file(filePath);
-        if (file.open(QIODevice::WriteOnly)) {
-            file.write(QByteArray::fromBase64(base64Data.toLatin1()));
-            file.close();
-        }
-
-        // 用相对路径替换（Word 支持相对路径）
-        const QString relativePath = QString("images/%1").arg(fileName);
-        result.replace(match.captured(0), QString("src=\"%1\"").arg(relativePath));
-    }
-
-    return result;
-}
-
 bool ExportManager::exportToWord(const Report::Ptr& report,
                                    const ExportConfig& config,
                                    QWidget* parent)
@@ -215,10 +178,8 @@ bool ExportManager::exportToWord(const Report::Ptr& report,
     // 完整的 .docx 需要 OOXML 格式，后续可以用 libdocx 或 pandoc
     QString html = m_htmlGenerator->generate(report, config);
 
-    // Word 对 base64 图片支持有限，将图片保存到同目录的 images/ 文件夹
-    const QString outputDir = QFileInfo(config.filePath).absolutePath();
-    html = convertBase64ImagesToRelativeFiles(html, outputDir);
-
+    // 图片以 base64 data URI 直接内嵌 HTML（Word 2016+/WPS 支持 data URI 图片显示）
+    // 不生成 images/ 文件夹，避免导出时产生额外文件
     // 包装为 Word 兼容的 HTML（添加 MSO 命名空间）
     const QString wordHtml = QString(
         "<html xmlns:o=\"urn:schemas-microsoft-com:office:office\" "
@@ -262,64 +223,39 @@ bool ExportManager::exportToText(const Report::Ptr& report,
     }
 
     if (config.includeMeta) {
-        text += QString("作者: %1\n").arg(report->author());
+        text += QString("创建者: %1\n").arg(report->author());
         text += QString("实验日期: %1\n").arg(report->experimentDate().toString("yyyy-MM-dd"));
         text += QString("创建时间: %1\n\n").arg(report->createdAt().toString("yyyy-MM-dd hh:mm"));
     }
 
-    // 遍历内容块
-    for (int i = 0; i < report->blockCount(); ++i) {
-        const ContentBlock& block = report->blockAt(i);
-        switch (block.type) {
-        case BlockType::Heading1:
-            text += "\n# " + block.data.value("text").toString() + "\n\n";
-            break;
-        case BlockType::Heading2:
-            text += "\n## " + block.data.value("text").toString() + "\n\n";
-            break;
-        case BlockType::Heading3:
-            text += "\n### " + block.data.value("text").toString() + "\n\n";
-            break;
-        case BlockType::Paragraph:
-            text += block.data.value("text").toString() + "\n\n";
-            break;
-        case BlockType::BulletList:
-            if (block.data.value("items").isArray()) {
-                for (const QJsonValue& item : block.data.value("items").toArray()) {
-                    text += "- " + item.toString() + "\n";
-                }
-                text += "\n";
-            }
-            break;
-        case BlockType::NumberedList:
-            if (block.data.value("items").isArray()) {
-                int num = 1;
-                for (const QJsonValue& item : block.data.value("items").toArray()) {
-                    text += QString("%1. %2\n").arg(num++).arg(item.toString());
-                }
-                text += "\n";
-            }
-            break;
-        case BlockType::Quote:
-            text += "> " + block.data.value("text").toString() + "\n\n";
-            break;
-        case BlockType::CodeBlock:
-            text += "```\n" + block.data.value("code").toString() + "\n```\n\n";
-            break;
-        case BlockType::Divider:
-            text += "\n" + QString(50, '-') + "\n\n";
-            break;
+    // 连续文档纯文本 + 对象占位
+    {
+        QTextDocument doc;
+        doc.setHtml(report->document());
+        text += doc.toPlainText() + "\n\n";
+    }
+    // 对象占位（按插入顺序）
+    const QList<ContentBlock>& objects = report->objects();
+    for (const ContentBlock& object : objects) {
+        switch (object.type) {
         case BlockType::Image:
-            text += QString("[图片: %1]\n\n").arg(block.data.value("caption").toString());
+            text += QString("[图片: %1]\n\n")
+                        .arg(object.data.value("caption").toString());
             break;
         case BlockType::Table:
-            text += "[表格]\n\n";
+        case BlockType::DataReference:
+            text += QString("[表格: %1]\n\n")
+                        .arg(object.data.value("caption").toString());
             break;
         case BlockType::Chart:
-            text += "[图表]\n\n";
+            text += QString("[图表: %1]\n\n")
+                        .arg(object.data.value("config").toObject().value("title").toString());
             break;
         case BlockType::Formula:
-        case BlockType::DataReference:
+            text += QString("[公式: %1]\n\n")
+                        .arg(object.data.value("latex").toString());
+            break;
+        default:
             break;
         }
     }

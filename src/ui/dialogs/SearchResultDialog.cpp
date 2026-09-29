@@ -120,6 +120,11 @@ void SearchResultDialog::displayResults(const QList<SearchResultItem>& results)
 
     ui->m_statusLabel->setText(tr("找到 %1 个结果").arg(results.size()));
 
+    // 批量加载本次结果全部标签（一次 SQL），避免逐结果查询
+    QList<qint64> reportIds;
+    for (const SearchResultItem& item : results) reportIds.append(item.report->id());
+    const QHash<qint64, Tag::List> tagsMap = TagService::findReportTagsBatch(reportIds);
+
     for (const SearchResultItem& item : results) {
         QListWidgetItem* listItem = new QListWidgetItem(ui->m_resultList);
 
@@ -128,7 +133,7 @@ void SearchResultDialog::displayResults(const QList<SearchResultItem>& results)
         const QString statusColor = AppTheme::statusColor(item.report->status()).name();
 
         // 标签（取前3个）
-        const Tag::List tags = TagService::findByReport(item.report->id());
+        const Tag::List tags = tagsMap.value(item.report->id());
         QString tagsHtml;
         for (int i = 0; i < qMin(3, tags.size()); ++i) {
             const QColor color = tags[i]->effectiveColor();
@@ -254,7 +259,7 @@ void SearchResultDialog::on_m_resultList_itemClicked(QListWidgetItem* item)
                 "<div style='padding: %1px;'>"
                 // 标题行
                 "<div style='margin-bottom: %1px;'>"
-                "<h2 style='color: %2; margin: 0 0 %3px 0; font-size: %4px;'>%5</h2>"
+                "<div style='color: %2; margin: 0 0 %3px 0; font-size: %4px; font-weight: bold;'>%5</div>"
                 "<span style='display: inline-block; background: %6; color: %7; "
                 "padding: %3px %8px; border-radius: %9px; font-size: %10px; font-weight: bold;'>%11</span>"
                 "</div>"

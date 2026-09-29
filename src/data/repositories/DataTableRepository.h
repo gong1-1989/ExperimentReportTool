@@ -8,8 +8,9 @@
 
 #include <QSqlQuery>
 #include "core/models/DataTable.h"
+#include "BaseRepository.h"
 
-class DataTableRepository
+class DataTableRepository : public BaseRepository
 {
 public:
     static DataTable::Ptr findById(qint64 id);

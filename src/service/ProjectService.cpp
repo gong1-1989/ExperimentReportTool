@@ -76,3 +76,8 @@ bool ProjectService::existsByName(const QString& name, qint64 excludeId)
 {
     return ProjectRepository::existsByName(name, excludeId);
 }
+
+QHash<qint64, QString> ProjectService::findNamesBatch(const QList<qint64>& projectIds)
+{
+    return ProjectRepository::findNamesBatch(projectIds);
+}

@@ -217,6 +217,7 @@ QListWidget, QTreeWidget, QTableWidget {
 QListWidget::item, QTreeWidget::item, QTableWidget::item {
     padding: 6px 8px;
     border-bottom: 1px solid #F2F6FC;
+    text-align: center;   /* 表格内容水平居中 */
 }
 
 QListWidget::item:selected, QTreeWidget::item:selected, QTableWidget::item:selected {
@@ -235,6 +236,7 @@ QHeaderView::section {
     border-bottom: 1px solid #E4E7ED;
     padding: 8px;
     font-weight: bold;
+    text-align: center;   /* 表头水平居中 */
 }
 
 /* ===========================================================================
@@ -354,6 +356,17 @@ QToolBar QToolButton {
 QToolBar QToolButton:hover {
     background-color: #ECF5FF;
     color: #4A90D9;
+}
+
+QToolBar QToolButton:checked {
+    background-color: #D9ECFF;
+    color: #1E6BB8;
+    border: 1px solid #A8C8E8;
+}
+
+QToolBar QToolButton:pressed {
+    background-color: #C6E0F7;
+    color: #1E6BB8;
 }
 
 QStatusBar {

@@ -4,6 +4,7 @@
  */
 
 #include "PluginManagerDialog.h"
+#include "ui/UiHelper.h"
 #include "ui_PluginManagerDialog.h"
 #include "core/plugin/PluginInterface.h"
 
@@ -27,6 +28,10 @@ PluginManagerDialog::PluginManagerDialog(PluginManager* pluginManager, QWidget* 
     ui->pluginTable->setColumnWidth(2, 100);
     ui->pluginTable->setColumnWidth(3, 60);
     ui->pluginTable->horizontalHeader()->setStretchLastSection(true);
+    // 表格内容与表头居中
+    UiHelper::centerTableWidget(ui->pluginTable);
+
+    // 槽函数通过 uic 自动连接    ui->pluginTable->horizontalHeader()->setStretchLastSection(true);
 
     // 槽函数通过 uic 自动连接（on_btnRefresh_clicked、on_pluginTable_cellClicked）
 

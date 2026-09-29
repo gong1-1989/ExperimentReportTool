@@ -34,7 +34,7 @@ ContentBlock ContentBlock::fromJson(const QJsonObject& json)
 
     // 如果没有 ID，生成一个
     if (block.id.isEmpty()) {
-        block.id = Report::generateBlockId();
+        block.id = Report::generateObjectId();
     }
 
     return block;
@@ -43,40 +43,25 @@ ContentBlock ContentBlock::fromJson(const QJsonObject& json)
 QString ContentBlock::blockTypeToString(BlockType type)
 {
     switch (type) {
-    case BlockType::Heading1:      return "heading1";
-    case BlockType::Heading2:      return "heading2";
-    case BlockType::Heading3:      return "heading3";
-    case BlockType::Paragraph:     return "paragraph";
-    case BlockType::BulletList:    return "bullet_list";
-    case BlockType::NumberedList:  return "numbered_list";
     case BlockType::Table:         return "table";
     case BlockType::Image:         return "image";
     case BlockType::Chart:         return "chart";
-    case BlockType::CodeBlock:     return "code_block";
     case BlockType::Formula:       return "formula";
-    case BlockType::Quote:         return "quote";
     case BlockType::Divider:       return "divider";
     case BlockType::DataReference: return "data_reference";
     }
-    return "paragraph";  // 默认
+    return "data_reference";  // 默认
 }
 
 BlockType ContentBlock::blockTypeFromString(const QString& str)
 {
-    if (str == "heading1")      return BlockType::Heading1;
-    if (str == "heading2")      return BlockType::Heading2;
-    if (str == "heading3")      return BlockType::Heading3;
-    if (str == "bullet_list")   return BlockType::BulletList;
-    if (str == "numbered_list") return BlockType::NumberedList;
     if (str == "table")         return BlockType::Table;
     if (str == "image")         return BlockType::Image;
     if (str == "chart")         return BlockType::Chart;
-    if (str == "code_block")    return BlockType::CodeBlock;
     if (str == "formula")       return BlockType::Formula;
-    if (str == "quote")         return BlockType::Quote;
     if (str == "divider")       return BlockType::Divider;
     if (str == "data_reference")return BlockType::DataReference;
-    return BlockType::Paragraph;  // 默认段落
+    return BlockType::DataReference;  // 默认对象
 }
 
 // ===========================================================================
@@ -103,86 +88,47 @@ Report::~Report()
 {
 }
 
-// ===========================================================================
-// 内容块操作
-// ===========================================================================
-
-const ContentBlock& Report::blockAt(int index) const
+ContentBlock Report::objectById(const QString& objectId) const
 {
-    // 静态空块，用于越界访问时返回（避免悬垂引用）
-    static const ContentBlock s_emptyBlock;
-
-    if (index >= 0 && index < m_blocks.size()) {
-        return m_blocks.at(index);
+    for (const ContentBlock& object : m_objects) {
+        if (object.id == objectId) return object;
     }
-    return s_emptyBlock;
+    return ContentBlock();
 }
 
-void Report::appendBlock(const ContentBlock& block)
+void Report::addObject(const ContentBlock& object)
 {
-    ContentBlock b = block;
-    // 确保块有 ID
-    if (b.id.isEmpty()) {
-        b.id = generateBlockId();
+    ContentBlock obj = object;
+    // 确保对象有 ID
+    if (obj.id.isEmpty()) {
+        obj.id = generateObjectId();
     }
-    m_blocks.append(b);
+    m_objects.append(obj);
     m_updatedAt = QDateTime::currentDateTime();
 }
 
-void Report::insertBlock(int index, const ContentBlock& block)
+bool Report::updateObject(const QString& objectId, const QJsonObject& data)
 {
-    ContentBlock b = block;
-    if (b.id.isEmpty()) {
-        b.id = generateBlockId();
-    }
-    // 边界检查：index 小于 0 则插入开头，大于等于 size 则追加
-    if (index < 0) index = 0;
-    if (index >= m_blocks.size()) {
-        m_blocks.append(b);
-    } else {
-        m_blocks.insert(index, b);
-    }
-    m_updatedAt = QDateTime::currentDateTime();
-}
-
-void Report::replaceBlock(int index, const ContentBlock& block)
-{
-    if (index >= 0 && index < m_blocks.size()) {
-        ContentBlock b = block;
-        // 保留原块的 ID（如果新块没有指定 ID）
-        if (b.id.isEmpty()) {
-            b.id = m_blocks.at(index).id;
+    for (ContentBlock& object : m_objects) {
+        if (object.id == objectId) {
+            object.data = data;
+            m_updatedAt = QDateTime::currentDateTime();
+            return true;
         }
-        m_blocks.replace(index, b);
-        m_updatedAt = QDateTime::currentDateTime();
     }
+    return false;
 }
 
-void Report::removeBlock(int index)
+bool Report::removeObject(const QString& objectId)
 {
-    if (index >= 0 && index < m_blocks.size()) {
-        m_blocks.removeAt(index);
-        m_updatedAt = QDateTime::currentDateTime();
+    for (int i = 0; i < m_objects.size(); ++i) {
+        if (m_objects.at(i).id == objectId) {
+            m_objects.removeAt(i);
+            m_updatedAt = QDateTime::currentDateTime();
+            return true;
+        }
     }
-}
-
-void Report::moveBlock(int from, int to)
-{
-    // 边界检查
-    if (from < 0 || from >= m_blocks.size()) return;
-    if (to < 0 || to >= m_blocks.size()) return;
-    if (from == to) return;
-
-    // 使用 move 语义（QList 内部优化）
-    ContentBlock block = m_blocks.takeAt(from);
-    m_blocks.insert(to, block);
-    m_updatedAt = QDateTime::currentDateTime();
-}
-
-void Report::clearBlocks()
-{
-    m_blocks.clear();
-    m_updatedAt = QDateTime::currentDateTime();
+    return false;
 }
 
 // ===========================================================================
@@ -191,19 +137,25 @@ void Report::clearBlocks()
 
 QString Report::contentToJson() const
 {
-    QJsonArray array;
-    for (const ContentBlock& block : m_blocks) {
-        array.append(block.toJson());
-    }
+    QJsonObject root;
+    root["version"] = 2;
+    root["document"] = m_document;
 
-    QJsonDocument doc(array);
+    QJsonArray objectArray;
+    for (const ContentBlock& object : m_objects) {
+        objectArray.append(object.toJson());
+    }
+    root["objects"] = objectArray;
+
+    QJsonDocument doc(root);
     // 紧凑格式（不缩进），节省存储空间
     return QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
 }
 
 void Report::contentFromJson(const QString& json)
 {
-    m_blocks.clear();
+    m_document.clear();
+    m_objects.clear();
 
     if (json.isEmpty()) return;
 
@@ -216,12 +168,17 @@ void Report::contentFromJson(const QString& json)
         return;
     }
 
-    if (!doc.isArray()) return;
+    // 仅支持新版格式：顶层对象 { version, document, objects }
+    // （旧版块数组格式不再迁移，直接按空内容处理）
+    if (!doc.isObject()) return;
 
-    QJsonArray array = doc.array();
-    for (const QJsonValue& value : array) {
+    const QJsonObject root = doc.object();
+    m_document = root.value("document").toString();
+
+    const QJsonArray objectArray = root.value("objects").toArray();
+    for (const QJsonValue& value : objectArray) {
         if (value.isObject()) {
-            m_blocks.append(ContentBlock::fromJson(value.toObject()));
+            m_objects.append(ContentBlock::fromJson(value.toObject()));
         }
     }
 }
@@ -230,64 +187,29 @@ QString Report::toPlainText() const
 {
     QStringList texts;
 
-    for (const ContentBlock& block : m_blocks) {
-        // 所有块都优先尝试 plain_text 字段（TextBlockEditor 会预存纯文本）
-        const QString plainText = block.data.value("plain_text").toString().trimmed();
-        if (!plainText.isEmpty()) {
-            texts.append(plainText);
-            continue;
-        }
+    // 连续文档：解析 HTML 得纯文本
+    if (!m_document.isEmpty()) {
+        QTextDocument doc;
+        doc.setHtml(m_document);
+        const QString plain = doc.toPlainText().trimmed();
+        if (!plain.isEmpty()) texts.append(plain);
+    }
 
-        switch (block.type) {
-        case BlockType::Heading1:
-        case BlockType::Heading2:
-        case BlockType::Heading3:
-        case BlockType::Paragraph:
-        case BlockType::Quote: {
-            // 兼容旧数据：从 HTML 解析纯文本
-            const QString html = block.data.value("text").toString();
-            if (!html.isEmpty()) {
-                QTextDocument doc;
-                doc.setHtml(html);
-                const QString plain = doc.toPlainText().trimmed();
-                if (!plain.isEmpty()) {
-                    texts.append(plain);
-                }
-            }
-            break;
-        }
-
-        case BlockType::BulletList:
-        case BlockType::NumberedList:
-            // 列表块的 data["items"] 是字符串数组
-            if (block.data.value("items").isArray()) {
-                const QJsonArray items = block.data.value("items").toArray();
-                for (const QJsonValue& item : items) {
-                    texts.append(item.toString());
-                }
-            }
-            break;
-
-        case BlockType::CodeBlock:
-            // 代码块的内容在 data["code"] 中
-            texts.append(block.data.value("code").toString());
-            break;
-
+    // 结构化对象：提取其中的文本内容
+    for (const ContentBlock& object : m_objects) {
+        switch (object.type) {
         case BlockType::Formula:
-            // 公式内容在 data["latex"] 中
-            texts.append(block.data.value("latex").toString());
+            texts.append(object.data.value("latex").toString());
             break;
-
         case BlockType::Image:
-            // 图片的说明文字在 data["caption"] 中
-            texts.append(block.data.value("caption").toString());
+            texts.append(object.data.value("caption").toString());
             break;
-
         case BlockType::Table:
         case BlockType::Chart:
         case BlockType::DataReference:
-        case BlockType::Divider:
-            // 这些块没有可统计的文本
+            // 表格/图表/数据引用以数据表为主，不计入文本检索
+            break;
+        default:
             break;
         }
     }
@@ -364,15 +286,15 @@ ReportStatus Report::statusFromString(const QString& str)
 
 QString Report::toString() const
 {
-    return QString("Report(id=%1, title='%2', project=%3, status=%4, blocks=%5)")
+    return QString("Report(id=%1, title='%2', project=%3, status=%4, objects=%5)")
         .arg(m_id)
         .arg(m_title)
         .arg(m_projectId)
         .arg(statusToString())
-        .arg(m_blocks.size());
+        .arg(m_objects.size());
 }
 
-QString Report::generateBlockId()
+QString Report::generateObjectId()
 {
     // 生成不带花括号的 UUID
     return QUuid::createUuid().toString(QUuid::WithoutBraces);

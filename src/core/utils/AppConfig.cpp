@@ -25,7 +25,7 @@ AppConfig::AppConfig()
     : m_settings(QCoreApplication::applicationDirPath() + "/config.ini",
                  QSettings::IniFormat)
 {
-    LOG_INFO(QString("配置文件路径: %1").arg(configFilePath()));
+    LOG_DEBUG(QString("配置文件路径: %1").arg(configFilePath()));
 }
 
 // ===========================================================================
@@ -268,12 +268,12 @@ void AppConfig::setDefaultExportPath(const QString& path)
 void AppConfig::save()
 {
     m_settings.sync();
-    LOG_INFO("配置已保存到文件");
+    LOG_DEBUG("配置已保存到文件");
 }
 
 void AppConfig::resetToDefaults()
 {
     m_settings.clear();
     m_settings.sync();
-    LOG_INFO("配置已重置为默认值");
+    LOG_DEBUG("配置已重置为默认值");
 }

@@ -7,8 +7,10 @@
 #include "ui_ChartConfigDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
+#include "chart/ChartRenderer.h"
 
 #include <QMessageBox>
+#include <QPushButton>
 #include "ui/UiHelper.h"
 #include <QTabWidget>
 #include <QWidget>
@@ -130,6 +132,10 @@ ChartConfigDialog::ChartConfigDialog(const DataTable::List& tables,
     connect(ui->m_buttonBox, &QDialogButtonBox::rejected,
             this, &QDialog::reject);
 
+    // 添加"预览"自定义按钮（代码创建，避免 .ui 的 <button> 语法在严格 uic 下不兼容）
+    QPushButton* previewBtn = ui->m_buttonBox->addButton(tr("预览"), QDialogButtonBox::ActionRole);
+    connect(previewBtn, &QPushButton::clicked, this, &ChartConfigDialog::onPreview);
+
     // 加载配置（必须在填充数据之后调用）
     loadConfig();
 
@@ -218,7 +224,12 @@ void ChartConfigDialog::onAccept()
 {
     if (!validateConfig()) return;
 
-    // 收集配置
+    collectConfig();
+    accept();
+}
+
+void ChartConfigDialog::collectConfig()
+{
     m_config.type = static_cast<ChartType>(ui->m_typeCombo->currentData().toInt());
     m_config.title = ui->m_titleEdit->text().trimmed();
     m_config.xAxisTitle = ui->m_xAxisTitleEdit->text().trimmed();
@@ -237,8 +248,6 @@ void ChartConfigDialog::onAccept()
     m_config.theme = ui->m_themeCombo->currentData().toString();
     m_config.width = ui->m_widthSpin->value();
     m_config.height = ui->m_heightSpin->value();
-
-    accept();
 }
 
 bool ChartConfigDialog::validateConfig()
@@ -256,6 +265,41 @@ bool ChartConfigDialog::validateConfig()
 
 void ChartConfigDialog::onPreview()
 {
-    // 预览功能（后续实现）
-    UiHelper::info(this, tr("预览"), tr("图表预览功能将在后续版本中实现"));
+    if (!validateConfig()) return;
+
+    collectConfig();
+
+    // 从构造时传入的数据源中查找数据表
+    // （表格块的内嵌表格 id 为负数、未持久化，不能通过 DataTableService::getById 查询）
+    DataTable::Ptr table;
+    for (const DataTable::Ptr& t : m_tables) {
+        if (t->id() == m_config.dataTableId) {
+            table = t;
+            break;
+        }
+    }
+    if (!table) {
+        UiHelper::warning(this, tr("预览失败"), tr("无法加载数据表"));
+        return;
+    }
+
+    // 渲染图表
+    delete m_previewRenderer;
+    m_previewRenderer = new ChartRenderer(this);
+    m_previewRenderer->setConfig(m_config);
+    m_previewRenderer->setDataTable(table);
+    if (!m_previewRenderer->render()) {
+        UiHelper::warning(this, tr("预览失败"), tr("图表渲染失败，请检查数据表列配置"));
+        return;
+    }
+
+    // 清空预览区并放入图表视图
+    QLayoutItem* child;
+    while ((child = ui->previewLayout->takeAt(0)) != nullptr) {
+        if (QWidget* w = child->widget()) {
+            w->deleteLater();
+        }
+        delete child;
+    }
+    ui->previewLayout->addWidget(m_previewRenderer->chartView());
 }

@@ -21,6 +21,7 @@
 #include <QHeaderView>
 #include "ui/UiHelper.h"
 #include <QDateTime>
+#include <QItemSelectionModel>
 
 // ===========================================================================
 // 构造函数
@@ -68,20 +69,23 @@ void ReportListWidget::setupUi()
             .arg(AppTheme::Radius::Medium)
             .arg(AppTheme::Color::PrimaryHover));
 
-    // 表格视图
-    ui->tableWidget->setColumnCount(7);
-    ui->tableWidget->setHorizontalHeaderLabels({
-        tr("标题"), tr("状态"), tr("创建者"),
-        tr("实验日期"), tr("更新时间"), tr("字数"), tr("标签")
-    });
+    // 表格视图：QTableView + ReportListModel（虚拟化渲染，按需创建可见行）
+    m_tableModel = new ReportListModel(this);
+    ui->tableWidget->setModel(m_tableModel);
+    // QTableView 自身没有 selectionChanged 信号（在 QItemSelectionModel 上），必须手动连接
+    connect(ui->tableWidget->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, &ReportListWidget::handleTableSelectionChanged);
     ui->tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->tableWidget->setAlternatingRowColors(true);
+    // 表格内容与表头居中
+    UiHelper::centerTableWidget(ui->tableWidget);
     ui->tableWidget->verticalHeader()->setVisible(false);
     ui->tableWidget->horizontalHeader()->setStretchLastSection(true);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     ui->tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    // 排序：点击表头按列排序（模型 sort() 实现）
     ui->tableWidget->setSortingEnabled(true);
 
     // 卡片视图
@@ -90,6 +94,13 @@ void ReportListWidget::setupUi()
     ui->cardWidget->setGridSize(QSize(160, 140));
     ui->cardWidget->setResizeMode(QListView::Adjust);
     ui->cardWidget->setMovement(QListView::Static);
+
+    // 搜索防抖：击键后 Delay::Normal(300ms) 内无新输入才刷新列表，
+    // 避免连续击键触发大量 SQL 查询与内存过滤
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    m_searchTimer->setInterval(AppDimensions::Delay::Normal);
+    connect(m_searchTimer, &QTimer::timeout, this, &ReportListWidget::refreshList);
 
     // 信号由 .ui 自动连接（on_searchEdit_textChanged 等）
 }
@@ -119,13 +130,9 @@ void ReportListWidget::refreshList()
 
 qint64 ReportListWidget::currentReportId() const
 {
-    const int row = ui->tableWidget->currentRow();
-    if (row < 0) return -1;
-
-    QTableWidgetItem* item = ui->tableWidget->item(row, 0);
-    if (!item) return -1;
-
-    return item->data(Qt::UserRole).toLongLong();
+    const QModelIndex index = ui->tableWidget->currentIndex();
+    if (!index.isValid()) return -1;
+    return m_tableModel->reportIdAt(index.row());
 }
 
 // ===========================================================================
@@ -135,7 +142,8 @@ qint64 ReportListWidget::currentReportId() const
 void ReportListWidget::on_searchEdit_textChanged(const QString& text)
 {
     m_searchKeyword = text;
-    refreshList();
+    // 防抖：重置计时器，等用户停止输入 300ms 后再刷新
+    m_searchTimer->start();
 }
 
 void ReportListWidget::on_statusFilter_currentIndexChanged(int index)
@@ -144,22 +152,18 @@ void ReportListWidget::on_statusFilter_currentIndexChanged(int index)
     refreshList();
 }
 
-void ReportListWidget::on_tableWidget_cellDoubleClicked(int row, int column)
+void ReportListWidget::on_tableWidget_doubleClicked(const QModelIndex& index)
 {
-    Q_UNUSED(column);
-    if (row < 0) return;
+    if (!index.isValid()) return;
 
-    QTableWidgetItem* item = ui->tableWidget->item(row, 0);
-    if (!item) return;
-
-    const qint64 reportId = item->data(Qt::UserRole).toLongLong();
-    emit reportOpenRequested(reportId);
+    const qint64 reportId = m_tableModel->reportIdAt(index.row());
+    if (reportId > 0) emit reportOpenRequested(reportId);
 }
 
 void ReportListWidget::on_tableWidget_customContextMenuRequested(const QPoint& pos)
 {
-    QTableWidgetItem* item = ui->tableWidget->itemAt(pos);
-    if (!item) return;
+    const QModelIndex index = ui->tableWidget->indexAt(pos);
+    if (!index.isValid()) return;
 
     QMenu menu(this);
     QAction* actionOpen = menu.addAction(tr("打开报告"));
@@ -169,7 +173,7 @@ void ReportListWidget::on_tableWidget_customContextMenuRequested(const QPoint& p
 
     QAction* selected = menu.exec(ui->tableWidget->viewport()->mapToGlobal(pos));
 
-    const qint64 reportId = item->data(Qt::UserRole).toLongLong();
+    const qint64 reportId = m_tableModel->reportIdAt(index.row());
 
     if (selected == actionOpen) {
         emit reportOpenRequested(reportId);
@@ -180,7 +184,7 @@ void ReportListWidget::on_tableWidget_customContextMenuRequested(const QPoint& p
     }
 }
 
-void ReportListWidget::on_tableWidget_itemSelectionChanged()
+void ReportListWidget::handleTableSelectionChanged()
 {
     emit reportSelected(currentReportId());
 }
@@ -244,84 +248,6 @@ Report::List ReportListWidget::getFilteredReports()
 
 void ReportListWidget::loadReportsToTable(const Report::List& reports)
 {
-    // 暂时禁用排序，避免插入时排序出错
-    ui->tableWidget->setSortingEnabled(false);
-    ui->tableWidget->setRowCount(reports.size());
-
-    // 用户信息缓存（避免重复查询）
-    QMap<qint64, QString> userNameCache;
-
-    for (int row = 0; row < reports.size(); ++row) {
-        const Report::Ptr& report = reports.at(row);
-
-        // 标题列（存储 ID 在 UserRole）
-        QTableWidgetItem* titleItem = new QTableWidgetItem(report->title());
-        titleItem->setData(Qt::UserRole, report->id());
-        titleItem->setToolTip(report->title());
-        ui->tableWidget->setItem(row, 0, titleItem);
-
-        // 状态列
-        QTableWidgetItem* statusItem = new QTableWidgetItem(statusDisplayName(report->status()));
-        statusItem->setForeground(AppTheme::statusColor(report->status()));
-        ui->tableWidget->setItem(row, 1, statusItem);
-
-        // 创建者列
-        QString creatorName = tr("未分配");
-        if (report->createdBy() > 0) {
-            if (userNameCache.contains(report->createdBy())) {
-                creatorName = userNameCache.value(report->createdBy());
-            } else {
-                User::Ptr user = UserService::getById(report->createdBy());
-                if (user) {
-                    creatorName = user->displayNameOrUsername();
-                    userNameCache.insert(report->createdBy(), creatorName);
-                } else {
-                    creatorName = tr("未知用户");
-                }
-            }
-        }
-        ui->tableWidget->setItem(row, 2, new QTableWidgetItem(creatorName));
-
-        // 实验日期列
-        const QString dateStr = report->experimentDate().isValid()
-            ? report->experimentDate().toString("yyyy-MM-dd")
-            : tr("未设置");
-        ui->tableWidget->setItem(row, 3, new QTableWidgetItem(dateStr));
-
-        // 更新时间列
-        ui->tableWidget->setItem(row, 4,
-            new QTableWidgetItem(report->updatedAt().toString("yyyy-MM-dd hh:mm")));
-
-        // 字数列
-        ui->tableWidget->setItem(row, 5,
-            new QTableWidgetItem(QString::number(report->wordCount())));
-
-        // 标签列（显示颜色方块 + 标签名）
-        const Tag::List tags = TagService::findByReport(report->id());
-        if (!tags.isEmpty()) {
-            QString tagText;
-            for (int i = 0; i < tags.size(); ++i) {
-                if (i > 0) tagText += " ";
-                tagText += QString("■ %1").arg(tags[i]->name());
-            }
-            QTableWidgetItem* tagItem = new QTableWidgetItem(tagText);
-            tagItem->setForeground(tags.first()->effectiveColor());
-            tagItem->setToolTip(tagText);
-            ui->tableWidget->setItem(row, 6, tagItem);
-        } else {
-            ui->tableWidget->setItem(row, 6, new QTableWidgetItem("-"));
-        }
-    }
-
-    ui->tableWidget->setSortingEnabled(true);
-}
-
-QString ReportListWidget::statusDisplayName(ReportStatus status) const
-{
-    switch (status) {
-    case ReportStatus::Draft:     return tr("草稿");
-    case ReportStatus::Submitted: return tr("已提交");
-    case ReportStatus::Reviewed:  return tr("已审核");
-    }
-    return tr("未知");
+    // 交给模型：id 序列一致时仅 dataChanged 局部通知，否则 reset（QTableView 虚拟化，均轻量）
+    m_tableModel->setReports(reports);
 }

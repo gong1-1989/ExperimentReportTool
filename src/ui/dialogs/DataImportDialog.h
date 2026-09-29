@@ -10,6 +10,8 @@
 #define DATA_IMPORT_DIALOG_H
 
 #include "BaseDialog.h"
+#include <QtConcurrent>
+#include <QFutureWatcher>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTableWidget>
@@ -67,6 +69,8 @@ public:
     ImportMode importMode() const { return m_importMode; }
 
 private slots:
+    /// 后台解析完成（回主线程更新预览）
+    void onParseFinished();
     void on_m_browseBtn_clicked();
     void on_m_previewBtn_clicked();
     void on_m_delimiterCombo_currentIndexChanged(int index);
@@ -93,6 +97,8 @@ private:
     CsvParseResult m_parseResult; ///< 解析结果
     ImportMode m_importMode;       ///< 导入模式
     QString m_currentFilePath;     ///< 当前文件路径
+
+    QFutureWatcher<CsvParseResult>* m_watcher;  ///< 后台解析监视器（setFuture 替换即只响应最新任务）
 };
 
 #endif // DATA_IMPORT_DIALOG_H

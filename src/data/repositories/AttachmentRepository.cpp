@@ -65,7 +65,7 @@
  */
 Attachment::Ptr AttachmentRepository::findById(qint64 attachmentId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用预处理语句查询
@@ -98,7 +98,7 @@ Attachment::Ptr AttachmentRepository::findById(qint64 attachmentId)
 Attachment::List AttachmentRepository::findByReport(qint64 reportId)
 {
     Attachment::List attachments;
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 按上传时间降序排列（最新的在前）
@@ -134,7 +134,7 @@ bool AttachmentRepository::save(Attachment::Ptr attachment)
     // 空指针检查
     if (!attachment) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     if (attachment->isNew()) {
@@ -213,7 +213,7 @@ bool AttachmentRepository::remove(qint64 attachmentId)
     }
 
     // 删除数据库记录
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
     query.prepare("DELETE FROM attachments WHERE id = :id;");
     query.bindValue(":id", attachmentId);
@@ -464,7 +464,7 @@ void AttachmentRepository::ensureStorageDirectory()
  */
 int AttachmentRepository::countByReport(qint64 reportId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 按报告 ID 统计
@@ -492,7 +492,7 @@ int AttachmentRepository::countByReport(qint64 reportId)
  */
 qint64 AttachmentRepository::totalSizeByReport(qint64 reportId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用 COALESCE 确保没有附件时返回 0 而不是 NULL

@@ -71,3 +71,13 @@ bool TagService::setReportTags(qint64 reportId, const QList<qint64>& tagIds)
 {
     return TagRepository::setReportTags(reportId, tagIds);
 }
+
+QHash<qint64, QStringList> TagService::findReportTagNamesBatch(const QList<qint64>& reportIds)
+{
+    return TagRepository::findReportTagNamesBatch(reportIds);
+}
+
+QHash<qint64, Tag::List> TagService::findReportTagsBatch(const QList<qint64>& reportIds)
+{
+    return TagRepository::findReportTagsBatch(reportIds);
+}

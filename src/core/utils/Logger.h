@@ -174,8 +174,14 @@ private:
 // ---------------------------------------------------------------------------
 
 /// 输出 Debug 日志（带文件位置信息）
+/// Release 构建（QT_NO_DEBUG_OUTPUT 自动定义）编译为空，零开销；
+/// Debug 构建全量输出。运行时仍可用 --log-level=debug 降级过滤。
+#ifdef QT_NO_DEBUG_OUTPUT
+#define LOG_DEBUG(msg) do { } while (0)
+#else
 #define LOG_DEBUG(msg) \
     Logger::instance().debug(QString("%1:%2 - %3").arg(__FILE__).arg(__LINE__).arg(msg))
+#endif
 
 /// 输出 Info 日志（带文件位置信息）
 #define LOG_INFO(msg) \

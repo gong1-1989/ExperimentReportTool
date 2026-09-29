@@ -42,16 +42,13 @@ Project::Ptr ProjectRepository::findById(qint64 id)
 {
     if (id <= 0) return nullptr;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     query.prepare("SELECT * FROM projects WHERE id = :id;");
     query.bindValue(":id", id);
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("findById 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return nullptr;
-    }
+    if (!BaseRepository::execChecked(query, "findById ")) return nullptr;
 
     if (query.next()) {
         return mapToProject(query);
@@ -64,7 +61,7 @@ Project::List ProjectRepository::findAll(const ProjectQuery& query)
 {
     Project::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery sqlQuery(db);
 
     // 动态构建 SQL 查询
@@ -181,7 +178,7 @@ bool ProjectRepository::insert(Project::Ptr project)
 {
     if (!project) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     query.prepare(R"(
@@ -208,10 +205,7 @@ bool ProjectRepository::insert(Project::Ptr project)
     query.bindValue(":created_at", now);
     query.bindValue(":updated_at", now);
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("insert 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "insert ")) return false;
 
     // 获取数据库生成的自增 ID
     const qint64 newId = query.lastInsertId().toLongLong();
@@ -231,7 +225,7 @@ bool ProjectRepository::update(const Project::Ptr& project)
 {
     if (!project || !project->isPersisted()) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     query.prepare(R"(
@@ -261,10 +255,7 @@ bool ProjectRepository::update(const Project::Ptr& project)
     query.bindValue(":updated_at", QDateTime::currentDateTime());
     query.bindValue(":id", project->id());
 
-    if (!query.exec()) {
-        LOG_ERROR(QString("update 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "update ")) return false;
 
     project->setUpdatedAt(QDateTime::currentDateTime());
     return true;
@@ -278,7 +269,7 @@ bool ProjectRepository::remove(qint64 id)
 {
     if (id <= 0) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用事务确保级联删除的原子性
@@ -311,7 +302,7 @@ bool ProjectRepository::remove(qint64 id)
 
 bool ProjectRepository::existsByName(const QString& name, qint64 excludeId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     QString sql = "SELECT COUNT(*) FROM projects WHERE name = :name";
@@ -339,7 +330,7 @@ bool ProjectRepository::existsByName(const QString& name, qint64 excludeId)
 
 int ProjectRepository::count()
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     query.exec("SELECT COUNT(*) FROM projects;");
@@ -351,7 +342,7 @@ int ProjectRepository::count()
 
 int ProjectRepository::countByStatus(ProjectStatus status)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 创建临时对象用于将枚举转换为字符串
@@ -370,7 +361,7 @@ int ProjectRepository::countByStatus(ProjectStatus status)
 
 int ProjectRepository::countChildren(qint64 parentId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     if (parentId <= 0) {
@@ -430,5 +421,28 @@ QList<qint64> ProjectRepository::getAllDescendantIds(qint64 rootId)
         }
     }
 
+    return result;
+}
+
+QHash<qint64, QString> ProjectRepository::findNamesBatch(const QList<qint64>& projectIds)
+{
+    QHash<qint64, QString> result;
+    if (projectIds.isEmpty()) return result;
+
+    for (const QList<qint64>& batch : BaseRepository::chunkIds(BaseRepository::dedupeIds(projectIds))) {
+        QSqlDatabase db = BaseRepository::db();
+        QSqlQuery query(db);
+
+        query.prepare(QString(
+            "SELECT id, name FROM projects WHERE id IN (%1)").arg(BaseRepository::inPlaceholders(batch.size())));
+        for (int i = 0; i < batch.size(); ++i) {
+            query.bindValue(QString(":id%1").arg(i), batch.at(i));
+        }
+        if (!BaseRepository::execChecked(query, "批量查询项目名")) continue;
+
+        while (query.next()) {
+            result.insert(query.value(0).toLongLong(), query.value(1).toString());
+        }
+    }
     return result;
 }

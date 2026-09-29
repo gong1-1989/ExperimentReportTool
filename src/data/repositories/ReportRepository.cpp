@@ -67,6 +67,7 @@ Report::Ptr ReportRepository::mapToReport(const QSqlQuery& query)
     report->setStatus(Report::statusFromString(query.value("status").toString())); // 报告状态
     report->setAuthor(query.value("author").toString());              // 作者/实验者
     report->setCreatedBy(query.value("created_by").toLongLong());      // 创建者用户 ID
+    report->setModifiedBy(query.value("modified_by").toLongLong());    // 最后修改者用户 ID
     report->setVersion(query.value("version").toInt());                // 版本号（乐观锁）
     report->setWordCount(query.value("word_count").toInt());           // 字数统计缓存
     report->setExperimentDate(query.value("experiment_date").toDate()); // 实验日期
@@ -77,6 +78,11 @@ Report::Ptr ReportRepository::mapToReport(const QSqlQuery& query)
     report->contentFromJson(query.value("content").toString());
 
     return report;
+}
+
+Report::Ptr ReportRepository::fromQueryRow(const QSqlQuery& query)
+{
+    return mapToReport(query);
 }
 
 /**
@@ -92,7 +98,7 @@ Report::Ptr ReportRepository::mapToReport(const QSqlQuery& query)
  */
 bool ReportRepository::ftsAvailable()
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 查询 sqlite_master 系统表，检查 reports_fts 表是否存在
@@ -126,7 +132,7 @@ Report::Ptr ReportRepository::findById(qint64 id)
     // 参数校验：无效 ID 直接返回，避免无效查询
     if (id <= 0) return nullptr;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用预处理语句查询，防止 SQL 注入
@@ -134,10 +140,7 @@ Report::Ptr ReportRepository::findById(qint64 id)
     query.bindValue(":id", id);
 
     // 执行查询并检查错误
-    if (!query.exec()) {
-        LOG_ERROR(QString("findById 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return nullptr;
-    }
+    if (!BaseRepository::execChecked(query, "findById ")) return nullptr;
 
     // 检查是否有结果行
     if (query.next()) {
@@ -177,7 +180,7 @@ Report::List ReportRepository::findAll(const ReportQuery& query)
 {
     Report::List result;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery sqlQuery(db);
 
     // 动态构建 SQL 查询，从 "WHERE 1=1" 开始便于追加条件
@@ -321,13 +324,13 @@ bool ReportRepository::insert(Report::Ptr report)
     // 空指针检查
     if (!report) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备插入语句，使用 R"(...)" 原始字符串字面量避免转义
     query.prepare(R"(
-        INSERT INTO reports (project_id, template_id, title, content, status, author, created_by, version, word_count, experiment_date, created_at, updated_at)
-        VALUES (:project_id, :template_id, :title, :content, :status, :author, :created_by, :version, :word_count, :experiment_date, :created_at, :updated_at);
+        INSERT INTO reports (project_id, template_id, title, content, status, author, created_by, modified_by, version, word_count, experiment_date, created_at, updated_at)
+        VALUES (:project_id, :template_id, :title, :content, :status, :author, :created_by, :modified_by, :version, :word_count, :experiment_date, :created_at, :updated_at);
     )");
 
     // 绑定参数值
@@ -340,6 +343,7 @@ bool ReportRepository::insert(Report::Ptr report)
     query.bindValue(":status", report->statusToString());
     query.bindValue(":author", report->author());
     query.bindValue(":created_by", report->createdBy() > 0 ? report->createdBy() : QVariant());
+    query.bindValue(":modified_by", report->modifiedBy() > 0 ? report->modifiedBy() : QVariant());
     query.bindValue(":version", 1);
     query.bindValue(":word_count", report->wordCount());
     query.bindValue(":experiment_date", report->experimentDate());
@@ -347,10 +351,7 @@ bool ReportRepository::insert(Report::Ptr report)
     query.bindValue(":updated_at", now);
 
     // 执行插入
-    if (!query.exec()) {
-        LOG_ERROR(QString("insert 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "insert ")) return false;
 
     // 获取数据库自动生成的自增 ID，回写到对象
     report->setId(query.lastInsertId().toLongLong());
@@ -383,7 +384,7 @@ bool ReportRepository::update(const Report::Ptr& report)
     // 校验：指针非空且已持久化
     if (!report || !report->isPersisted()) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备更新语句
@@ -395,6 +396,7 @@ bool ReportRepository::update(const Report::Ptr& report)
             content = :content,
             status = :status,
             author = :author,
+            modified_by = :modified_by,
             version = version + 1,
             word_count = :word_count,
             experiment_date = :experiment_date,
@@ -409,16 +411,14 @@ bool ReportRepository::update(const Report::Ptr& report)
     query.bindValue(":content", report->contentToJson());
     query.bindValue(":status", report->statusToString());
     query.bindValue(":author", report->author());
+    query.bindValue(":modified_by", report->modifiedBy() > 0 ? report->modifiedBy() : QVariant());
     query.bindValue(":word_count", report->wordCount());
     query.bindValue(":experiment_date", report->experimentDate());
     query.bindValue(":updated_at", QDateTime::currentDateTime());
     query.bindValue(":id", report->id());
 
     // 执行更新
-    if (!query.exec()) {
-        LOG_ERROR(QString("update 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return false;
-    }
+    if (!BaseRepository::execChecked(query, "update ")) return false;
 
     // 同步更新对象的时间戳
     report->setUpdatedAt(QDateTime::currentDateTime());
@@ -449,7 +449,7 @@ bool ReportRepository::remove(qint64 id)
     // 参数校验
     if (id <= 0) return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 开启事务，保证删除操作的原子性
@@ -518,7 +518,7 @@ QList<SearchResult> ReportRepository::search(const QString& keyword,
     // 关键词为空时直接返回空列表
     if (keyword.trimmed().isEmpty()) return results;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
 
     if (ftsAvailable()) {
         // ================================================================
@@ -623,7 +623,7 @@ qint64 ReportRepository::saveVersion(qint64 reportId, const QString& snapshotNam
     Report::Ptr report = findById(reportId);
     if (!report) return -1;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备插入语句
@@ -642,10 +642,7 @@ qint64 ReportRepository::saveVersion(qint64 reportId, const QString& snapshotNam
     query.bindValue(":created_at", QDateTime::currentDateTime());
 
     // 执行插入
-    if (!query.exec()) {
-        LOG_ERROR(QString("saveVersion 失败: %1\nSQL: %2").arg(query.lastError().text(), query.lastQuery()));
-        return -1;
-    }
+    if (!BaseRepository::execChecked(query, "saveVersion ")) return -1;
 
     // 返回新创建的版本 ID
     const qint64 newVersionId = query.lastInsertId().toLongLong();
@@ -703,7 +700,7 @@ QList<QPair<qint64, QString>> ReportRepository::getVersions(qint64 reportId)
 {
     QList<QPair<qint64, QString>> versions;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 查询版本列表，按创建时间降序排列
@@ -739,7 +736,7 @@ QList<QPair<qint64, QString>> ReportRepository::getVersions(qint64 reportId)
  */
 QString ReportRepository::getVersionContent(qint64 versionId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 查询版本内容
@@ -805,7 +802,7 @@ bool ReportRepository::restoreVersion(qint64 reportId, qint64 versionId)
  */
 bool ReportRepository::deleteVersion(qint64 versionId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 准备删除语句
@@ -831,7 +828,7 @@ bool ReportRepository::deleteVersion(qint64 versionId)
  */
 int ReportRepository::count()
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 使用 COUNT(*) 聚合查询
@@ -853,7 +850,7 @@ int ReportRepository::count()
  */
 int ReportRepository::countByProject(qint64 projectId)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 按项目 ID 统计
@@ -878,7 +875,7 @@ int ReportRepository::countByProject(qint64 projectId)
  */
 int ReportRepository::countByStatus(ReportStatus status)
 {
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = BaseRepository::db();
     QSqlQuery query(db);
 
     // 按状态统计

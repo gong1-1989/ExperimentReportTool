@@ -10,31 +10,14 @@
 #include "ui/widgets/ReportListWidget.h"
 #include "ui/widgets/PropertyPanelHelper.h"
 #include "ui/ReportEditorWindow.h"
-#include "ui/dialogs/ProjectDialog.h"
-#include "ui/dialogs/SettingsDialog.h"
+#include "ui/MainWindowDialogs.h"
 #include "ui/dialogs/SearchResultDialog.h"
-#include "ui/dialogs/TemplateEditorDialog.h"
-#include "ui/dialogs/TagManagerDialog.h"
-#include "ui/dialogs/ChangePasswordDialog.h"
 #include "ui/dialogs/PluginManagerDialog.h"
-#include "ui/dialogs/UserManagerDialog.h"
 #include "core/plugin/PluginManager.h"
 #include "service/ReportService.h"
 #include "service/ProjectService.h"
-#include "service/TagService.h"
-#include "service/UserService.h"
-#include "service/TemplateService.h"
-#include "service/DataTableService.h"
-#include "utils/CsvImporter.h"
-#include "data/repositories/ProjectRepository.h"
-#include "data/repositories/ReportRepository.h"
-#include "data/repositories/TemplateRepository.h"
-#include "data/repositories/TagRepository.h"
-#include "data/repositories/DataTableRepository.h"
-#include "data/repositories/UserRepository.h"
 #include "core/models/Tag.h"
 #include "core/models/DataTable.h"
-#include "export/ExportManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
 #include "core/utils/AppTheme.h"
@@ -46,16 +29,9 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QDockWidget>
-#include <QMessageBox>
 #include "ui/UiHelper.h"
-#include <QInputDialog>
-#include <QFileDialog>
-#include <QFileInfo>
-#include <QDir>
-#include <QRegularExpression>
-#include <QFile>
 #include <QStandardPaths>
-#include <QApplication>
+#include <QCoreApplication>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QUrl>
@@ -93,6 +69,31 @@ MainWindow::MainWindow(QWidget* parent)
     // 动态创建复杂控件（自定义组件、工具栏、状态栏等）
     setupUi();
 
+    // 对话框操作控制器（hooks 注入窗口能力）
+    m_dialogs = new MainWindowDialogs(this, MainWindowDialogs::Hooks{
+        [this]() { return currentProjectId(); },
+        [this]() { return currentReportId(); },
+        [this](qint64 id) { m_projectTree->selectProject(id); },
+        [this](qint64 id) { m_reportList->setProjectId(id); },
+        [this]() { m_projectTree->refreshTree(); },
+        [this]() { m_reportList->refreshList(); },
+        [this]() { updatePropertyPanel(); },
+        [this]() { updateStatusBar(); },
+        [this]() { updateActionsState(); },
+        [this](const QString& msg) { showStatusMessage(msg); },
+        [this]() -> bool {
+            // 关闭所有已打开的报告编辑器窗口（数据恢复用）
+            for (int i = m_editorWindows.size() - 1; i >= 0; --i) {
+                if (!m_editorWindows.at(i).isNull()) {
+                    if (!m_editorWindows.at(i)->close()) return false;
+                }
+            }
+            m_editorWindows.clear();
+            m_currentReportId = -1;
+            return true;
+        },
+    });
+
     createActions();
     createToolBar();
     createStatusBar();
@@ -104,12 +105,13 @@ MainWindow::MainWindow(QWidget* parent)
     // 根据用户角色显示/隐藏用户管理菜单
     m_actionUserManager->setVisible(UserSession::instance().isAdmin());
 
-    LOG_INFO("主窗口初始化完成");
+    LOG_DEBUG("主窗口初始化完成");
 }
 
 MainWindow::~MainWindow()
 {
     saveSettings();
+    delete m_dialogs;
     delete ui;
 }
 
@@ -268,6 +270,13 @@ void MainWindow::createStatusBar()
     const QString statusLabelStyle =
         QString("padding: 0 %1px;").arg(AppTheme::Spacing::Normal);
 
+    // 主界面状态栏：显示当前登录用户
+    m_statusUserLabel = new QLabel(this);
+    m_statusUserLabel->setStyleSheet(
+        QString("padding: 0 %1px; color: %2; font-weight: bold;")
+            .arg(AppTheme::Spacing::Normal).arg(AppTheme::Color::Primary));
+    statusBar->addWidget(m_statusUserLabel);
+
     m_statusProjectLabel = new QLabel(tr("项目: 全部"), this);
     m_statusProjectLabel->setStyleSheet(statusLabelStyle);
     statusBar->addWidget(m_statusProjectLabel);
@@ -303,6 +312,9 @@ void MainWindow::connectSignals()
     connect(m_actionImportData, &QAction::triggered, this, &MainWindow::onImportData);
     connect(m_actionExportReport, &QAction::triggered, this, &MainWindow::onExportProject);
     connect(m_actionExit, &QAction::triggered, this, &MainWindow::close);
+
+    // 文件菜单：登出（用户名显示在主界面状态栏）
+    connect(ui->m_actionLogout, &QAction::triggered, this, &MainWindow::onLogout);
 
     // 编辑菜单
     connect(m_actionEditProject, &QAction::triggered, this, &MainWindow::onEditProject);
@@ -366,90 +378,12 @@ void MainWindow::connectSignals()
 
 void MainWindow::onNewProject()
 {
-    ProjectDialog dialog(this);
-    dialog.setWindowTitle(tr("新建项目"));
-
-    if (dialog.exec() == QDialog::Accepted) {
-        Project::Ptr project = dialog.projectData();
-        if (ProjectService::save(project)) {
-            m_projectTree->refreshTree();
-            m_projectTree->selectProject(project->id());
-            showStatusMessage(tr("项目「%1」已创建").arg(project->name()));
-            LOG_INFO(QString("项目已创建: %1").arg(project->toString()));
-        } else {
-            UiHelper::error(this, tr("错误"), tr("创建项目失败，请查看日志"));
-        }
-    }
+    if (m_dialogs) m_dialogs->newProject();
 }
 
 void MainWindow::onNewReport()
 {
-    const qint64 projectId = currentProjectId();
-    if (projectId <= 0) {
-        UiHelper::info(this, tr("提示"), tr("请先在左侧选择一个项目"));
-        return;
-    }
-
-    // 选择模板
-    const Template::List templates = TemplateService::listAll();
-    if (templates.isEmpty()) {
-        UiHelper::warning(this, tr("提示"), tr("没有可用的报告模板"));
-        return;
-    }
-
-    QStringList templateNames;
-    for (const Template::Ptr& t : templates) {
-        templateNames.append(t->name());
-    }
-
-    bool ok = false;
-    const QString selected = QInputDialog::getItem(
-        this, tr("选择模板"), tr("请选择报告模板:"),
-        templateNames, 0, false, &ok);
-
-    if (!ok || selected.isEmpty()) return;
-
-    // 找到选中的模板
-    Template::Ptr selectedTemplate;
-    for (const Template::Ptr& t : templates) {
-        if (t->name() == selected) {
-            selectedTemplate = t;
-            break;
-        }
-    }
-
-    if (!selectedTemplate) return;
-
-    // 输入报告标题
-    bool titleOk = false;
-    const QString title = QInputDialog::getText(
-        this, tr("新建报告"), tr("请输入报告标题:"),
-        QLineEdit::Normal, tr("未命名实验报告"), &titleOk);
-
-    if (!titleOk || title.trimmed().isEmpty()) return;
-
-    // 创建报告
-    Report::Ptr report = Report::create();
-    report->setProjectId(projectId);
-    report->setTemplateId(selectedTemplate->id());
-    report->setTitle(title.trimmed());
-    report->setExperimentDate(QDate::currentDate());
-    // 新建报告时自动设置创建者为当前用户
-    report->setCreatedBy(UserSession::instance().userId());
-    report->setAuthor(UserSession::instance().displayName());
-
-    // 从模板复制内容块
-    for (const ContentBlock& block : selectedTemplate->blocks()) {
-        report->appendBlock(block);
-    }
-
-    if (ReportService::save(report)) {
-        m_reportList->refreshList();
-        showStatusMessage(tr("报告「%1」已创建").arg(report->title()));
-        LOG_INFO(QString("报告已创建: %1").arg(report->toString()));
-    } else {
-        UiHelper::error(this, tr("错误"), tr("创建报告失败"));
-    }
+    if (m_dialogs) m_dialogs->newReport();
 }
 
 void MainWindow::onOpenReport()
@@ -468,188 +402,38 @@ void MainWindow::onOpenReport()
 
 void MainWindow::onImportData()
 {
-    // 文件选择过滤器（内置 CSV 导入）
-    QStringList filters;
-    filters.append(CsvImporter::fileFilter());
-    filters.append(tr("所有文件 (*.*)"));
-
-    // 让用户选择文件
-    const QString filePath = QFileDialog::getOpenFileName(this,
-        tr("导入数据"), QDir::homePath(), filters.join(";;"));
-
-    if (filePath.isEmpty()) return;
-
-    const QFileInfo fileInfo(filePath);
-    const QString suffix = fileInfo.suffix().toLower();
-
-    // 仅支持 csv / txt 格式
-    if (!CsvImporter::supportedFormats().contains(suffix)) {
-        UiHelper::warning(this, tr("错误"),
-            tr("不支持的文件格式：%1\n仅支持 %2 格式。")
-                .arg(suffix.isEmpty() ? tr("未知") : suffix)
-                .arg(CsvImporter::supportedFormats().join(", ")));
-        return;
-    }
-
-    // 执行导入
-    QString errorMessage;
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    DataTable::Ptr table = CsvImporter::importFile(filePath, &errorMessage);
-    QApplication::restoreOverrideCursor();
-
-    if (!table) {
-        UiHelper::warning(this, tr("导入失败"),
-            errorMessage.isEmpty() ? tr("数据导入失败，请检查文件格式") : errorMessage);
-        return;
-    }
-
-    // 设置数据表名称（使用文件名）
-    if (table->name().isEmpty()) {
-        table->setName(fileInfo.baseName());
-    }
-    // 导入的数据表为全局数据表，不关联到特定报告
-    table->setReportId(0);
-
-    // 保存到数据库
-    if (!DataTableService::save(table)) {
-        UiHelper::warning(this, tr("保存失败"), tr("数据表保存到数据库失败"));
-        return;
-    }
-
-    UiHelper::info(this, tr("导入成功"),
-        tr("数据导入成功！\n\n"
-           "数据表名称：%1\n"
-           "行数：%2\n"
-           "列数：%3\n\n"
-           "可在报告编辑器的图表配置中选择此数据表作为数据源。")
-            .arg(table->name())
-            .arg(table->rowCount())
-            .arg(table->columnCount()));
-
-    showStatusMessage(tr("数据导入成功：%1").arg(table->name()));
-    LOG_INFO(QString("数据导入成功: %1 (行数=%2, 列数=%3)")
-                 .arg(table->name()).arg(table->rowCount()).arg(table->columnCount()));
+    if (m_dialogs) m_dialogs->importData();
 }
 
 void MainWindow::onExportProject()
 {
-    const qint64 projectId = currentProjectId();
-    if (projectId <= 0) {
-        UiHelper::info(this, tr("提示"), tr("请先在左侧选择要导出的项目"));
-        return;
-    }
-
-    // 加载项目信息
-    Project::Ptr project = ProjectService::getById(projectId);
-    if (!project) {
-        UiHelper::warning(this, tr("错误"), tr("无法加载项目信息"));
-        return;
-    }
-
-    // 查询该项目下的所有报告
-    QList<Report::Ptr> reports = ReportService::listByProject(projectId);
-    if (reports.isEmpty()) {
-        UiHelper::info(this, tr("提示"), tr("该项目下没有报告可导出"));
-        return;
-    }
-
-    // 让用户选择导出格式（传 &ok 准确区分"确定"与"取消"）
-    bool ok = false;
-    const QString formatStr = QInputDialog::getItem(this, tr("导出项目"),
-        tr("选择导出格式："),
-        QStringList() << tr("PDF 文档") << tr("HTML 网页") << tr("Word 文档") << tr("纯文本"),
-        0, false, &ok);
-
-    if (!ok || formatStr.isEmpty()) {
-        return;  // 用户取消
-    }
-
-    // 解析选择的格式
-    ExportFormat format = ExportFormat::Pdf;
-    QString ext = "pdf";
-    if (formatStr == tr("PDF 文档")) {
-        format = ExportFormat::Pdf;
-        ext = "pdf";
-    } else if (formatStr == tr("HTML 网页")) {
-        format = ExportFormat::Html;
-        ext = "html";
-    } else if (formatStr == tr("Word 文档")) {
-        format = ExportFormat::Word;
-        ext = "docx";
-    } else if (formatStr == tr("纯文本")) {
-        format = ExportFormat::Text;
-        ext = "txt";
-    }
-
-    // 让用户选择保存目录
-    const QString dirPath = QFileDialog::getExistingDirectory(this,
-        tr("选择导出目录"), QDir::homePath(),
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-
-    if (dirPath.isEmpty()) {
-        return;  // 用户取消
-    }
-
-    // 创建以项目名命名的子目录
-    const QString projectDir = QDir(dirPath).filePath(project->name());
-    QDir().mkpath(projectDir);
-
-    // 循环导出每个报告
-    int successCount = 0;
-    int failCount = 0;
-    QStringList failedReports;
-
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-
-    ExportManager exporter;
-    for (const Report::Ptr& report : reports) {
-        // 构造文件名（用报告标题，替换非法字符）
-        QString fileName = report->title();
-        if (fileName.isEmpty()) {
-            fileName = tr("未命名报告_%1").arg(report->id());
-        }
-        // 替换文件名中的非法字符
-        fileName.replace(QRegularExpression("[\\\\/:*?\"<>|]"), "_");
-        const QString filePath = QDir(projectDir).filePath(QString("%1.%2").arg(fileName).arg(ext));
-
-        // 执行导出
-        ExportConfig config;
-        config.format = format;
-        config.filePath = filePath;
-        config.includeTitle = true;
-        config.includeMeta = true;
-
-        if (exporter.exportReport(report, config, this)) {
-            successCount++;
-        } else {
-            failCount++;
-            failedReports << report->title();
-        }
-    }
-
-    QApplication::restoreOverrideCursor();
-
-    // 显示导出结果
-    QString message = tr("项目导出完成！\n\n"
-                         "成功：%1 份\n"
-                         "失败：%2 份\n"
-                         "导出目录：\n%3").arg(successCount).arg(failCount).arg(projectDir);
-
-    if (!failedReports.isEmpty()) {
-        message += tr("\n\n失败的报告：\n") + failedReports.join("\n");
-    }
-
-    showStatusMessage(tr("项目导出完成：成功 %1，失败 %2").arg(successCount).arg(failCount));
-
-    if (failCount == 0) {
-        UiHelper::info(this, tr("导出成功"), message);
-    } else {
-        UiHelper::warning(this, tr("导出完成（部分失败）"), message);
-    }
+    if (m_dialogs) m_dialogs->exportProject();
 }
 
 void MainWindow::onExit()
 {
+    close();
+}
+
+void MainWindow::onLogout()
+{
+    const bool confirmed = UiHelper::confirm(
+        this, tr("登出"), tr("确定要退出当前账号并返回登录界面吗？"));
+    if (!confirmed) return;
+
+    // 先逐个关闭报告编辑器窗口（close() 会触发 closeEvent 询问未保存）
+    // 若用户在某个窗口点"取消"，中止登出，避免会话已清但窗口残留
+    for (int i = m_editorWindows.size() - 1; i >= 0; --i) {
+        if (m_editorWindows.at(i).isNull()) continue;
+        if (!m_editorWindows.at(i)->close()) {
+            showStatusMessage(tr("登出已取消：有未保存的报告"));
+            return;
+        }
+    }
+
+    // 清除登录会话
+    UserSession::instance().clear();
+    // 关闭主窗口，由 main.cpp 回到登录流程
     close();
 }
 
@@ -659,27 +443,7 @@ void MainWindow::onExit()
 
 void MainWindow::onEditProject()
 {
-    const qint64 projectId = currentProjectId();
-    if (projectId <= 0) return;
-
-    Project::Ptr project = ProjectService::getById(projectId);
-    if (!project) return;
-
-    ProjectDialog dialog(this);
-    dialog.setWindowTitle(tr("编辑项目"));
-    dialog.setProjectData(project);
-
-    if (dialog.exec() == QDialog::Accepted) {
-        Project::Ptr updated = dialog.projectData();
-        updated->setId(projectId);
-        if (ProjectService::update(updated)) {
-            m_projectTree->refreshTree();
-            m_projectTree->selectProject(projectId);
-            showStatusMessage(tr("项目已更新"));
-        } else {
-            UiHelper::error(this, tr("错误"), tr("更新项目失败"));
-        }
-    }
+    if (m_dialogs) m_dialogs->editProject();
 }
 
 void MainWindow::onDeleteProject()
@@ -687,26 +451,13 @@ void MainWindow::onDeleteProject()
     const qint64 projectId = currentProjectId();
     if (projectId <= 0) return;
 
-    // 权限检查
+    // 权限检查留在窗口槽
     if (!canModifyProject(projectId)) {
         showPermissionDenied();
         return;
     }
 
-    Project::Ptr project = ProjectService::getById(projectId);
-    if (!project) return;
-
-    if (UiHelper::confirm(this,
-                       tr("确认删除"),
-                       tr("确定要删除项目「%1」吗？\n该项目下的所有报告将被同时删除，此操作不可恢复！") .arg(project->name()))) {
-        if (ProjectService::remove(projectId)) {
-            m_projectTree->refreshTree();
-            m_reportList->setProjectId(-1);
-            showStatusMessage(tr("项目已删除"));
-        } else {
-            UiHelper::error(this, tr("错误"), tr("删除项目失败"));
-        }
-    }
+    if (m_dialogs) m_dialogs->deleteProject(projectId);
 }
 
 void MainWindow::onDeleteReport()
@@ -714,25 +465,13 @@ void MainWindow::onDeleteReport()
     const qint64 reportId = currentReportId();
     if (reportId <= 0) return;
 
-    // 权限检查
+    // 权限检查留在窗口槽
     if (!canModifyReport(reportId)) {
         showPermissionDenied();
         return;
     }
 
-    Report::Ptr report = ReportService::getById(reportId);
-    if (!report) return;
-
-    if (UiHelper::confirm(this,
-                       tr("确认删除"),
-                       tr("确定要删除报告「%1」吗？此操作不可恢复！").arg(report->title()))) {
-        if (ReportService::remove(reportId)) {
-            m_reportList->refreshList();
-            showStatusMessage(tr("报告已删除"));
-        } else {
-            UiHelper::error(this, tr("错误"), tr("删除报告失败"));
-        }
-    }
+    if (m_dialogs) m_dialogs->deleteReport(reportId);
 }
 
 void MainWindow::onFind()
@@ -795,126 +534,32 @@ void MainWindow::onResetZoom()
 
 void MainWindow::onTemplateManager()
 {
-    // 获取所有模板
-    const Template::List templates = TemplateService::listAll();
-
-    // 构建模板列表供用户选择
-    QStringList items;
-    items.append(tr("--- 新建模板 ---"));
-    for (const Template::Ptr& t : templates) {
-        const QString builtinMark = t->isBuiltin() ? tr(" [内置]") : "";
-        items.append(QString("%1 (%2)%3").arg(t->name(), t->category(), builtinMark));
-    }
-
-    bool ok = false;
-    const QString selected = QInputDialog::getItem(
-        this, tr("模板管理器"), tr("选择要编辑的模板，或新建模板:"),
-        items, 0, false, &ok);
-
-    if (!ok || selected.isEmpty()) return;
-
-    if (selected == items.first()) {
-        // 新建模板
-        TemplateEditorDialog dialog(this);
-        if (dialog.exec() == QDialog::Accepted) {
-            showStatusMessage(tr("模板「%1」已创建").arg(dialog.templateData()->name()));
-        }
-    } else {
-        // 编辑现有模板
-        const int idx = items.indexOf(selected) - 1;  // 减 1 因为第一项是"新建"
-        if (idx >= 0 && idx < templates.size()) {
-            Template::Ptr temp = templates.at(idx);
-
-            // 内置模板需要先复制才能编辑
-            if (temp->isBuiltin()) {
-                if (!UiHelper::confirm(this,
-                                       tr("内置模板"),
-                                       tr("「%1」是内置模板，不能直接修改。\n是否创建一个副本进行编辑？")
-                                           .arg(temp->name()))) return;
-
-                // 创建副本
-                Template::Ptr copy = Template::create();
-                copy->setName(temp->name() + tr(" (副本)"));
-                copy->setCategory(temp->category());
-                copy->setDescription(temp->description());
-                copy->setBlocks(temp->blocks());
-                TemplateService::save(copy);
-                temp = copy;
-            }
-
-            TemplateEditorDialog dialog(this, temp);
-            if (dialog.exec() == QDialog::Accepted) {
-                showStatusMessage(tr("模板「%1」已更新").arg(dialog.templateData()->name()));
-            }
-        }
-    }
+    if (m_dialogs) m_dialogs->templateManager();
 }
 
 void MainWindow::onTagManager()
 {
-    TagManagerDialog dialog(this);
-    dialog.exec();
-    // 标签可能被修改，刷新报告列表和属性面板
-    m_reportList->refreshList();
-    updatePropertyPanel();
+    if (m_dialogs) m_dialogs->tagManager();
 }
 
 void MainWindow::onChangePassword()
 {
-    ChangePasswordDialog dialog(false, this);
-    if (dialog.exec() != QDialog::Accepted) return;
-
-    // 验证原密码
-    const QString username = UserSession::instance().username();
-    User::Ptr user = UserService::authenticate(username, dialog.oldPassword());
-    if (!user) {
-        UiHelper::warning(this, tr("修改失败"), tr("原密码不正确"));
-        return;
-    }
-
-    // 修改密码
-    if (UserService::changePassword(user->id(), dialog.newPassword())) {
-        UiHelper::info(this, tr("修改成功"), tr("密码已修改成功，下次登录请使用新密码"));
-    } else {
-        UiHelper::error(this, tr("修改失败"), tr("修改密码时发生错误"));
-    }
+    if (m_dialogs) m_dialogs->changePassword();
 }
 
 void MainWindow::onDataBackup()
 {
-    const QString filePath = QFileDialog::getSaveFileName(
-        this, tr("备份数据"),
-        QDir::homePath() + "/experiment_report_backup_" +
-            QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") + ".db",
-        tr("数据库文件 (*.db);;所有文件 (*)"));
-
-    if (filePath.isEmpty()) return;
-
-    // 简单的文件复制备份
-    const QString dbPath = QCoreApplication::applicationDirPath()
-        + "/data/experiment_reports.db";
-
-    if (QFile::copy(dbPath, filePath)) {
-        UiHelper::info(this, tr("备份成功"),
-            tr("数据已备份到:\n%1").arg(filePath));
-        showStatusMessage(tr("数据备份完成"));
-    } else {
-        UiHelper::error(this, tr("备份失败"),
-            tr("无法复制数据库文件。\n请确保目标路径可写。"));
-    }
+    if (m_dialogs) m_dialogs->dataBackup();
 }
 
 void MainWindow::onDataRestore()
 {
-    UiHelper::warning(this, tr("数据恢复"),
-        tr("数据恢复功能将覆盖当前所有数据！\n\n"
-           "此功能将在后续版本中实现，当前请手动替换数据库文件。"));
+    if (m_dialogs) m_dialogs->dataRestore();
 }
 
 void MainWindow::onSettings()
 {
-    SettingsDialog dialog(this);
-    dialog.exec();
+    if (m_dialogs) m_dialogs->settings();
 }
 
 // ===========================================================================
@@ -923,39 +568,17 @@ void MainWindow::onSettings()
 
 void MainWindow::onAbout()
 {
-    QMessageBox::about(this, tr("关于 %1").arg(AppConstants::APP_DISPLAY_NAME),
-        QString(
-            "<h3>%1</h3>"
-            "<p>版本: %2</p>"
-            "<p>基于 Qt %3 + C++ 开发的实验报告记录工具</p>"
-            "<p>功能特性：</p>"
-            "<ul>"
-            "<li>项目树状管理</li>"
-            "<li>模板化报告创建</li>"
-            "<li>结构化富文本编辑</li>"
-            "<li>实验数据表格与图表</li>"
-            "<li>多格式导出（PDF/Word/HTML）</li>"
-            "<li>全文检索</li>"
-            "</ul>"
-            "<p style='color: %4; font-size: %5px;'>%6</p>"
-        ).arg(AppConstants::APP_DISPLAY_NAME)
-         .arg(AppConstants::APP_VERSION)
-         .arg(qVersion())
-         .arg(AppTheme::Color::TextSecondary)
-         .arg(AppTheme::FontSize::ExtraSmall)
-         .arg(tr("© 2024 实验报告记录工具开发组")));
+    if (m_dialogs) m_dialogs->about();
 }
 
 void MainWindow::onAboutQt()
 {
-    QMessageBox::aboutQt(this, tr("关于 Qt"));
+    if (m_dialogs) m_dialogs->aboutQt();
 }
 
 void MainWindow::onCheckUpdate()
 {
-    UiHelper::info(this, tr("检查更新"),
-        tr("当前已是最新版本: %1\n\n"
-           "更新检查功能将在后续版本中实现。").arg(AppConstants::APP_VERSION));
+    if (m_dialogs) m_dialogs->checkUpdate();
 }
 
 void MainWindow::onPluginManager()
@@ -971,14 +594,7 @@ void MainWindow::onPluginManager()
 
 void MainWindow::onUserManager()
 {
-    // 仅管理员可访问
-    if (!UserSession::instance().isAdmin()) {
-        UiHelper::warning(this, tr("权限不足"), tr("只有管理员可以管理用户"));
-        return;
-    }
-
-    UserManagerDialog dialog(this);
-    dialog.exec();
+    if (m_dialogs) m_dialogs->userManager();
 }
 
 // ===========================================================================
@@ -1006,12 +622,12 @@ void MainWindow::onProjectTreeChanged()
 
 void MainWindow::onReportOpenRequested(qint64 reportId)
 {
-    m_currentReportId = reportId;
     Report::Ptr report = ReportService::getById(reportId);
     if (!report) {
         UiHelper::warning(this, tr("错误"), tr("未找到报告"));
         return;
     }
+    m_currentReportId = reportId;
 
     // 检查是否已经打开了该报告的编辑器窗口
     // 检查是否已经打开了该报告的编辑器
@@ -1037,7 +653,7 @@ void MainWindow::onReportOpenRequested(qint64 reportId)
     editorWindow->show();
 
     showStatusMessage(tr("已打开报告: %1").arg(report->title()));
-    m_statusReportLabel->setText(tr("报告: %1").arg(report->title()));
+    updateStatusBar();
     updateActionsState();
 }
 
@@ -1163,13 +779,6 @@ void MainWindow::showStatusMessage(const QString& message, int timeout)
     statusBar()->showMessage(message, actualTimeout);
 }
 
-void MainWindow::refreshAll()
-{
-    m_projectTree->refreshTree();
-    m_reportList->refreshList();
-    updateStatusBar();
-}
-
 qint64 MainWindow::currentProjectId() const
 {
     return m_projectTree ? m_projectTree->currentProjectId() : -1;
@@ -1211,6 +820,10 @@ void MainWindow::updateActionsState()
 
 void MainWindow::updateStatusBar()
 {
+    // 当前登录用户
+    m_statusUserLabel->setText(tr("当前用户: %1")
+        .arg(UserSession::instance().displayName()));
+
     // 当前项目
     if (m_currentProjectId > 0) {
         Project::Ptr project = ProjectService::getById(m_currentProjectId);
@@ -1219,6 +832,18 @@ void MainWindow::updateStatusBar()
         }
     } else {
         m_statusProjectLabel->setText(tr("项目: 全部"));
+    }
+
+    // 当前报告：优先显示最后打开且仍存在的编辑器窗口，全部关闭则显示"无"
+    m_statusReportLabel->setText(tr("报告: 无"));
+    for (auto it = m_editorWindows.rbegin(); it != m_editorWindows.rend(); ++it) {
+        if (!it->isNull()) {
+            const QString title = (*it)->reportTitle();
+            if (!title.isEmpty()) {
+                m_statusReportLabel->setText(tr("报告: %1").arg(title));
+            }
+            break;
+        }
     }
 
     // 统计信息
@@ -1292,10 +917,17 @@ void MainWindow::saveSettings()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    // 检查是否有未保存的更改（编辑器实现后需要检查）
-    // 当前版本直接保存设置并关闭
+    // 先关闭所有报告编辑器窗口：close() 会触发各自的 closeEvent 询问未保存内容
+    // 若用户在某个窗口点"取消"，中止主窗口关闭，避免未保存内容静默丢失
+    for (int i = m_editorWindows.size() - 1; i >= 0; --i) {
+        if (m_editorWindows.at(i).isNull()) continue;
+        if (!m_editorWindows.at(i)->close()) {
+            event->ignore();
+            return;
+        }
+    }
 
     saveSettings();
-    LOG_INFO("主窗口关闭");
+    LOG_DEBUG("主窗口关闭");
     event->accept();
 }
