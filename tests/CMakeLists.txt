@@ -20,3 +20,13 @@ add_test(NAME tst_report COMMAND tst_report)
 add_executable(tst_versiondiffer tst_versiondiffer.cpp)
 target_link_libraries(tst_versiondiffer PRIVATE core_lib Qt6::Test)
 add_test(NAME tst_versiondiffer COMMAND tst_versiondiffer)
+
+# 权限矩阵（临时 SQLite 库，查库逻辑层）
+add_executable(tst_permission tst_permission.cpp)
+target_link_libraries(tst_permission PRIVATE core_lib Qt6::Test)
+add_test(NAME tst_permission COMMAND tst_permission)
+
+# 工作流状态机（临时 SQLite 库，含提交/退回/撤回/归档）
+add_executable(tst_workflow tst_workflow.cpp)
+target_link_libraries(tst_workflow PRIVATE core_lib Qt6::Test)
+add_test(NAME tst_workflow COMMAND tst_workflow)

@@ -9,12 +9,7 @@
 #include "ExportManager.h"
 #include "export/ObjectRenderer.h"
 #include "core/utils/Logger.h"
-#include "core/utils/AppConfig.h"
-#include "chart/ChartRenderer.h"
-#include "chart/ChartConfigDialog.h"
 #include "service/DataTableService.h"
-#include "core/models/DataTable.h"
-
 #include <QTextDocument>
 #include <QTextCursor>
 #include <QFile>
@@ -28,9 +23,10 @@
 #include <QVector>
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
+#include "core/models/DataTable.h"
+#include "core/utils/AppConfig.h"
 #include <QImage>
 #include <QPixmap>
-#include <QRegularExpression>
 #include <QMimeDatabase>
 #include <QMimeType>
 #include <QJsonArray>
@@ -144,6 +140,11 @@ QString HtmlGenerator::generateBody(const Report::Ptr& report, const ExportConfi
 
 QString HtmlGenerator::reportToHtml(const Report::Ptr& report, const ExportConfig& config)
 {
+    LOG_DEBUG(QStringLiteral("导出HTML: title=%1 docLen=%2 objects=%3 format=%4")
+                  .arg(report->title())
+                  .arg(report->document().length())
+                  .arg(report->objects().size())
+                  .arg(static_cast<int>(config.format)));
     QString html;
     html += "<!DOCTYPE html>\n<html>\n<head>\n";
     html += "<meta charset=\"utf-8\">\n";
@@ -203,6 +204,9 @@ QString HtmlGenerator::reportToHtml(const Report::Ptr& report, const ExportConfi
     // 正文内容：连续文档 + 对象锚点替换
     html += "<div class=\"report-content\">\n";
     QString contentHtml = extractHtmlBody(report->document());
+    LOG_DEBUG(QStringLiteral("导出HTML: body=%1 anchorImgs=%2")
+                  .arg(contentHtml.left(200))
+                  .arg(contentHtml.count("object://")));
     if (contentHtml.isEmpty()) {
         contentHtml = "<p class=\"empty-content\">（报告内容为空）</p>\n";
     }

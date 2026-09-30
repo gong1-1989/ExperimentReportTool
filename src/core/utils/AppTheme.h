@@ -139,6 +139,7 @@ inline QColor statusColor(ReportStatus status)
         case ReportStatus::Draft:     return QColor(Color::TextSecondary);
         case ReportStatus::Submitted: return QColor(Color::Warning);
         case ReportStatus::Reviewed:  return QColor(Color::Success);
+        case ReportStatus::Approved:  return QColor(Color::Primary);
         default:                      return QColor(Color::TextSecondary);
     }
 }
@@ -154,6 +155,7 @@ inline QString statusName(ReportStatus status)
         case ReportStatus::Draft:     return QStringLiteral("草稿");
         case ReportStatus::Submitted: return QStringLiteral("已提交");
         case ReportStatus::Reviewed:  return QStringLiteral("已审核");
+        case ReportStatus::Approved:  return QStringLiteral("已审批");
         default:                      return QStringLiteral("未知");
     }
 }

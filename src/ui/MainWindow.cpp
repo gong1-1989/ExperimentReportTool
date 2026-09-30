@@ -13,23 +13,36 @@
 #include "ui/MainWindowDialogs.h"
 #include "ui/dialogs/SearchResultDialog.h"
 #include "ui/dialogs/PluginManagerDialog.h"
-#include "core/plugin/PluginManager.h"
+#include "ui/dialogs/AuditLogDialog.h"
+#include "ui/dialogs/StatsDialog.h"
+#include "extension/StatsProvider.h"
+#include "service/UserService.h"
 #include "service/ReportService.h"
+#include "service/PermissionService.h"
 #include "service/ProjectService.h"
-#include "core/models/Tag.h"
-#include "core/models/DataTable.h"
+#include "service/UserService.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
 #include "core/utils/AppTheme.h"
-#include "core/utils/AppDimensions.h"
 #include "core/utils/AppConfig.h"
 #include "core/utils/UserSession.h"
+#include "export/ExportManager.h"
 
 #include <QMenuBar>
 #include <QToolBar>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QFutureWatcher>
+#include <QProgressDialog>
+#include <QRegularExpression>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QStatusBar>
 #include <QDockWidget>
 #include "ui/UiHelper.h"
+#include "core/plugin/PluginManager.h"
+#include "core/models/Tag.h"
+#include "core/models/DataTable.h"
+#include "core/utils/AppDimensions.h"
 #include <QStandardPaths>
 #include <QCoreApplication>
 #include <QCloseEvent>
@@ -103,7 +116,12 @@ MainWindow::MainWindow(QWidget* parent)
     updateActionsState();
 
     // 根据用户角色显示/隐藏用户管理菜单
-    m_actionUserManager->setVisible(UserSession::instance().isAdmin());
+    // 用户管理菜单：超级管理员/总管/组长 均可见（各自只能管理自己权限范围内的用户）
+    const User::Ptr currentUser = UserSession::instance().currentUser();
+    m_actionUserManager->setVisible(currentUser
+                                    && (currentUser->isSuperAdmin()
+                                        || currentUser->isManager()
+                                        || currentUser->isLeader()));
 
     LOG_DEBUG("主窗口初始化完成");
 }
@@ -217,8 +235,28 @@ void MainWindow::createActions()
     m_actionRestore = ui->m_actionRestore;
     m_actionRestore->setIcon(style()->standardIcon(QStyle::SP_DriveFDIcon));
 
+    // 备份/恢复数据库仅超级管理员可用
+    const bool isSuperAdmin = UserSession::instance().currentUser()
+                              && UserSession::instance().currentUser()->isSuperAdmin();
+    m_actionBackup->setVisible(isSuperAdmin);
+    m_actionRestore->setVisible(isSuperAdmin);
+
     m_actionSettings = ui->m_actionSettings;
     m_actionSettings->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+
+    // 审计日志：仅超管/总管可见（合规追溯，涉全库数据）
+    m_actionAuditLog = new QAction(tr("审计日志"), this);
+    m_actionAuditLog->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    const User::Ptr auditUser = UserSession::instance().currentUser();
+    if (auditUser && (auditUser->isSuperAdmin() || auditUser->isManager())) {
+        ui->menuTools->addAction(m_actionAuditLog);
+    }
+
+    // 批量操作（选中报告后从工具栏触发）
+    m_actionBatchExport = new QAction(tr("批量导出"), this);
+    m_actionBatchExport->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    m_actionBatchDelete = new QAction(tr("批量删除"), this);
+    m_actionBatchDelete->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
     // -----------------------------------------------------------------------
     // 帮助菜单动作
     // -----------------------------------------------------------------------
@@ -259,6 +297,9 @@ void MainWindow::createToolBar()
 
     toolBar->addSeparator();
     toolBar->addAction(m_actionSettings);
+    toolBar->addSeparator();
+    toolBar->addAction(m_actionBatchExport);
+    toolBar->addAction(m_actionBatchDelete);
 }
 
 void MainWindow::createStatusBar()
@@ -337,6 +378,17 @@ void MainWindow::connectSignals()
     connect(m_actionBackup, &QAction::triggered, this, &MainWindow::onDataBackup);
     connect(m_actionRestore, &QAction::triggered, this, &MainWindow::onDataRestore);
     connect(m_actionSettings, &QAction::triggered, this, &MainWindow::onSettings);
+    connect(m_actionAuditLog, &QAction::triggered, this, &MainWindow::onAuditLog);
+    // 报表中心：超管/总管全局报表，组长本组报表
+    m_actionStats = new QAction(tr("报表中心"), this);
+    m_actionStats->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    const User::Ptr statsUser = UserSession::instance().currentUser();
+    if (statsUser && (statsUser->isSuperAdmin() || statsUser->isManager() || statsUser->isLeader())) {
+        ui->menuTools->addAction(m_actionStats);
+    }
+    connect(m_actionStats, &QAction::triggered, this, &MainWindow::onStats);
+    connect(m_actionBatchExport, &QAction::triggered, this, &MainWindow::onBatchExport);
+    connect(m_actionBatchDelete, &QAction::triggered, this, &MainWindow::onBatchDelete);
 
     // 帮助菜单
     connect(m_actionAbout, &QAction::triggered, this, &MainWindow::onAbout);
@@ -344,6 +396,21 @@ void MainWindow::connectSignals()
     connect(m_actionCheckUpdate, &QAction::triggered, this, &MainWindow::onCheckUpdate);
     connect(m_actionPluginManager, &QAction::triggered, this, &MainWindow::onPluginManager);
     connect(m_actionUserManager, &QAction::triggered, this, &MainWindow::onUserManager);
+
+    // 项目筛选下拉（显示谁的项目）
+    if (ui->m_projectFilterCombo) {
+        ui->m_projectFilterCombo->addItem(tr("全部项目"), -1);
+        // "我的项目"不单独列出：用户列表已包含当前用户，选中自己即等于我的项目
+        const User::List users = UserService::listAll();
+        for (const User::Ptr& u : users) {
+            ui->m_projectFilterCombo->addItem(u->displayNameOrUsername(), u->id());
+        }
+        connect(ui->m_projectFilterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this](int) {
+                    m_projectTree->setCreatorFilter(
+                        ui->m_projectFilterCombo->currentData().toLongLong());
+                });
+    }
 
     // 项目树
     connect(m_projectTree, &ProjectTreeWidget::projectSelected,
@@ -410,11 +477,6 @@ void MainWindow::onExportProject()
     if (m_dialogs) m_dialogs->exportProject();
 }
 
-void MainWindow::onExit()
-{
-    close();
-}
-
 void MainWindow::onLogout()
 {
     const bool confirmed = UiHelper::confirm(
@@ -465,8 +527,10 @@ void MainWindow::onDeleteReport()
     const qint64 reportId = currentReportId();
     if (reportId <= 0) return;
 
-    // 权限检查留在窗口槽
-    if (!canModifyReport(reportId)) {
+    // 删除权限：超管+草稿创建者；创建者禁用后组长/总管可删其草稿；已提交仅超管
+    Report::Ptr report = ReportService::getById(reportId);
+    User::Ptr user = UserSession::instance().currentUser();
+    if (!PermissionService::canDeleteReport(report, user)) {
         showPermissionDenied();
         return;
     }
@@ -549,11 +613,17 @@ void MainWindow::onChangePassword()
 
 void MainWindow::onDataBackup()
 {
+    // 兜底：仅超级管理员可备份数据库
+    const User::Ptr cur = UserSession::instance().currentUser();
+    if (!cur || !cur->isSuperAdmin()) return;
     if (m_dialogs) m_dialogs->dataBackup();
 }
 
 void MainWindow::onDataRestore()
 {
+    // 兜底：仅超级管理员可恢复数据库
+    const User::Ptr cur = UserSession::instance().currentUser();
+    if (!cur || !cur->isSuperAdmin()) return;
     if (m_dialogs) m_dialogs->dataRestore();
 }
 
@@ -579,6 +649,143 @@ void MainWindow::onAboutQt()
 void MainWindow::onCheckUpdate()
 {
     if (m_dialogs) m_dialogs->checkUpdate();
+}
+
+void MainWindow::onAuditLog()
+{
+    AuditLogDialog dialog(this);
+    dialog.exec();
+}
+
+void MainWindow::onStats()
+{
+    LOG_DEBUG(QStringLiteral("报表中心: onStats 进入"));
+    const User::Ptr user = UserSession::instance().currentUser();
+    if (!user) return;
+
+    // 组长视图锁定本组；超管/总管看全局
+    StatsScope scope;
+    if (user->isLeader() && !user->isSuperAdmin() && !user->isManager()
+        && user->groupId() > 0) {
+        scope.groupId = user->groupId();
+    }
+    StatsDialog dialog(scope, this);
+    dialog.exec();
+    LOG_DEBUG(QStringLiteral("报表中心: exec 返回"));
+}
+
+void MainWindow::onBatchExport()
+{
+    const QList<qint64> ids = m_reportList->selectedReportIds();
+    if (ids.isEmpty()) {
+        UiHelper::info(this, tr("批量导出"),
+                       tr("请先在报告列表中选中要导出的报告（按住 Ctrl/Shift 可多选）"));
+        return;
+    }
+
+    // 选择导出格式
+    QMessageBox fmtBox(this);
+    fmtBox.setWindowTitle(tr("选择导出格式"));
+    fmtBox.setText(tr("批量导出 %1 份报告，请选择格式:").arg(ids.size()));
+    QPushButton* btnPdf  = fmtBox.addButton(tr("PDF"), QMessageBox::AcceptRole);
+    QPushButton* btnHtml = fmtBox.addButton(tr("HTML"), QMessageBox::AcceptRole);
+    QPushButton* btnWord = fmtBox.addButton(tr("Word"), QMessageBox::AcceptRole);
+    QPushButton* btnText = fmtBox.addButton(tr("文本"), QMessageBox::AcceptRole);
+    QPushButton* btnCancel = fmtBox.addButton(tr("取消"), QMessageBox::RejectRole);
+    fmtBox.exec();
+    QAbstractButton* clicked = fmtBox.clickedButton();
+    if (clicked == nullptr || clicked == btnCancel) return;
+
+    ExportFormat format;
+    QString ext;
+    if (clicked == btnPdf)      { format = ExportFormat::Pdf;  ext = "pdf"; }
+    else if (clicked == btnHtml){ format = ExportFormat::Html; ext = "html"; }
+    else if (clicked == btnWord){ format = ExportFormat::Word; ext = "doc"; }
+    else if (clicked == btnText){ format = ExportFormat::Text; ext = "txt"; }
+
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("选择导出目录"));
+    if (dir.isEmpty()) return;
+
+    // 后台异步批量导出（ExportManager 无 UI 依赖）
+    auto* watcher = new QFutureWatcher<QStringList>(this);
+    auto* progress = new QProgressDialog(tr("正在批量导出 %1 份报告...").arg(ids.size()),
+                                         QString(), 0, 0, this);
+    progress->setWindowTitle(tr("批量导出"));
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setCancelButton(nullptr);
+    progress->setMinimumDuration(300);
+
+    QObject::connect(watcher, &QFutureWatcher<QStringList>::finished, this,
+                     [this, watcher, progress, dir, ids]() {
+        const QStringList failed = watcher->result();
+        progress->close();
+        progress->deleteLater();
+        if (failed.isEmpty()) {
+            UiHelper::info(this, tr("批量导出"),
+                           tr("导出完成：%1 份报告\n目录: %2").arg(ids.size()).arg(dir));
+        } else {
+            UiHelper::warning(this, tr("批量导出"),
+                              tr("完成 %1/%2 份，失败 %3 份:\n%4")
+                                  .arg(ids.size() - failed.size()).arg(ids.size())
+                                  .arg(failed.size()).arg(failed.join("\n")));
+        }
+    });
+
+    watcher->setFuture(QtConcurrent::run([ids, dir, format, ext]() {
+        QStringList failed;
+        for (const qint64 id : ids) {
+            const Report::Ptr report = ReportService::getById(id);
+            if (!report) { failed << QString::number(id); continue; }
+            QString fileName = report->title().trimmed();
+            if (fileName.isEmpty()) fileName = QObject::tr("报告_%1").arg(id);
+            fileName.replace(QRegularExpression("[\\\\/:*?\"<>|]"), "_");
+
+            ExportConfig config;
+            config.format = format;
+            config.filePath = dir + "/" + fileName + "." + ext;
+            ExportManager exporter;   // 线程内独立构造
+            if (!exporter.exportReport(report, config, nullptr)) {
+                failed << fileName;
+            }
+        }
+        return failed;
+    }));
+}
+
+void MainWindow::onBatchDelete()
+{
+    const QList<qint64> ids = m_reportList->selectedReportIds();
+    if (ids.isEmpty()) {
+        UiHelper::info(this, tr("批量删除"),
+                       tr("请先在报告列表中选中要删除的报告（按住 Ctrl/Shift 可多选）"));
+        return;
+    }
+
+    // 权限过滤：仅删除当前用户有权限的报告
+    QList<qint64> allowed;
+    const User::Ptr cur = UserSession::instance().currentUser();
+    for (const qint64 id : ids) {
+        const Report::Ptr report = ReportService::getById(id);
+        if (report && PermissionService::canDeleteReport(report, cur)) {
+            allowed.append(id);
+        }
+    }
+    if (allowed.isEmpty()) {
+        UiHelper::warning(this, tr("批量删除"), tr("所选报告均无删除权限"));
+        return;
+    }
+
+    if (!UiHelper::confirm(this, tr("批量删除"),
+                           tr("确定删除选中的 %1 份报告？此操作不可恢复。")
+                               .arg(allowed.size()))) {
+        return;
+    }
+
+    for (const qint64 id : allowed) {
+        ReportService::remove(id);   // 内部含审计留痕
+    }
+    m_reportList->refreshList();
+    updatePropertyPanel();
 }
 
 void MainWindow::onPluginManager()

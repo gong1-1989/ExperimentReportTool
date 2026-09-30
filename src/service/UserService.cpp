@@ -4,6 +4,7 @@
  */
 
 #include "UserService.h"
+#include "AuditService.h"
 #include "core/utils/Logger.h"
 #include "data/database/DatabaseManager.h"
 #include "data/repositories/UserRepository.h"
@@ -110,6 +111,7 @@ User::Ptr UserService::create(const QString& username, const QString& displayNam
     user->setRole(role);
 
     if (UserRepository::save(user)) {
+        AuditService::log(QObject::tr("创建用户"), username);
         return user;
     }
     LOG_ERROR(QString("创建用户失败: %1").arg(username));
@@ -120,7 +122,9 @@ bool UserService::update(const User::Ptr& user)
 {
     Q_ASSERT(user);
     if (!user) return false;
-    return UserRepository::save(user);
+    const bool ok = UserRepository::save(user);
+    if (ok) AuditService::log(QObject::tr("更新用户"), user->username());
+    return ok;
 }
 
 bool UserService::save(const User::Ptr& user)
@@ -131,7 +135,11 @@ bool UserService::save(const User::Ptr& user)
 
 bool UserService::remove(qint64 id)
 {
-    return UserRepository::remove(id);
+    const QString name = UserRepository::findById(id)
+                             ? UserRepository::findById(id)->username() : QString();
+    const bool ok = UserRepository::remove(id);
+    if (ok) AuditService::log(QObject::tr("删除用户"), name, id);
+    return ok;
 }
 
 bool UserService::exists(const QString& username)

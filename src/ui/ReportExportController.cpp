@@ -9,11 +9,19 @@
 #include "ReportExportController.h"
 
 #include "export/ExportManager.h"
+#include "extension/ExportAdapter.h"
+#include "extension/ExportRegistry.h"
+#include "extension/ReportRenderContextBuilder.h"
 #include "print/PrintManager.h"
 #include "ui/UiHelper.h"
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QFileDialog>
+#include <QObject>
+#include <QFutureWatcher>
+#include <QProgressDialog>
+#include <QtConcurrent/QtConcurrentRun>
 
 namespace {
 // 非 QObject 类内使用 tr 语义：统一翻译上下文
@@ -35,35 +43,102 @@ void ReportExportController::exportReport(const Report::Ptr& report)
 {
     if (!report) return;
 
-    // 显示导出文件对话框
+    // 确保内置导出插件已注册
+    ExportRegistry::instance().ensureBuiltinAdapters();
+
+    // 文件对话框：原生 4 格式 + 插件格式（注册表自动聚合）
+    QStringList filters;
+    filters << trText("PDF 文件 (*.pdf)")
+            << trText("HTML 文件 (*.html)")
+            << trText("Word 文档 (*.doc)")
+            << trText("文本文件 (*.txt)");
+    for (ExportAdapter* a : ExportRegistry::instance().allAdapters())
+        filters << a->fileFilter();
+
     const QString defaultName = report->title().isEmpty()
         ? trText("未命名报告") : report->title();
-    const auto result = ExportManager::getSaveFilePath(m_parent, defaultName);
+    QFileDialog dlg(m_parent, trText("导出报告"), QString(), filters.join(QStringLiteral(";;")));
+    dlg.setAcceptMode(QFileDialog::AcceptSave);
+    dlg.selectFile(defaultName);   // 初始文件名（第三个参数是目录，不能传文件名）
+    if (dlg.exec() != QDialog::Accepted) return;
+    const QString path = dlg.selectedFiles().value(0);
+    if (path.isEmpty()) return;
+    const QString selectedFilter = dlg.selectedNameFilter();
 
-    if (result.first.isEmpty()) {
-        return;  // 用户取消
+    // 判定所选格式：原生 或 插件
+    ExportFormat format = ExportFormat::Html;
+    ExportAdapter* adapter = nullptr;
+    if (selectedFilter.contains(QStringLiteral("(*.pdf)"))) format = ExportFormat::Pdf;
+    else if (selectedFilter.contains(QStringLiteral("(*.html)"))) format = ExportFormat::Html;
+    else if (selectedFilter.contains(QStringLiteral("(*.doc)"))) format = ExportFormat::Word;
+    else if (selectedFilter.contains(QStringLiteral("(*.txt)"))) format = ExportFormat::Text;
+    else {
+        for (ExportAdapter* a : ExportRegistry::instance().allAdapters()) {
+            if (selectedFilter == a->fileFilter()) { adapter = a; break; }
+        }
+        if (!adapter) {
+            UiHelper::error(m_parent, trText("导出失败"), trText("未知的导出格式"));
+            return;
+        }
     }
 
-    // 执行导出
-    ExportManager exporter;
-    ExportConfig config;
-    config.format = result.second;
-    config.filePath = result.first;
+    // 进度对话框（原生与插件共用）
+    auto* watcher = new QFutureWatcher<bool>(m_parent);
+    auto* progress = new QProgressDialog(
+        trText("正在导出，请稍候..."), QString(), 0, 0, m_parent);
+    progress->setWindowTitle(trText("导出"));
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setCancelButton(nullptr);
+    progress->setMinimumDuration(300);
 
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    const bool success = exporter.exportReport(report, config, m_parent);
-    QApplication::restoreOverrideCursor();
+    if (!adapter) {
+        // ---- 原生格式：后台线程 ExportManager（不共享成员） ----
+        ExportConfig config;
+        config.format = format;
+        config.filePath = path;
 
-    if (success) {
-        UiHelper::info(m_parent, trText("导出成功"),
-                       trText("报告已导出到:\n%1").arg(result.first));
-        if (m_statusFn) m_statusFn(trText("导出成功: %1").arg(result.first));
+        QObject::connect(watcher, &QFutureWatcher<bool>::finished, m_parent,
+                         [this, progress, config, watcher]() {
+            const bool success = watcher->result();
+            progress->close();
+            progress->deleteLater();
+            if (success) {
+                UiHelper::info(m_parent, trText("导出成功"),
+                               trText("报告已导出到:\n%1").arg(config.filePath));
+                if (m_statusFn) m_statusFn(trText("导出成功: %1").arg(config.filePath));
+            } else {
+                UiHelper::error(m_parent, trText("导出失败"), trText("导出报告时发生错误，请查看日志"));
+            }
+        });
+
+        watcher->setFuture(QtConcurrent::run([report, config]() {
+            ExportManager exporter;   // 线程内独立构造，避免跨线程共享成员
+            return exporter.exportReport(report, config, nullptr);
+        }));
     } else {
-        UiHelper::error(m_parent, trText("导出失败"),
-                        trText("导出报告时发生错误，请查看日志"));
+        // ---- 插件格式：主线程先构建渲染上下文（含数据库查询），后台线程只消费 ----
+        const ReportRenderContext ctx = buildReportRenderContext(report);
+
+        QObject::connect(watcher, &QFutureWatcher<bool>::finished, m_parent,
+                         [this, progress, path, watcher]() {
+            const bool success = watcher->result();
+            progress->close();
+            progress->deleteLater();
+            if (success) {
+                UiHelper::info(m_parent, trText("导出成功"),
+                               trText("报告已导出到:\n%1").arg(path));
+                if (m_statusFn) m_statusFn(trText("导出成功: %1").arg(path));
+            } else {
+                UiHelper::error(m_parent, trText("导出失败"),
+                                trText("扩展格式导出失败，请查看日志或检查文件是否被占用"));
+            }
+        });
+
+        watcher->setFuture(QtConcurrent::run([ctx, adapter, path]() {
+            return adapter->exportReport(ctx, path, nullptr);
+        }));
     }
 }
-
 void ReportExportController::print(const Report::Ptr& report)
 {
     if (!report || !m_printManager) return;

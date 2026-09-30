@@ -35,7 +35,7 @@ inline const QString APP_DISPLAY_NAME = "实验报告记录工具";
 inline const QString APP_VERSION = "1.0.0";
 
 /// 配置文件中的数据库版本号（用于迁移判断）
-inline const int DATABASE_VERSION = 6;
+inline const int DATABASE_VERSION = 8;
 
 // ---------------------------------------------------------------------------
 // 文件与目录相关常量
@@ -187,6 +187,8 @@ inline const QString REPORT_STATUS_SUBMITTED = "submitted";
 
 /// 报告状态：已审核
 inline const QString REPORT_STATUS_REVIEWED = "reviewed";
+inline const QString REPORT_STATUS_APPROVED = "approved";  ///< 已审批（总管审批通过，可归档）
+inline const QString REPORT_STATUS_ARCHIVED = "archived";  ///< 已归档（只读存档，不可再流转）
 
 // ---------------------------------------------------------------------------
 // 设置（QSettings）键名常量

@@ -6,7 +6,6 @@
 #include "AttachmentManagerDialog.h"
 #include "ui_AttachmentManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "service/AttachmentService.h"
-#include "data/repositories/AttachmentRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/AppTheme.h"
@@ -14,6 +13,7 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/AttachmentRepository.h"
 #include <QApplication>
 #include <QDateTime>
 #include <QMenu>

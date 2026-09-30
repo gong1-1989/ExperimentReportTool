@@ -132,7 +132,10 @@ void ReportListModel::setReports(const Report::List& reports)
         if (sameIds) {
             m_reports = reports;
             reloadMeta();
-            emit dataChanged(index(0, 0), index(m_reports.size() - 1, ColumnCount - 1));
+            // 空列表无需通知（index(0,0) 为无效索引，会触发 Qt 警告）
+            if (!m_reports.isEmpty()) {
+                emit dataChanged(index(0, 0), index(m_reports.size() - 1, ColumnCount - 1));
+            }
             return;
         }
     }

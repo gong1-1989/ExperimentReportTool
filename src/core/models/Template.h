@@ -58,6 +58,14 @@ public:
     bool isBuiltin() const { return m_isBuiltin; }
     void setBuiltin(bool builtin) { m_isBuiltin = builtin; }
 
+    /// 可见性：public（全局可见）/ private（仅创建者可见）
+    QString visibility() const { return m_visibility; }
+    void setVisibility(const QString& v) { m_visibility = v; }
+    bool isPublic() const { return m_visibility == "public"; }
+    bool isPrivate() const { return m_visibility == "private"; }
+    qint64 createdBy() const { return m_createdBy; }          ///< 创建者用户 ID
+    void setCreatedBy(qint64 uid) { m_createdBy = uid; }      ///< 设置创建者
+
     QDateTime createdAt() const { return m_createdAt; }
     void setCreatedAt(const QDateTime& dt) { m_createdAt = dt; }
 
@@ -113,6 +121,8 @@ private:
     QString m_category;     ///< 分类（物理/化学/生物/通用等）
     QString m_description;  ///< 模板描述
     bool    m_isBuiltin;    ///< 是否内置模板
+    QString m_visibility = "public";  ///< 可见性（public/private）
+    qint64 m_createdBy = -1;             ///< 创建者用户 ID
     QDateTime m_createdAt;  ///< 创建时间
     QDateTime m_updatedAt;  ///< 更新时间
 

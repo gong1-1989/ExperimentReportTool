@@ -7,14 +7,13 @@
 #include "ui_VersionHistoryDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "ui/dialogs/VersionCompareDialog.h"
 #include "service/ReportService.h"
-#include "data/repositories/ReportRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
-#include "core/utils/AppConfig.h"
-
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/ReportRepository.h"
+#include "core/utils/AppConfig.h"
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QJsonObject>

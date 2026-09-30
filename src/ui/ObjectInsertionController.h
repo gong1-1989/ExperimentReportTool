@@ -32,6 +32,10 @@ public:
     void insertFormula();
     /// 插入分隔线
     void insertDivider();
+    /// 插入附件卡片（D 域：选文件上传为附件 → 卡片对象）
+    void insertAttachmentCard();
+    /// 插入音视频引用（D 域：选音视频文件 → 引用对象）
+    void insertMediaRef();
     /// 编辑对象（双击对象锚点触发：按类型打开对应编辑对话框）
     void editObject(const QString& objectId);
 

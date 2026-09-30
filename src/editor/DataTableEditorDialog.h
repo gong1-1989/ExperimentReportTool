@@ -131,6 +131,9 @@ private slots:
     // 校验
     void onValidate();
 
+    // 数据分析（B 域）
+    void onAnalyze();
+
     // 保存
     void onAccept();
 
@@ -159,6 +162,7 @@ private:
     QPushButton* m_importBtn;
     QPushButton* m_exportBtn;
     QPushButton* m_validateBtn;
+    QPushButton* m_analyzeBtn;
 
     // 右侧：列属性面板
     ColumnPropertyPanel* m_columnPanel;

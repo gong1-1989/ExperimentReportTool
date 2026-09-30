@@ -26,8 +26,8 @@
  */
 
 #include "TagRepository.h"
-#include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
+#include "data/database/DatabaseManager.h"
 
 #include <QSet>
 #include <QSqlQuery>

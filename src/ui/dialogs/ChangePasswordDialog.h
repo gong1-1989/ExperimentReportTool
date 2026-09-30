@@ -24,10 +24,9 @@ class ChangePasswordDialog : public BaseDialog
 public:
     /**
      * @brief 构造函数
-     * @param isFirstLogin 是否为首次登录强制改密码
-     * @param parent 父窗口
+         * @param parent 父窗口
      */
-    explicit ChangePasswordDialog(bool isFirstLogin = false, QWidget* parent = nullptr);
+    explicit ChangePasswordDialog(QWidget* parent = nullptr);
     ~ChangePasswordDialog() override;
 
     /// 获取新密码
@@ -42,7 +41,6 @@ private slots:
 
 private:
     Ui::ChangePasswordDialog* ui;
-    bool m_isFirstLogin;  ///< 是否首次登录
     QString m_newPassword;  ///< 新密码
 
     /// 验证密码强度

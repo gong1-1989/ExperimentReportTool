@@ -4,8 +4,8 @@
  */
 
 #include "UserRepository.h"
-#include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
+#include "data/database/DatabaseManager.h"
 
 #include <QSqlQuery>
 #include <QSqlError>
@@ -66,9 +66,9 @@ bool UserRepository::save(User::Ptr user)
         // 新建
         query.prepare(
             "INSERT INTO users (username, password_hash, display_name, role, "
-            "must_change_password, created_at, last_login_at) "
+            "must_change_password, disabled, group_id, created_at, last_login_at) "
             "VALUES (:username, :password_hash, :display_name, :role, "
-            ":must_change_password, :created_at, :last_login_at)");
+            ":must_change_password, :disabled, :group_id, :created_at, :last_login_at)");
         query.bindValue(":created_at", user->createdAt().isValid()
             ? user->createdAt() : QDateTime::currentDateTime());
     } else {
@@ -76,7 +76,8 @@ bool UserRepository::save(User::Ptr user)
         query.prepare(
             "UPDATE users SET username = :username, password_hash = :password_hash, "
             "display_name = :display_name, role = :role, "
-            "must_change_password = :must_change_password, last_login_at = :last_login_at "
+            "must_change_password = :must_change_password, disabled = :disabled, "
+            "group_id = :group_id, last_login_at = :last_login_at "
             "WHERE id = :id");
         query.bindValue(":id", user->id());
     }
@@ -84,8 +85,10 @@ bool UserRepository::save(User::Ptr user)
     query.bindValue(":username", user->username());
     query.bindValue(":password_hash", user->passwordHash());
     query.bindValue(":display_name", user->displayName());
-    query.bindValue(":role", user->isAdmin() ? "admin" : "user");
+    query.bindValue(":role", user->roleString());
     query.bindValue(":must_change_password", user->mustChangePassword());
+    query.bindValue(":disabled", user->isDisabled());
+    query.bindValue(":group_id", user->groupId());
     query.bindValue(":last_login_at", user->lastLoginAt());
 
     if (!BaseRepository::execChecked(query, "保存用户")) return false;
@@ -133,6 +136,11 @@ User::Ptr UserRepository::authenticate(const QString& username, const QString& p
     if (!user) return nullptr;
 
     if (user->verifyPassword(password)) {
+        // 存量旧版哈希：登录成功后自动迁移为新格式（随机盐+迭代）
+        if (user->usesLegacyHash()) {
+            user->setPasswordHash(User::hashPassword(password));
+            save(user);
+        }
         return user;
     }
     return nullptr;
@@ -165,7 +173,7 @@ bool UserRepository::resetPassword(qint64 userId)
     if (!user) return false;
 
     user->setPasswordHash(User::hashPassword("123456"));
-    user->setMustChangePassword(true);
+    user->setMustChangePassword(false);  // v9.20.0 起不再强制首次登录改密码
     return save(user);
 }
 
@@ -175,6 +183,12 @@ bool UserRepository::resetPassword(qint64 userId)
 
 void UserRepository::initializeDefaultUsers()
 {
+    // 清理历史测试账号（v9.20.0 起移除测试用户）
+    {
+        QSqlQuery cleanQuery(BaseRepository::db());
+        cleanQuery.exec("DELETE FROM users WHERE username = 'test';");
+    }
+
     // 检查是否已有用户
     QSqlQuery query(BaseRepository::db());
     query.exec("SELECT COUNT(*) FROM users");
@@ -188,24 +202,14 @@ void UserRepository::initializeDefaultUsers()
     admin->setUsername("admin");
     admin->setPasswordHash(User::hashPassword("admin123"));
     admin->setDisplayName("系统管理员");
-    admin->setRole(UserRole::Admin);
+    admin->setRole(UserRole::SuperAdmin);
     admin->setMustChangePassword(false);
     admin->setCreatedAt(QDateTime::currentDateTime());
     if (save(admin)) {
         LOG_DEBUG("默认管理员账号已创建: admin（首次登录需改密码）");
     }
 
-    // 创建测试账号
-    User::Ptr test = User::create();
-    test->setUsername("test");
-    test->setPasswordHash(User::hashPassword("123456"));
-    test->setDisplayName("测试用户");
-    test->setRole(UserRole::User);
-    test->setMustChangePassword(true);  // 首次登录必须改密码
-    test->setCreatedAt(QDateTime::currentDateTime());
-    if (save(test)) {
-        LOG_DEBUG("默认测试账号已创建: test");
-    }
+    // v9.20.0 起不再创建测试账号
 }
 
 // ============================================================================
@@ -221,7 +225,9 @@ User::Ptr UserRepository::mapToUser(const QSqlQuery& query)
     user->setDisplayName(query.value("display_name").toString());
 
     const QString roleStr = query.value("role").toString();
-    user->setRole(roleStr == "admin" ? UserRole::Admin : UserRole::User);
+    user->setRole(User::roleFromString(roleStr));
+    user->setDisabled(query.value("disabled").toBool());
+    user->setGroupId(query.value("group_id").toLongLong());
 
     user->setMustChangePassword(query.value("must_change_password").toBool());
     user->setCreatedAt(query.value("created_at").toDateTime());

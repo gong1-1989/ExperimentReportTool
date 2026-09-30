@@ -6,11 +6,8 @@
 #include "ExportManager.h"
 #include "HtmlGenerator.h"
 #include "core/utils/Logger.h"
+#include "extension/ObjectRegistry.h"
 #include "core/utils/AppConfig.h"
-#include "chart/ChartRenderer.h"
-#include "chart/ChartConfigDialog.h"
-#include "data/repositories/DataTableRepository.h"
-#include "core/models/DataTable.h"
 #include "print/PrintManager.h"
 
 #include <QTextDocument>
@@ -22,6 +19,10 @@
 #include <QDir>
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "chart/ChartRenderer.h"
+#include "chart/ChartConfigDialog.h"
+#include "data/repositories/DataTableRepository.h"
+#include "core/models/DataTable.h"
 #include <QFileDialog>
 #include <QDateTime>
 #include <QTextList>
@@ -174,8 +175,13 @@ bool ExportManager::exportToWord(const Report::Ptr& report,
 {
     Q_UNUSED(parent);
 
-    // 简化实现：生成 Word 可以打开的 HTML 文件，扩展名用 .doc
+    // 简化实现：生成 Word 可以打开的 HTML 文件，扩展名必须用 .doc
+    // （Word 对 .docx 按 OOXML 解析，纯 HTML 内容会报"文件已损坏"）
     // 完整的 .docx 需要 OOXML 格式，后续可以用 libdocx 或 pandoc
+    QString outPath = config.filePath;
+    if (outPath.endsWith(QStringLiteral(".docx"), Qt::CaseInsensitive)) {
+        outPath = outPath.left(outPath.size() - 5) + QStringLiteral(".doc");
+    }
     QString html = m_htmlGenerator->generate(report, config);
 
     // 图片以 base64 data URI 直接内嵌 HTML（Word 2016+/WPS 支持 data URI 图片显示）
@@ -192,17 +198,27 @@ bool ExportManager::exportToWord(const Report::Ptr& report,
         "</head><body>%1</body></html>"
     ).arg(html.section("<body>", 1).section("</body>", 0, 0));
 
-    QFile file(config.filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        return false;
+    // Word 的 HTML 解析不支持 <video>/<audio> 标签（打开会报错），
+    // 删除播放器标签块，保留标题行（音视频引用仍以文字形式呈现）
+    {
+        static const QRegularExpression mediaTagRe(
+            QStringLiteral("<(video|audio)[^>]*>.*?</\\1>"),
+            QRegularExpression::DotMatchesEverythingOption
+                | QRegularExpression::CaseInsensitiveOption);
+        QString w = wordHtml;
+        w.replace(mediaTagRe, QString());
+        QFile file(outPath);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            return false;
+        }
+
+        QTextStream stream(&file);
+        // Qt6 中 QTextStream 默认使用 UTF-8 编码，无需调用 setCodec
+        stream << w;
+        file.close();
+
+        return true;
     }
-
-    QTextStream stream(&file);
-    // Qt6 中 QTextStream 默认使用 UTF-8 编码，无需调用 setCodec
-    stream << wordHtml;
-    file.close();
-
-    return true;
 }
 
 // ===========================================================================
@@ -255,6 +271,20 @@ bool ExportManager::exportToText(const Report::Ptr& report,
             text += QString("[公式: %1]\n\n")
                         .arg(object.data.value("latex").toString());
             break;
+
+        case BlockType::AttachmentCard:
+        case BlockType::MediaRef: {
+            // D 域：纯文本摘要（附件卡片 / 音视频引用）
+            const QString typeId = (object.type == BlockType::AttachmentCard)
+                                       ? QStringLiteral("attachment_card")
+                                       : QStringLiteral("media_ref");
+            DocumentObjectProviderPtr provider = ObjectRegistry::instance().providerById(typeId);
+            if (provider) {
+                const QString t = provider->renderText(object.data.toVariantMap());
+                if (!t.isEmpty()) text += t + QStringLiteral("\n\n");
+            }
+            break;
+        }
         default:
             break;
         }

@@ -6,11 +6,8 @@
 #include "ProjectTreeWidget.h"
 #include <QStyle>
 #include "service/ProjectService.h"
-#include "data/repositories/ProjectRepository.h"
 #include "service/ReportService.h"
-#include "data/repositories/ReportRepository.h"
 #include "service/UserService.h"
-#include "data/repositories/UserRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/UserSession.h"
 #include "ui/dialogs/ProjectDialog.h"
@@ -18,6 +15,9 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/ProjectRepository.h"
+#include "data/repositories/ReportRepository.h"
+#include "data/repositories/UserRepository.h"
 #include <QInputDialog>
 #include <QIcon>
 
@@ -109,6 +109,12 @@ void ProjectTreeWidget::refreshTree()
     });
 
     for (qint64 userId : userIds) {
+        // 创建者筛选：0=我的项目，>0=指定用户
+        if (m_filterCreatorId == 0) {
+            if (userId != UserSession::instance().userId()) continue;
+        } else if (m_filterCreatorId > 0) {
+            if (userId != m_filterCreatorId) continue;
+        }
         QTreeWidgetItem* userNode = createUserNode(userId);
         if (!userNode) continue;
 
@@ -120,8 +126,19 @@ void ProjectTreeWidget::refreshTree()
         }
     }
 
-    // 默认展开第一层
-    expandToDepth(0);
+    // 默认只展开当前用户的项目节点，折叠其它用户的节点
+    const qint64 me = UserSession::instance().userId();
+    for (int i = 0; i < topLevelItemCount(); ++i) {
+        QTreeWidgetItem* node = topLevelItem(i);
+        const qint64 nodeUserId = node->data(1, Qt::UserRole).toLongLong();
+        node->setExpanded(nodeUserId == me);
+    }
+}
+
+void ProjectTreeWidget::setCreatorFilter(qint64 userId)
+{
+    m_filterCreatorId = userId;
+    refreshTree();
 }
 
 qint64 ProjectTreeWidget::currentProjectId() const
@@ -313,6 +330,7 @@ QTreeWidgetItem* ProjectTreeWidget::createUserNode(qint64 userId)
 {
     QTreeWidgetItem* node = new QTreeWidgetItem();
     node->setData(0, Qt::UserRole, -2);  // -2 表示用户分组节点，不是项目
+    node->setData(1, Qt::UserRole, userId);  // 记录该分组对应的创建者用户 ID
 
     if (userId <= 0) {
         // 未分配（旧数据）

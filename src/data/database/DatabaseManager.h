@@ -19,6 +19,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QMutex>
+#include <QThread>
 
 /**
  * @brief 数据库管理器类（单例模式）
@@ -218,6 +219,7 @@ private:
     bool    m_initialized;     ///< 是否已初始化
     int     m_currentVersion;  ///< 当前数据库版本
     QMutex  m_mutex;           ///< 互斥锁（事务等操作线程安全）
+    QThread* m_mainThread = nullptr;  ///< 主连接所属线程（创建线程）
 };
 
 #endif // DATABASE_MANAGER_H

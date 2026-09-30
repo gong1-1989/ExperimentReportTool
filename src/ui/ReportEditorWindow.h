@@ -11,6 +11,8 @@
 
 #include <QMainWindow>
 #include <QAction>
+#include "service/WorkflowService.h"
+#include "service/PermissionService.h"
 #include <QToolBar>
 #include <QStatusBar>
 #include <QLabel>
@@ -78,6 +80,18 @@ private slots:
     // 文件操作
     void onNew();
     void onSave();
+    void onSubmit();
+    void onRecall();
+    void onReviewApprove();
+    void onReviewReject();
+    void onApproveApprove();
+    void onApproveReject();
+    void onArchive();
+    void createWorkflowActions();
+    void updateWorkflowActions();
+    void refreshRejectComment();
+    void onSaveAsTemplate();
+    void onWritingTools();  ///< 保存为模板
     void onSaveAs();
     void onExport();
     void onPrint();
@@ -136,6 +150,9 @@ private:
     /// 显示状态栏消息
     void showStatusMessage(const QString& message, int timeout = 3000);
 
+    /// 手动保存前并发冲突检测：打开后被他人修改则提示（自动保存不检测）
+    bool checkConflictBeforeSave();
+
 
     // -----------------------------------------------------------------------
     // 成员变量
@@ -144,6 +161,7 @@ private:
     Ui::ReportEditorWindow* ui;          ///< UI 界面对象（从 .ui 文件自动生成）
     ReportEditor* m_editor;              ///< 报告编辑器组件
     Report::Ptr m_report;                ///< 当前报告
+    QDateTime m_loadedUpdatedAt;        ///< 打开/重载时的 updatedAt（并发冲突检测基准）
     class PrintManager* m_printManager;  ///< 打印管理器
     PluginManager* m_pluginManager;      ///< 插件管理器
     ObjectInsertionController* m_insertionController;  ///< 对象插入/编辑控制器
@@ -171,6 +189,19 @@ private:
 
     bool m_isNewReport;
     bool m_readOnly = false;   ///< 只读模式（无编辑权限）              ///< 是否为新建报告
+    QWidget* m_workflowBar = nullptr;       ///< 顶部工作流信息栏
+    QLabel* m_rejectCommentLabel = nullptr;  ///< 退回意见显示
+    QAction* m_actionSubmit = nullptr;       ///< 提交报告
+    QAction* m_actionRecall = nullptr;       ///< 撤回提交（创建者收回草稿）
+    QAction* m_actionReviewApprove = nullptr; ///< 审核通过
+    QAction* m_actionReviewReject = nullptr;  ///< 审核退回
+    QAction* m_actionApproveApprove = nullptr; ///< 审批通过
+    QAction* m_actionApproveReject = nullptr;  ///< 审批退回
+    QAction* m_actionArchive = nullptr;         ///< 归档报告（仅已审批可归档）
+    QAction* m_actionSaveAsTemplate = nullptr;  ///< 保存为模板
+    QAction* m_actionWritingTools = nullptr;    ///< 写作工具（F 域）
+    QAction* m_actionInsertAttachmentCard = nullptr;  ///< 插入附件卡片（D 域）
+    QAction* m_actionInsertMediaRef = nullptr;        ///< 插入音视频引用（D 域）
     double m_zoomFactor;             ///< 缩放因子
 };
 

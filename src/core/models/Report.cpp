@@ -49,6 +49,8 @@ QString ContentBlock::blockTypeToString(BlockType type)
     case BlockType::Formula:       return "formula";
     case BlockType::Divider:       return "divider";
     case BlockType::DataReference: return "data_reference";
+    case BlockType::AttachmentCard: return "attachment_card";
+    case BlockType::MediaRef:       return "media_ref";
     }
     return "data_reference";  // 默认
 }
@@ -61,6 +63,8 @@ BlockType ContentBlock::blockTypeFromString(const QString& str)
     if (str == "formula")       return BlockType::Formula;
     if (str == "divider")       return BlockType::Divider;
     if (str == "data_reference")return BlockType::DataReference;
+    if (str == "attachment_card") return BlockType::AttachmentCard;
+    if (str == "media_ref")       return BlockType::MediaRef;
     return BlockType::DataReference;  // 默认对象
 }
 
@@ -209,6 +213,15 @@ QString Report::toPlainText() const
         case BlockType::DataReference:
             // 表格/图表/数据引用以数据表为主，不计入文本检索
             break;
+        case BlockType::AttachmentCard:
+            // 附件卡片：文件名 + 题注参与检索
+            texts.append(object.data.value("fileName").toString());
+            texts.append(object.data.value("caption").toString());
+            break;
+        case BlockType::MediaRef:
+            // 音视频引用：标题参与检索
+            texts.append(object.data.value("title").toString());
+            break;
         default:
             break;
         }
@@ -255,10 +268,17 @@ int Report::wordCount() const
 
 QString Report::statusDisplayName() const
 {
-    switch (m_status) {
+    return statusDisplayName(m_status);
+}
+
+QString Report::statusDisplayName(ReportStatus status)
+{
+    switch (status) {
     case ReportStatus::Draft:     return QStringLiteral("草稿");
     case ReportStatus::Submitted: return QStringLiteral("已提交");
     case ReportStatus::Reviewed:  return QStringLiteral("已审核");
+    case ReportStatus::Approved:  return QStringLiteral("已审批");
+    case ReportStatus::Archived:  return QStringLiteral("已归档");
     }
     return QStringLiteral("未知");
 }
@@ -269,6 +289,8 @@ QString Report::statusToString() const
     case ReportStatus::Draft:     return AppConstants::REPORT_STATUS_DRAFT;
     case ReportStatus::Submitted: return AppConstants::REPORT_STATUS_SUBMITTED;
     case ReportStatus::Reviewed:  return AppConstants::REPORT_STATUS_REVIEWED;
+    case ReportStatus::Approved:  return AppConstants::REPORT_STATUS_APPROVED;
+    case ReportStatus::Archived:  return AppConstants::REPORT_STATUS_ARCHIVED;
     }
     return AppConstants::REPORT_STATUS_DRAFT;
 }
@@ -280,6 +302,12 @@ ReportStatus Report::statusFromString(const QString& str)
     }
     if (str == AppConstants::REPORT_STATUS_REVIEWED) {
         return ReportStatus::Reviewed;
+    }
+    if (str == AppConstants::REPORT_STATUS_APPROVED) {
+        return ReportStatus::Approved;
+    }
+    if (str == AppConstants::REPORT_STATUS_ARCHIVED) {
+        return ReportStatus::Archived;
     }
     return ReportStatus::Draft;
 }

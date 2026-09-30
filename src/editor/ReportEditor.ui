@@ -100,17 +100,17 @@
           </item>
           <item>
            <property name="text">
-            <string>进行中</string>
+            <string>已提交</string>
            </property>
           </item>
           <item>
            <property name="text">
-            <string>已完成</string>
+            <string>已审核</string>
            </property>
           </item>
           <item>
            <property name="text">
-            <string>已归档</string>
+            <string>已审批</string>
            </property>
           </item>
          </widget>

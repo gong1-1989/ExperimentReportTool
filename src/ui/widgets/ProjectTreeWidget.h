@@ -53,6 +53,11 @@ public:
      */
     void selectProject(qint64 projectId);
 
+    /**
+     * @brief 设置项目树创建者筛选（-1=全部，0=我的，>0=指定用户）
+     */
+    void setCreatorFilter(qint64 userId);
+
 signals:
     /**
      * @brief 项目选中信号
@@ -89,6 +94,8 @@ private:
      * @param parentId 父项目 ID（-1 表示根项目）
      */
     void buildTree(QTreeWidgetItem* parentItem, qint64 parentId);
+
+    qint64 m_filterCreatorId = -1;  ///< 创建者筛选：-1=全部 0=我的 >0=指定用户
 
     /**
      * @brief 根据项目 ID 查找树节点

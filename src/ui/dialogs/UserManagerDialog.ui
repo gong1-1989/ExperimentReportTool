@@ -94,6 +94,13 @@
       </spacer>
      </item>
      <item>
+      <widget class="QPushButton" name="btnManageGroup">
+       <property name="text">
+        <string>管理组</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btnRefresh">
        <property name="text">
         <string>刷新</string>

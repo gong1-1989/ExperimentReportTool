@@ -71,6 +71,10 @@ Report::Ptr ReportRepository::mapToReport(const QSqlQuery& query)
     report->setVersion(query.value("version").toInt());                // 版本号（乐观锁）
     report->setWordCount(query.value("word_count").toInt());           // 字数统计缓存
     report->setExperimentDate(query.value("experiment_date").toDate()); // 实验日期
+    report->setLastAction(query.value("last_action").toString());       // 最后工作流操作
+    report->setLastActionBy(query.value("last_action_by").toLongLong()); // 最后操作人
+    report->setLastActionAt(query.value("last_action_at").toDateTime()); // 最后操作时间
+    report->setLastActionComment(query.value("last_action_comment").toString()); // 最后操作意见
     report->setCreatedAt(query.value("created_at").toDateTime());     // 创建时间
     report->setUpdatedAt(query.value("updated_at").toDateTime());     // 最后更新时间
 
@@ -329,8 +333,8 @@ bool ReportRepository::insert(Report::Ptr report)
 
     // 准备插入语句，使用 R"(...)" 原始字符串字面量避免转义
     query.prepare(R"(
-        INSERT INTO reports (project_id, template_id, title, content, status, author, created_by, modified_by, version, word_count, experiment_date, created_at, updated_at)
-        VALUES (:project_id, :template_id, :title, :content, :status, :author, :created_by, :modified_by, :version, :word_count, :experiment_date, :created_at, :updated_at);
+        INSERT INTO reports (project_id, template_id, title, content, status, author, created_by, modified_by, version, word_count, experiment_date, last_action, last_action_by, last_action_at, last_action_comment, created_at, updated_at)
+        VALUES (:project_id, :template_id, :title, :content, :status, :author, :created_by, :modified_by, :version, :word_count, :experiment_date, :last_action, :last_action_by, :last_action_at, :last_action_comment, :created_at, :updated_at);
     )");
 
     // 绑定参数值
@@ -347,6 +351,10 @@ bool ReportRepository::insert(Report::Ptr report)
     query.bindValue(":version", 1);
     query.bindValue(":word_count", report->wordCount());
     query.bindValue(":experiment_date", report->experimentDate());
+    query.bindValue(":last_action", report->lastAction());
+    query.bindValue(":last_action_by", report->lastActionBy() > 0 ? report->lastActionBy() : QVariant());
+    query.bindValue(":last_action_at", report->lastActionAt().isValid() ? report->lastActionAt() : QVariant());
+    query.bindValue(":last_action_comment", report->lastActionComment());
     query.bindValue(":created_at", now);
     query.bindValue(":updated_at", now);
 
@@ -400,6 +408,10 @@ bool ReportRepository::update(const Report::Ptr& report)
             version = version + 1,
             word_count = :word_count,
             experiment_date = :experiment_date,
+            last_action = :last_action,
+            last_action_by = :last_action_by,
+            last_action_at = :last_action_at,
+            last_action_comment = :last_action_comment,
             updated_at = :updated_at
         WHERE id = :id;
     )");
@@ -414,6 +426,10 @@ bool ReportRepository::update(const Report::Ptr& report)
     query.bindValue(":modified_by", report->modifiedBy() > 0 ? report->modifiedBy() : QVariant());
     query.bindValue(":word_count", report->wordCount());
     query.bindValue(":experiment_date", report->experimentDate());
+    query.bindValue(":last_action", report->lastAction());
+    query.bindValue(":last_action_by", report->lastActionBy() > 0 ? report->lastActionBy() : QVariant());
+    query.bindValue(":last_action_at", report->lastActionAt().isValid() ? report->lastActionAt() : QVariant());
+    query.bindValue(":last_action_comment", report->lastActionComment());
     query.bindValue(":updated_at", QDateTime::currentDateTime());
     query.bindValue(":id", report->id());
 
@@ -886,6 +902,8 @@ int ReportRepository::countByStatus(ReportStatus status)
     case ReportStatus::Draft:     statusStr = AppConstants::REPORT_STATUS_DRAFT; break;
     case ReportStatus::Submitted: statusStr = AppConstants::REPORT_STATUS_SUBMITTED; break;
     case ReportStatus::Reviewed:  statusStr = AppConstants::REPORT_STATUS_REVIEWED; break;
+    case ReportStatus::Approved:  statusStr = AppConstants::REPORT_STATUS_APPROVED; break;
+    case ReportStatus::Archived:  statusStr = AppConstants::REPORT_STATUS_ARCHIVED; break;
     }
     query.bindValue(":status", statusStr);
 

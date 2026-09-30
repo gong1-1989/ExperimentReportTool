@@ -20,8 +20,8 @@
  */
 
 #include "TemplateRepository.h"
-#include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
+#include "data/database/DatabaseManager.h"
 
 #include <QSqlQuery>
 #include <QSqlError>
@@ -53,6 +53,8 @@ Template::Ptr TemplateRepository::mapToTemplate(const QSqlQuery& query)
     temp->setCategory(query.value("category").toString());     // 模板分类（如"物理"、"化学"）
     temp->setDescription(query.value("description").toString()); // 模板描述
     temp->setBuiltin(query.value("is_builtin").toBool());      // 是否为内置模板
+    temp->setVisibility(query.value("visibility").toString());   // 可见性（public/private）
+    temp->setCreatedBy(query.value("created_by").toLongLong());   // 创建者
     temp->setCreatedAt(query.value("created_at").toDateTime());   // 创建时间
     temp->setUpdatedAt(query.value("updated_at").toDateTime());   // 最后更新时间
 
@@ -261,8 +263,8 @@ bool TemplateRepository::insert(Template::Ptr temp)
 
     // 准备插入语句
     query.prepare(R"(
-        INSERT INTO templates (name, category, description, structure, is_builtin, created_at, updated_at)
-        VALUES (:name, :category, :description, :structure, :is_builtin, :created_at, :updated_at);
+        INSERT INTO templates (name, category, description, structure, is_builtin, visibility, created_by, created_at, updated_at)
+        VALUES (:name, :category, :description, :structure, :is_builtin, :visibility, :created_by, :created_at, :updated_at);
     )");
 
     // 绑定参数值
@@ -272,6 +274,8 @@ bool TemplateRepository::insert(Template::Ptr temp)
     query.bindValue(":description", temp->description());      // 模板描述
     query.bindValue(":structure", temp->structureToJson());    // 模板结构（JSON 字符串）
     query.bindValue(":is_builtin", temp->isBuiltin() ? 1 : 0); // 是否内置（SQLite 用整数表示布尔）
+    query.bindValue(":visibility", temp->visibility());         // 可见性
+    query.bindValue(":created_by", temp->createdBy() > 0 ? temp->createdBy() : QVariant());
     query.bindValue(":created_at", now);                       // 创建时间
     query.bindValue(":updated_at", now);                       // 更新时间
 
@@ -308,7 +312,7 @@ bool TemplateRepository::update(const Template::Ptr& temp)
     query.prepare(R"(
         UPDATE templates
         SET name = :name, category = :category, description = :description,
-            structure = :structure, updated_at = :updated_at
+            structure = :structure, visibility = :visibility, updated_at = :updated_at
         WHERE id = :id;
     )");
 
@@ -317,6 +321,7 @@ bool TemplateRepository::update(const Template::Ptr& temp)
     query.bindValue(":category", temp->category());
     query.bindValue(":description", temp->description());
     query.bindValue(":structure", temp->structureToJson());
+    query.bindValue(":visibility", temp->visibility());
     query.bindValue(":updated_at", QDateTime::currentDateTime());
     query.bindValue(":id", temp->id());
 

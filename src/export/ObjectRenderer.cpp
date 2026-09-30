@@ -12,6 +12,7 @@
 #include <QJsonDocument>
 
 #include "chart/ChartRenderer.h"
+#include "extension/ObjectRegistry.h"
 #include "chart/ChartConfigDialog.h"
 #include "core/utils/Logger.h"
 
@@ -336,6 +337,20 @@ QString ObjectRenderer::renderObject(const ContentBlock& object, const QString& 
                 objHtml += QString("<p align='%1' style='font-style:italic; font-size:12pt;'>%2</p>")
                                .arg(align).arg(latex.toHtmlEscaped());
             }
+        }
+        break;
+    }
+
+    case BlockType::AttachmentCard:
+    case BlockType::MediaRef: {
+        // D 域：可插拔对象渲染（附件卡片 / 音视频引用）
+        const QString typeId = (object.type == BlockType::AttachmentCard)
+                                   ? QStringLiteral("attachment_card")
+                                   : QStringLiteral("media_ref");
+        DocumentObjectProviderPtr provider = ObjectRegistry::instance().providerById(typeId);
+        if (provider) {
+            const QString html = provider->renderHtml(object.data.toVariantMap(), align);
+            if (!html.isEmpty()) objHtml += html;
         }
         break;
     }

@@ -21,8 +21,10 @@
  */
 enum class ReportStatus {
     Draft,      ///< 草稿（编辑中）
-    Submitted,  ///< 已提交（等待审核）
-    Reviewed    ///< 已审核（完成）
+    Submitted,  ///< 已提交（等待组长审核）
+    Reviewed,   ///< 已审核（等待总管审批）
+    Approved,   ///< 已审批（总管审批通过，可归档）
+    Archived    ///< 已归档（只读存档，不可再流转）
 };
 
 /**
@@ -38,7 +40,9 @@ enum class BlockType {
     Chart,        ///< 图表（关联数据表）
     Formula,      ///< 数学公式（LaTeX）
     Divider,      ///< 分割线
-    DataReference ///< 数据引用（关联数据表）
+    DataReference, ///< 数据引用（关联数据表）
+    AttachmentCard, ///< 附件卡片（D 域：可插拔对象类型，对应 objectTypeId "attachment_card"）
+    MediaRef       ///< 音视频引用（D 域：对应 objectTypeId "media_ref"）
 };
 
 /**
@@ -168,6 +172,16 @@ public:
     QDate experimentDate() const { return m_experimentDate; }
     void setExperimentDate(const QDate& date) { m_experimentDate = date; }
 
+    // 工作流最后操作记录（提交/审核通过/审核退回/审批通过/审批退回/归档）
+    QString lastAction() const { return m_lastAction; }
+    void setLastAction(const QString& action) { m_lastAction = action; }
+    qint64 lastActionBy() const { return m_lastActionBy; }
+    void setLastActionBy(qint64 userId) { m_lastActionBy = userId; }
+    QDateTime lastActionAt() const { return m_lastActionAt; }
+    void setLastActionAt(const QDateTime& dt) { m_lastActionAt = dt; }
+    QString lastActionComment() const { return m_lastActionComment; }
+    void setLastActionComment(const QString& comment) { m_lastActionComment = comment; }
+
     QDateTime createdAt() const { return m_createdAt; }
     void setCreatedAt(const QDateTime& dt) { m_createdAt = dt; }
 
@@ -282,6 +296,8 @@ public:
 
     /// 状态显示名称
     QString statusDisplayName() const;
+    /** 枚举→中文显示名（状态下拉/列表统一使用，避免多处维护） */
+    static QString statusDisplayName(ReportStatus status);
     /// 状态转字符串
     QString statusToString() const;
     /// 从字符串解析状态
@@ -315,6 +331,10 @@ private:
     int                 m_version = 1;     ///< 版本号（乐观锁）
     int                 m_wordCount = -1;  ///< 字数（保存时统计，-1表示未设置需实时计算）
     QDate               m_experimentDate;  ///< 实验日期
+    QString             m_lastAction;      ///< 最后工作流操作
+    qint64              m_lastActionBy = -1; ///< 最后操作人 ID
+    QDateTime           m_lastActionAt;    ///< 最后操作时间
+    QString             m_lastActionComment; ///< 最后操作意见（退回时必填）
     QDateTime           m_createdAt;       ///< 创建时间
     QDateTime           m_updatedAt;       ///< 最后更新时间
 

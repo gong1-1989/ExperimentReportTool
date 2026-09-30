@@ -34,7 +34,6 @@
 #include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
-
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QVariant>

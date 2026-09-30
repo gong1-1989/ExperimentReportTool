@@ -5,12 +5,11 @@
 
 #include "CsvImporter.h"
 
-#include "utils/CsvParser.h"
+#include "import/CsvImportAdapter.h"
 #include "core/utils/Logger.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
-#include <QTextStream>
 
 QStringList CsvImporter::supportedFormats()
 {
@@ -31,23 +30,16 @@ QString CsvImporter::formatDisplayName(const QString& format)
 
 DataTable::Ptr CsvImporter::importFile(const QString& filePath, QString* errorMessage)
 {
-    // 使用 CsvParser 直接解析文件（自动检测编码和分隔符）
-    CsvParser parser;
-    parser.setHasHeader(true);
-    CsvParseResult result = parser.parseFile(filePath);
+    // 统一走导入契约（CsvImportAdapter 包装 CsvParser，自动检测编码和分隔符）
+    const CsvImportAdapter adapter;
+    QString parseError;
+    const ImportData data = adapter.parse(filePath, &parseError);
 
-    if (!result.success) {
-        const QString err = QCoreApplication::translate("CsvImporter", "CSV 解析失败: %1 (行 %2)")
-                                .arg(result.errorMessage)
-                                .arg(result.errorLine);
+    if (data.isEmpty()) {
+        const QString err = parseError.isEmpty()
+            ? QCoreApplication::translate("CsvImporter", "CSV 文件为空")
+            : parseError;
         LOG_ERROR(err);
-        if (errorMessage) *errorMessage = err;
-        return nullptr;
-    }
-
-    if (result.rows.isEmpty()) {
-        const QString err = QCoreApplication::translate("CsvImporter", "CSV 文件为空");
-        LOG_WARNING(err);
         if (errorMessage) *errorMessage = err;
         return nullptr;
     }
@@ -56,17 +48,17 @@ DataTable::Ptr CsvImporter::importFile(const QString& filePath, QString* errorMe
     table->setName(QFileInfo(filePath).baseName());
 
     // 第一行作为表头
-    const QStringList headers = result.rows.first();
+    const QStringList headers = data.rows.first();
     for (const QString& h : headers) {
         ColumnDefinition col(h, ColumnType::Text);
         table->appendColumn(col);
     }
 
     // 其余行作为数据
-    for (int i = 1; i < result.rows.size(); ++i) {
+    for (int i = 1; i < data.rows.size(); ++i) {
         QVariantList row;
         for (int c = 0; c < headers.size(); ++c) {
-            row.append(c < result.rows[i].size() ? result.rows[i][c] : QString(""));
+            row.append(c < data.rows[i].size() ? data.rows[i][c] : QString(""));
         }
         table->appendRow(row);
     }

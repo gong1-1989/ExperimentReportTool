@@ -5,26 +5,17 @@
 
 #include "ChangePasswordDialog.h"
 #include "ui_ChangePasswordDialog.h"
-#include "core/utils/AppDimensions.h"
-
 #include "ui/UiHelper.h"
+#include "core/utils/AppDimensions.h"
 
 // UI 定义见 ChangePasswordDialog.ui（uic 生成 ui_ChangePasswordDialog.h）
 
-ChangePasswordDialog::ChangePasswordDialog(bool isFirstLogin, QWidget* parent)
+ChangePasswordDialog::ChangePasswordDialog(QWidget* parent)
     : BaseDialog(parent)
     , ui(new Ui::ChangePasswordDialog)
-    , m_isFirstLogin(isFirstLogin)
 {
     ui->setupUi(this);
-
-    if (m_isFirstLogin) {
-        ui->titleLabel->setText(tr("首次登录，请修改密码"));
-        ui->oldPasswordLabel->setVisible(false);
-        ui->oldPasswordEdit->setVisible(false);
-    } else {
-        ui->titleLabel->setText(tr("修改密码"));
-    }
+    ui->titleLabel->setText(tr("修改密码"));
 
     // 按钮点击由 .ui 自动连接（on_okButton_clicked / on_cancelButton_clicked）
 }
@@ -43,14 +34,12 @@ void ChangePasswordDialog::on_okButton_clicked()
 {
     ui->errorLabel->clear();
 
-    // 非首次登录需要验证原密码
-    if (!m_isFirstLogin) {
-        if (ui->oldPasswordEdit->text().isEmpty()) {
-            ui->errorLabel->setText(tr("请输入原密码"));
-            return;
-        }
-        // 原密码验证由调用方处理，这里只做新密码验证
+    // 修改密码需验证原密码
+    if (ui->oldPasswordEdit->text().isEmpty()) {
+        ui->errorLabel->setText(tr("请输入原密码"));
+        return;
     }
+    // 原密码验证由调用方处理，这里只做新密码验证
 
     const QString newPwd = ui->newPasswordEdit->text();
     const QString confirmPwd = ui->confirmPasswordEdit->text();
@@ -73,12 +62,6 @@ void ChangePasswordDialog::on_okButton_clicked()
 
 void ChangePasswordDialog::on_cancelButton_clicked()
 {
-    if (m_isFirstLogin) {
-        // 首次登录强制改密码，取消则退出
-        UiHelper::warning(this, tr("提示"),
-            tr("首次登录必须修改密码，否则无法使用系统。"));
-        return;
-    }
     reject();
 }
 

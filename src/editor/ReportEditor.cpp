@@ -10,18 +10,17 @@
 #include "editor/AutoSaveManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppTheme.h"
-#include "core/utils/AppDimensions.h"
 #include "core/utils/AppConfig.h"
-#include "data/repositories/DataTableRepository.h"
 #include "core/models/DataTable.h"
 #include "service/DataTableService.h"
 #include "service/TagService.h"
 #include "service/UserService.h"
 #include "core/models/User.h"
 #include "core/models/Tag.h"
+#include "data/repositories/DataTableRepository.h"
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
-
+#include "core/utils/AppDimensions.h"
 #include <QTextEdit>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -59,6 +58,19 @@ ReportEditor::ReportEditor(QWidget* parent)
 {
     ui->setupUi(this);
 
+    // 状态下拉由模型单一来源填充（替代 .ui 硬编码，未来加状态只改 Report::statusDisplayName）
+    ui->m_statusCombo->clear();
+    ui->m_statusCombo->addItem(Report::statusDisplayName(ReportStatus::Draft),
+                               static_cast<int>(ReportStatus::Draft));
+    ui->m_statusCombo->addItem(Report::statusDisplayName(ReportStatus::Submitted),
+                               static_cast<int>(ReportStatus::Submitted));
+    ui->m_statusCombo->addItem(Report::statusDisplayName(ReportStatus::Reviewed),
+                               static_cast<int>(ReportStatus::Reviewed));
+    ui->m_statusCombo->addItem(Report::statusDisplayName(ReportStatus::Approved),
+                               static_cast<int>(ReportStatus::Approved));
+    ui->m_statusCombo->addItem(Report::statusDisplayName(ReportStatus::Archived),
+                               static_cast<int>(ReportStatus::Archived));
+
     // 连续文档编辑控件：绑定宿主，支持对象锚点
     ui->m_textEdit->setHost(this);
 
@@ -85,8 +97,6 @@ ReportEditor::ReportEditor(QWidget* parent)
     // 标题栏
     connect(ui->m_titleEdit, &QLineEdit::textChanged,
             this, &ReportEditor::onTitleChanged);
-    connect(ui->m_statusCombo, &QComboBox::currentIndexChanged,
-            this, &ReportEditor::onStatusChanged);
     connect(ui->m_dateEdit, &QDateEdit::dateChanged,
             this, &ReportEditor::onDateChanged);
     connect(ui->m_tagCombo, &QComboBox::currentIndexChanged,
@@ -158,8 +168,8 @@ Report::Ptr ReportEditor::saveToReport()
     collectDocument();  // 从编辑控件收集 document + 清理孤儿对象
 
     // 标题与元信息回写（创建者 author 固定为创建时用户名，不在此回写）
+    // 注意：状态(status)不回写——只能由工作流流转（提交/审核/审批/退回），禁止直接修改
     m_report->setTitle(ui->m_titleEdit->text().trimmed());
-    m_report->setStatus(static_cast<ReportStatus>(ui->m_statusCombo->currentIndex()));
     m_report->setExperimentDate(ui->m_dateEdit->date());
     m_report->setWordCount(computeWordCount());
 
@@ -448,7 +458,8 @@ void ReportEditor::setReadOnly(bool readOnly)
     m_readOnly = readOnly;
     ui->m_textEdit->setReadOnly(readOnly);
     ui->m_titleEdit->setReadOnly(readOnly);
-    ui->m_statusCombo->setEnabled(!readOnly);
+    Q_UNUSED(readOnly);
+    ui->m_statusCombo->setEnabled(false);  // 状态仅工作流可流转，只读显示
     ui->m_dateEdit->setEnabled(!readOnly);
     ui->m_tagCombo->setEnabled(!readOnly);
 }
@@ -575,14 +586,6 @@ void ReportEditor::onTitleChanged(const QString& title)
     setModified(true);
 }
 
-void ReportEditor::onStatusChanged(int index)
-{
-    Q_UNUSED(index);
-    if (m_loading) return;
-    setModified(true);
-    emit contentChanged();
-}
-
 void ReportEditor::onDateChanged(const QDate& date)
 {
     Q_UNUSED(date);
@@ -632,16 +635,6 @@ void ReportEditor::saveReportTags()
 // ===========================================================================
 // 槽：工具栏
 // ===========================================================================
-
-void ReportEditor::onUndo()
-{
-    undo();
-}
-
-void ReportEditor::onRedo()
-{
-    redo();
-}
 
 // ===========================================================================
 // 内部方法

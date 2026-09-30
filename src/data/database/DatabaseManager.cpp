@@ -39,6 +39,7 @@ DatabaseManager::DatabaseManager()
     , m_initialized(false)
     , m_currentVersion(0)
 {
+    m_mainThread = QThread::currentThread();  // 记录主连接所属线程
 }
 
 DatabaseManager::~DatabaseManager()
@@ -95,6 +96,10 @@ bool DatabaseManager::initialize(const QString& dbPath)
     // 缓存大小：设置为 64MB（单位是页，默认页大小 4096 字节）
     // 64 * 1024 * 1024 / 4096 = 16384 页
     pragmaQuery.exec("PRAGMA cache_size = -16384;");
+
+    // 忙等待超时：多人共享数据库时，另一会话短暂持锁不会立刻报
+    // "database is locked"，最多等待 5 秒（配合 WAL 显著降低并发写冲突）
+    pragmaQuery.exec("PRAGMA busy_timeout = 5000;");
 
     // -----------------------------------------------------------------------
     // 创建表结构
@@ -197,6 +202,10 @@ bool DatabaseManager::createTables()
             version         INTEGER DEFAULT 1,
             word_count      INTEGER DEFAULT 0,
             experiment_date DATE,
+            last_action     TEXT DEFAULT '',
+            last_action_by  INTEGER DEFAULT -1,
+            last_action_at  DATETIME,
+            last_action_comment TEXT DEFAULT '',
             created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -228,6 +237,8 @@ bool DatabaseManager::createTables()
             description TEXT DEFAULT '',
             structure   TEXT DEFAULT '[]',
             is_builtin  INTEGER DEFAULT 0,
+            visibility  TEXT DEFAULT 'public',
+            created_by  INTEGER DEFAULT -1,
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -301,8 +312,24 @@ bool DatabaseManager::createTables()
             display_name         TEXT DEFAULT '',
             role                 TEXT DEFAULT 'user',
             must_change_password INTEGER DEFAULT 0,
+            disabled             INTEGER DEFAULT 0,
+            group_id             INTEGER DEFAULT -1,
             created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_login_at        DATETIME
+        );
+    )";
+
+    // -----------------------------------------------------------------------
+    // 组（班级/课题组）表
+    // -----------------------------------------------------------------------
+    const QString createGroups = R"(
+        CREATE TABLE IF NOT EXISTS groups (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            leader_id   INTEGER DEFAULT -1,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     )";
 
@@ -327,6 +354,7 @@ bool DatabaseManager::createTables()
         createReportTags,
         createAttachments,
         createUsers,
+        createGroups,
         createAppMeta
     };
 
@@ -652,6 +680,116 @@ bool DatabaseManager::migrate(int fromVersion, int toVersion)
         }
     }
 
+    // v6 -> v7: 四级角色+组+工作流+模板可见性
+    if (fromVersion < 7) {
+        LOG_DEBUG("执行 v6 -> v7 数据库迁移: 角色/组/工作流/模板可见性");
+
+        // 1. users 表加 disabled + group_id
+        if (!hasColumn("users", "disabled")) {
+            if (!query.exec("ALTER TABLE users ADD COLUMN disabled INTEGER DEFAULT 0;")) {
+                LOG_ERROR(QString("迁移失败: users 添加 disabled - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+        if (!hasColumn("users", "group_id")) {
+            if (!query.exec("ALTER TABLE users ADD COLUMN group_id INTEGER DEFAULT -1;")) {
+                LOG_ERROR(QString("迁移失败: users 添加 group_id - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+
+        // 2. 新建 groups 表
+        const QString createGroupsMigrate = R"(
+            CREATE TABLE IF NOT EXISTS groups (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                leader_id   INTEGER DEFAULT -1,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        )";
+        if (!query.exec(createGroupsMigrate)) {
+            LOG_ERROR(QString("迁移失败: 创建 groups 表 - %1").arg(query.lastError().text()));
+            db.rollback(); return false;
+        }
+
+        // 3. reports 表加 last_action 四字段（工作流最后操作记录）
+        if (!hasColumn("reports", "last_action")) {
+            if (!query.exec("ALTER TABLE reports ADD COLUMN last_action TEXT DEFAULT '';")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 last_action - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+        if (!hasColumn("reports", "last_action_by")) {
+            if (!query.exec("ALTER TABLE reports ADD COLUMN last_action_by INTEGER DEFAULT -1;")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 last_action_by - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+        if (!hasColumn("reports", "last_action_at")) {
+            if (!query.exec("ALTER TABLE reports ADD COLUMN last_action_at DATETIME;")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 last_action_at - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+        if (!hasColumn("reports", "last_action_comment")) {
+            if (!query.exec("ALTER TABLE reports ADD COLUMN last_action_comment TEXT DEFAULT '';")) {
+                LOG_ERROR(QString("迁移失败: reports 添加 last_action_comment - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+
+        // 4. templates 表加 visibility（私有/全局）+ created_by（创建者）
+        if (!hasColumn("templates", "visibility")) {
+            if (!query.exec("ALTER TABLE templates ADD COLUMN visibility TEXT DEFAULT 'public';")) {
+                LOG_ERROR(QString("迁移失败: templates 添加 visibility - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+        if (!hasColumn("templates", "created_by")) {
+            if (!query.exec("ALTER TABLE templates ADD COLUMN created_by INTEGER DEFAULT -1;")) {
+                LOG_ERROR(QString("迁移失败: templates 添加 created_by - %1").arg(query.lastError().text()));
+                db.rollback(); return false;
+            }
+        }
+
+        // 5. 角色字符串迁移：admin→super_admin, user→member（旧数据兼容）
+        query.prepare("UPDATE users SET role = 'super_admin' WHERE role = 'admin';");
+        if (!query.exec()) {
+            LOG_ERROR(QString("迁移失败: 角色 admin→super_admin - %1").arg(query.lastError().text()));
+            db.rollback(); return false;
+        }
+        query.prepare("UPDATE users SET role = 'member' WHERE role = 'user';");
+        if (!query.exec()) {
+            LOG_ERROR(QString("迁移失败: 角色 user→member - %1").arg(query.lastError().text()));
+            db.rollback(); return false;
+        }
+
+        LOG_DEBUG("v6 -> v7 迁移完成");
+    }
+
+    // v7 -> v8: 审计日志表（敏感操作留痕，供合规追溯）
+    if (fromVersion < 8) {
+        LOG_DEBUG("执行 v7 -> v8 数据库迁移: 审计日志表");
+        const QString createAuditLogs = R"(
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL DEFAULT -1,
+                username   TEXT DEFAULT '',
+                action     TEXT NOT NULL,
+                detail     TEXT DEFAULT '',
+                report_id  INTEGER DEFAULT -1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        )";
+        if (!query.exec(createAuditLogs)) {
+            LOG_ERROR(QString("迁移失败: 创建 audit_logs 表 - %1").arg(query.lastError().text()));
+            db.rollback(); return false;
+        }
+        LOG_DEBUG("v7 -> v8 迁移完成");
+    }
+
     Q_UNUSED(toVersion);
     LOG_DEBUG("数据库迁移完成");
     db.commit();
@@ -774,7 +912,34 @@ bool DatabaseManager::seedBuiltinTemplates()
 
 QSqlDatabase DatabaseManager::database() const
 {
-    return QSqlDatabase::database(m_connectionName);
+    // QSqlDatabase 连接绑定创建线程，不可跨线程使用。
+    // 主线程直接返回主连接；其他线程（如导出后台线程）惰性创建线程本地连接
+    // （SQLite WAL 模式支持多线程并发读，busy_timeout 处理短暂写锁竞争）。
+    if (QThread::currentThread() == m_mainThread) {
+        return QSqlDatabase::database(m_connectionName);
+    }
+
+    static thread_local bool tlsReady = false;
+    static thread_local QSqlDatabase tlsDb;
+    if (!tlsReady) {
+        tlsReady = true;
+        const QString name = QStringLiteral("ert_thread_%1")
+            .arg(reinterpret_cast<quintptr>(QThread::currentThreadId()));
+        tlsDb = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+        if (!m_dbPath.isEmpty()) {
+            tlsDb.setDatabaseName(m_dbPath);
+            if (tlsDb.open()) {
+                QSqlQuery q(tlsDb);
+                q.exec("PRAGMA journal_mode = WAL;");
+                q.exec("PRAGMA foreign_keys = ON;");
+                q.exec("PRAGMA busy_timeout = 5000;");
+            } else {
+                LOG_ERROR(QStringLiteral("线程本地数据库连接打开失败: %1")
+                              .arg(tlsDb.lastError().text()));
+            }
+        }
+    }
+    return tlsDb;
 }
 
 void DatabaseManager::close()

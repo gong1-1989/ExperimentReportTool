@@ -18,6 +18,7 @@
 #include "core/utils/AppConfig.h"
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
+#include "core/utils/UserSession.h"
 
 #include <QMessageBox>
 #include "ui/UiHelper.h"
@@ -97,9 +98,14 @@ void SettingsDialog::loadSettings()
     ui->statusMessageDurationSpin->setValue(config.statusMessageDuration());
 
     // ---- 数据设置 ----
-    // 从配置读取数据库路径，为空时显示默认路径
-    const QString dbPath = AppConfig::instance().databasePath();
-    ui->dbPathEdit->setText(dbPath.isEmpty() ? databasePath() : dbPath);
+    // 数据库路径仅超级管理员可查看/修改（共享数据库是敏感操作）
+    const User::Ptr cur = UserSession::instance().currentUser();
+    const bool isSuperAdmin = cur && cur->isSuperAdmin();
+    ui->dbGroup->setVisible(isSuperAdmin);
+    if (isSuperAdmin) {
+        const QString dbPath = AppConfig::instance().databasePath();
+        ui->dbPathEdit->setText(dbPath.isEmpty() ? databasePath() : dbPath);
+    }
 }
 
 void SettingsDialog::saveSettings()
@@ -134,7 +140,11 @@ void SettingsDialog::saveSettings()
     config.setStatusMessageDuration(ui->statusMessageDurationSpin->value());
 
     // ---- 数据设置 ----
-    config.setDatabasePath(ui->dbPathEdit->text().trimmed());
+    // 非超级管理员不保存数据库路径（隐藏状态下值不参与覆盖）
+    const User::Ptr cur = UserSession::instance().currentUser();
+    if (cur && cur->isSuperAdmin()) {
+        config.setDatabasePath(ui->dbPathEdit->text().trimmed());
+    }
 
     // 保存到 config.ini
     config.save();

@@ -4,6 +4,7 @@
  */
 
 #include "DataTableEditorDialog.h"
+#include "ui/dialogs/AnalysisDialog.h"
 #include "service/DataTableService.h"
 #include "ui_DataTableEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "ui/dialogs/DataImportDialog.h"
@@ -210,6 +211,7 @@ DataTableEditorDialog::DataTableEditorDialog(const DataTable::Ptr& table, QWidge
     connect(ui->m_importBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onImportCsv);
     connect(ui->m_exportBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onExportCsv);
     connect(ui->m_validateBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onValidate);
+    connect(ui->m_analyzeBtn, &QPushButton::clicked, this, &DataTableEditorDialog::onAnalyze);
 
     // 连接表格信号
     connect(ui->m_tableWidget, &QTableWidget::cellChanged,
@@ -549,6 +551,13 @@ void DataTableEditorDialog::onExportCsv()
 // ===========================================================================
 // 数据校验
 // ===========================================================================
+
+void DataTableEditorDialog::onAnalyze()
+{
+    if (!m_table) return;
+    AnalysisDialog dlg(m_table, this);
+    dlg.exec();
+}
 
 void DataTableEditorDialog::onValidate()
 {

@@ -9,6 +9,7 @@
  */
 
 #include "MainWindowDialogs.h"
+#include "service/AuditService.h"
 
 #include "ui/dialogs/ProjectDialog.h"
 #include "ui/dialogs/TemplateEditorDialog.h"
@@ -22,7 +23,6 @@
 #include "service/TemplateService.h"
 #include "service/DataTableService.h"
 #include "utils/CsvImporter.h"
-#include "core/models/Tag.h"
 #include "core/models/DataTable.h"
 #include "core/models/Report.h"
 #include "core/models/Project.h"
@@ -34,6 +34,7 @@
 #include "core/utils/AppTheme.h"
 #include "core/utils/UserSession.h"
 #include "ui/UiHelper.h"
+#include "core/models/Tag.h"
 
 #include <QInputDialog>
 #include <QMessageBox>
@@ -91,8 +92,17 @@ void MainWindowDialogs::newReport()
         return;
     }
 
-    // 选择模板
-    const Template::List templates = TemplateService::listAll();
+    // 选择模板（可见性过滤：public + 当前用户的 private）
+    Template::List allTemplates = TemplateService::listAll();
+    Template::List templates;
+    const qint64 currentUserId = UserSession::instance().userId();
+    for (const Template::Ptr& t : allTemplates) {
+        if (t->isPublic()) {
+            templates.append(t);
+        } else if (t->createdBy() == currentUserId) {
+            templates.append(t);
+        }
+    }
     if (templates.isEmpty()) {
         UiHelper::warning(m_parent, trText("提示"), trText("没有可用的报告模板"));
         return;
@@ -100,7 +110,8 @@ void MainWindowDialogs::newReport()
 
     QStringList templateNames;
     for (const Template::Ptr& t : templates) {
-        templateNames.append(t->name());
+        const QString visMark = t->isPrivate() ? trText(" [私有]") : "";
+        templateNames.append(t->name() + visMark);
     }
 
     bool ok = false;
@@ -110,10 +121,11 @@ void MainWindowDialogs::newReport()
 
     if (!ok || selected.isEmpty()) return;
 
-    // 找到选中的模板
+    // 找到选中的模板（去掉可能的 [私有] 后缀）
     Template::Ptr selectedTemplate;
     for (const Template::Ptr& t : templates) {
-        if (t->name() == selected) {
+        QString visMark = t->isPrivate() ? trText(" [私有]") : "";
+        if (t->name() + visMark == selected) {
             selectedTemplate = t;
             break;
         }
@@ -474,7 +486,7 @@ void MainWindowDialogs::tagManager()
 
 void MainWindowDialogs::changePassword()
 {
-    ChangePasswordDialog dialog(false, m_parent);
+    ChangePasswordDialog dialog(m_parent);
     if (dialog.exec() != QDialog::Accepted) return;
 
     // 验证原密码
@@ -522,6 +534,7 @@ void MainWindowDialogs::dataBackup()
         UiHelper::info(m_parent, trText("备份成功"),
             trText("数据已备份到:\n%1\n\n（备份目录自动保留最近 10 份）").arg(filePath));
         if (m_hooks.showStatus) m_hooks.showStatus(trText("数据备份完成"));
+        AuditService::log(trText("数据备份"), filePath);
     } else {
         UiHelper::error(m_parent, trText("备份失败"),
             trText("无法复制数据库文件。\n请确保目标路径可写。"));
@@ -571,6 +584,8 @@ void MainWindowDialogs::dataRestore()
         return;
     }
     QFile::remove(bakPath);
+
+    AuditService::log(trText("数据恢复"), filePath);
 
     // 重新初始化数据库并刷新界面
     DatabaseManager::instance().initialize(dbPath);
@@ -641,9 +656,10 @@ void MainWindowDialogs::checkUpdate()
 
 void MainWindowDialogs::userManager()
 {
-    // 仅管理员可访问
-    if (!UserSession::instance().isAdmin()) {
-        UiHelper::warning(m_parent, trText("权限不足"), trText("只有管理员可以管理用户"));
+    // 超级管理员/总管/组长 可访问（对话框内部按权限过滤可见用户与可执行操作）
+    const User::Ptr current = UserSession::instance().currentUser();
+    if (!current || (!current->isSuperAdmin() && !current->isManager() && !current->isLeader())) {
+        UiHelper::warning(m_parent, trText("权限不足"), trText("只有管理员和组长可以管理用户"));
         return;
     }
 

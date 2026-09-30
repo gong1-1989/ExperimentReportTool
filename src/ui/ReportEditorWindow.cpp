@@ -7,25 +7,20 @@
 #include <QStyle>
 #include "ui_ReportEditorWindow.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/ReportEditor.h"
-#include "editor/DocumentTextEdit.h"
 #include <QTextCursor>
 #include <QTextList>
 #include <QTextBlock>
 #include <QPainter>
 #include <QIcon>
 #include <QColorDialog>
-#include "export/ExportManager.h"
 #include "print/PrintManager.h"
-#include "data/repositories/TagRepository.h"
+#include "core/models/Template.h"
 #include "service/ReportService.h"
-#include "data/repositories/ReportRepository.h"
-#include "data/repositories/DataTableRepository.h"
-#include "core/plugin/PluginManager.h"
+#include "service/TemplateService.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppConstants.h"
 #include "core/utils/AppTheme.h"
 #include "core/utils/AppDimensions.h"
-#include "core/utils/AppConfig.h"
 #include "core/utils/UserSession.h"
 #include "ui/dialogs/VersionHistoryDialog.h"
 #include "ui/dialogs/AttachmentManagerDialog.h"
@@ -38,16 +33,29 @@
 #include "ui/ObjectInsertionController.h"
 #include "ui/ReportExportController.h"
 #include "ui/UiHelper.h"
+#include "data/repositories/UserRepository.h"
+#include "editor/DocumentTextEdit.h"
+#include "export/ExportManager.h"
+#include "data/repositories/TagRepository.h"
+#include "data/repositories/ReportRepository.h"
+#include "data/repositories/DataTableRepository.h"
+#include "core/plugin/PluginManager.h"
+#include "core/utils/AppConfig.h"
+#include "extension/DocumentTool.h"
+#include "dialogs/WritingToolsDialog.h"
 #include <QDateTime>
 #include <QCloseEvent>
 #include <QApplication>
 #include <QClipboard>
 #include <QLabel>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QComboBox>
 #include <QColor>
 #include <QToolButton>
-#include <QColorDialog>
 #include <QMenu>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QActionGroup>
 #include <QFile>
 #include <QTimer>
@@ -66,6 +74,7 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     , ui(new Ui::ReportEditorWindow)  // 创建 UI 界面对象
     , m_editor(nullptr)
     , m_report(report)
+    , m_loadedUpdatedAt(report ? report->updatedAt() : QDateTime())
     , m_printManager(nullptr)
     , m_pluginManager(nullptr)
     , m_statusSaveLabel(nullptr)
@@ -83,9 +92,26 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
 {
     ui->setupUi(this);  // 从 .ui 文件加载界面
 
-    // 动态创建 ReportEditor 组件并设置为中央控件
+    // 动态创建 ReportEditor 组件，用 QWidget 包裹以容纳顶部工作流栏
     m_editor = new ReportEditor(this);
-    setCentralWidget(m_editor);
+    QWidget* centralWrapper = new QWidget(this);
+    QVBoxLayout* wrapperLayout = new QVBoxLayout(centralWrapper);
+    wrapperLayout->setContentsMargins(0, 0, 0, 0);
+    wrapperLayout->setSpacing(0);
+
+    // 顶部工作流信息栏（退回意见 + 状态提示），默认隐藏
+    m_workflowBar = new QWidget(centralWrapper);
+    m_workflowBar->setStyleSheet("background:#fff3cd;border-bottom:1px solid #ffc107;padding:4px 8px;");
+    QHBoxLayout* barLayout = new QHBoxLayout(m_workflowBar);
+    barLayout->setContentsMargins(4, 2, 4, 2);
+    m_rejectCommentLabel = new QLabel(m_workflowBar);
+    m_rejectCommentLabel->setWordWrap(true);
+    m_rejectCommentLabel->setStyleSheet("color:#856404;");
+    barLayout->addWidget(m_rejectCommentLabel);
+    m_workflowBar->setVisible(false);
+    wrapperLayout->addWidget(m_workflowBar);
+    wrapperLayout->addWidget(m_editor);
+    setCentralWidget(centralWrapper);
 
     m_printManager = new PrintManager(this);
     m_insertionController = new ObjectInsertionController(this, m_editor);
@@ -100,10 +126,8 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     // 加载报告
     if (m_report) {
         m_editor->loadReport(m_report);
-        // 权限：非创建者且非管理员 → 只读（不能编辑，也不能保存）
-        m_readOnly = (m_report->createdBy() > 0
-            && m_report->createdBy() != UserSession::instance().userId()
-            && !UserSession::instance().isAdmin());
+        // 权限：使用 PermissionService 判断编辑权限
+        m_readOnly = !PermissionService::canEditReport(m_report, UserSession::instance().currentUser());
         m_editor->setReadOnly(m_readOnly);
         m_actionSave->setEnabled(!m_readOnly);   // 只读时禁用保存按钮
         ui->m_lineHeightCombo->setEnabled(!m_readOnly);
@@ -121,6 +145,11 @@ ReportEditorWindow::ReportEditorWindow(const Report::Ptr& report, QWidget* paren
     QTimer::singleShot(0, this, [this]() {
         if (m_editor) m_editor->refreshFormattingState();
     });
+
+    // 创建工作流动作（动态加到文件菜单）
+    createWorkflowActions();
+    updateWorkflowActions();
+    refreshRejectComment();
 
     updateWindowTitle();
     // 初始化状态栏
@@ -258,6 +287,25 @@ void ReportEditorWindow::createActions()
     // 文字颜色按钮
     connect(ui->m_colorBtn, &QToolButton::clicked,
             this, &ReportEditorWindow::onTextColor);
+
+    // 写作工具（F 域：字数统计/常用片段/质量检查）
+    m_actionWritingTools = new QAction(tr("写作工具"), this);
+    m_actionWritingTools->setToolTip(tr("字数统计、常用片段、质量检查"));
+    connect(m_actionWritingTools, &QAction::triggered,
+            this, &ReportEditorWindow::onWritingTools);
+    ui->formatToolBar->addAction(m_actionWritingTools);
+
+    // D 域文档对象：附件卡片 / 音视频引用（对象类型可插拔框架）
+    m_actionInsertAttachmentCard = new QAction(tr("附件卡片"), this);
+    m_actionInsertAttachmentCard->setToolTip(tr("以卡片形式插入附件文件"));
+    connect(m_actionInsertAttachmentCard, &QAction::triggered, this,
+            [this]() { if (m_insertionController) m_insertionController->insertAttachmentCard(); });
+    ui->menuInsert->addAction(m_actionInsertAttachmentCard);
+    m_actionInsertMediaRef = new QAction(tr("音视频引用"), this);
+    m_actionInsertMediaRef->setToolTip(tr("插入视频/音频文件引用（导出为 HTML5 播放器）"));
+    connect(m_actionInsertMediaRef, &QAction::triggered, this,
+            [this]() { if (m_insertionController) m_insertionController->insertMediaRef(); });
+    ui->menuInsert->addAction(m_actionInsertMediaRef);
 }
 
 
@@ -389,6 +437,7 @@ void ReportEditorWindow::onNew()
 
 void ReportEditorWindow::onSave()
 {
+    if (!checkConflictBeforeSave()) return;  // 打开后被他人修改：用户取消则不保存
     if (saveReport()) {
         m_statusSaveLabel->setText(tr("已保存"));
         m_statusSaveLabel->setStyleSheet(
@@ -399,11 +448,25 @@ void ReportEditorWindow::onSave()
             const QString snapshotName = QDateTime::currentDateTime()
                 .toString("yyyy-MM-dd hh:mm:ss");
             ReportService::saveVersion(m_report->id(), snapshotName);
+            m_loadedUpdatedAt = m_report->updatedAt();  // 保存成功后刷新冲突基准
         }
         // 保存成功弹出提示框
         UiHelper::info(this, tr("保存成功"),
             tr("报告「%1」已成功保存。").arg(m_report->title().isEmpty() ? tr("未命名报告") : m_report->title()));
     }
+}
+
+bool ReportEditorWindow::checkConflictBeforeSave()
+{
+    if (m_isNewReport || !m_report || m_report->id() <= 0) return true;
+    Report::Ptr fresh = ReportService::getById(m_report->id());
+    if (!fresh) return true;
+    if (fresh->updatedAt() > m_loadedUpdatedAt) {
+        return UiHelper::confirm(this, tr("检测到并发修改"),
+            tr("该报告在您打开后已被其他人修改。\n"
+               "继续保存将覆盖对方的修改内容。\n\n是否仍然保存？"));
+    }
+    return true;
 }
 
 void ReportEditorWindow::onSaveAs()
@@ -494,6 +557,7 @@ void ReportEditorWindow::onVersionHistory()
         Report::Ptr updated = ReportService::getById(m_report->id());
         if (updated) {
             m_report = updated;
+            m_loadedUpdatedAt = updated->updatedAt();
             m_editor->loadReport(m_report);
             // 权限：非创建者且非管理员 → 只读
             m_readOnly = (m_report->createdBy() > 0
@@ -743,12 +807,10 @@ bool ReportEditorWindow::saveReport()
             LOG_INFO(QString("新报告已保存: id=%1").arg(m_report->id()));
         }
     } else {
-        // 权限检查：只有创建者或管理员可以修改已有报告
-        if (m_report->createdBy() > 0
-            && m_report->createdBy() != UserSession::instance().userId()
-            && !UserSession::instance().isAdmin()) {
+        // 权限检查：统一走 PermissionService（草稿的创建者 + 超管可编辑）
+        if (!PermissionService::canEditReport(m_report, UserSession::instance().currentUser())) {
             UiHelper::warning(this, tr("权限不足"),
-                tr("您没有权限修改此报告。\n只有创建者或管理员可以修改。"));
+                tr("您没有权限修改此报告。\n只有草稿的创建者或管理员可以修改。"));
             return false;
         }
         // 记录最后修改者
@@ -825,4 +887,322 @@ void ReportEditorWindow::closeEvent(QCloseEvent* event)
 
     emit windowClosed(m_report ? m_report->id() : -1);
     event->accept();
+}
+
+// ===========================================================================
+// 工作流操作（提交/审核/审批）
+// ===========================================================================
+
+void ReportEditorWindow::createWorkflowActions()
+{
+    m_actionSubmit = new QAction(tr("提交报告"), this);
+    m_actionReviewApprove = new QAction(tr("审核通过"), this);
+    m_actionReviewReject = new QAction(tr("审核退回"), this);
+    m_actionApproveApprove = new QAction(tr("审批通过"), this);
+    m_actionApproveReject = new QAction(tr("审批退回"), this);
+
+    connect(m_actionSubmit, &QAction::triggered, this, &ReportEditorWindow::onSubmit);
+    m_actionRecall = new QAction(tr("撤回提交"), this);
+    connect(m_actionRecall, &QAction::triggered, this, &ReportEditorWindow::onRecall);
+    connect(m_actionReviewApprove, &QAction::triggered, this, &ReportEditorWindow::onReviewApprove);
+    connect(m_actionReviewReject, &QAction::triggered, this, &ReportEditorWindow::onReviewReject);
+    connect(m_actionApproveApprove, &QAction::triggered, this, &ReportEditorWindow::onApproveApprove);
+    connect(m_actionApproveReject, &QAction::triggered, this, &ReportEditorWindow::onApproveReject);
+
+    // 归档报告（仅已审批可归档，归档后只读存档）
+    m_actionArchive = new QAction(tr("归档报告"), this);
+    connect(m_actionArchive, &QAction::triggered, this, &ReportEditorWindow::onArchive);
+
+    // 加到文件菜单末尾，加分隔线
+    ui->menuFile->addSeparator();
+    ui->menuFile->addAction(m_actionSubmit);
+    ui->menuFile->addAction(m_actionRecall);
+    ui->menuFile->addAction(m_actionReviewApprove);
+    ui->menuFile->addAction(m_actionReviewReject);
+    ui->menuFile->addAction(m_actionApproveApprove);
+    ui->menuFile->addAction(m_actionApproveReject);
+
+    // 保存为模板
+    m_actionSaveAsTemplate = new QAction(tr("保存为模板"), this);
+    connect(m_actionSaveAsTemplate, &QAction::triggered, this, &ReportEditorWindow::onSaveAsTemplate);
+    ui->menuFile->addSeparator();
+    ui->menuFile->addAction(m_actionSaveAsTemplate);
+}
+
+void ReportEditorWindow::updateWorkflowActions()
+{
+    if (!m_report || !m_report->isPersisted()) {
+        m_actionSubmit->setVisible(false);
+        m_actionRecall->setVisible(false);
+        m_actionReviewApprove->setVisible(false);
+        m_actionReviewReject->setVisible(false);
+        m_actionApproveApprove->setVisible(false);
+        m_actionApproveReject->setVisible(false);
+        m_actionArchive->setVisible(false);
+        return;
+    }
+
+    User::Ptr user = UserSession::instance().currentUser();
+    m_actionSubmit->setVisible(PermissionService::canSubmitReport(m_report, user));
+    m_actionRecall->setVisible(PermissionService::canRecallReport(m_report, user));
+    m_actionReviewApprove->setVisible(PermissionService::canReviewReport(m_report, user));
+    m_actionReviewReject->setVisible(PermissionService::canReviewReport(m_report, user));
+    m_actionApproveApprove->setVisible(PermissionService::canApproveReport(m_report, user));
+    m_actionApproveReject->setVisible(PermissionService::canApproveReport(m_report, user));
+    m_actionArchive->setVisible(PermissionService::canArchiveReport(m_report, user));
+}
+
+void ReportEditorWindow::onArchive()
+{
+    if (!m_report || m_report->status() != ReportStatus::Approved) return;
+
+    const bool confirmed = UiHelper::confirm(
+        this, tr("归档报告"),
+        tr("归档后报告将进入只读存档状态，不能再修改或流转。\n确定归档「%1」吗？")
+            .arg(m_report->title()));
+    if (!confirmed) return;
+
+    if (!ReportService::updateStatus(m_report->id(), ReportStatus::Archived)) {
+        UiHelper::error(this, tr("归档失败"), tr("归档报告时发生错误，请查看日志。"));
+        return;
+    }
+    m_report = ReportService::getById(m_report->id());
+    if (m_report) {
+        m_editor->loadReport(m_report);
+        m_loadedUpdatedAt = m_report->updatedAt();
+        updateWorkflowActions();
+        refreshRejectComment();
+        showStatusMessage(tr("报告已归档"));
+    }
+}
+
+void ReportEditorWindow::refreshRejectComment()
+{
+    if (!m_report || !m_workflowBar || !m_rejectCommentLabel) return;
+
+    const QString action = m_report->lastAction();
+    const QString comment = m_report->lastActionComment();
+
+    // 仅在退回操作时显示意见栏
+    if (action == "review_reject" || action == "approve_reject") {
+        QString typeText = (action == "review_reject") ? tr("审核退回") : tr("审批退回");
+        QString byName;
+        if (m_report->lastActionBy() > 0) {
+            User::Ptr byUser = UserRepository::findById(m_report->lastActionBy());
+            if (byUser) byName = byUser->displayNameOrUsername();
+        }
+        m_rejectCommentLabel->setText(
+            QString("⚠ %1意见（%2%3）：%4")
+                .arg(typeText)
+                .arg(byName.isEmpty() ? "" : byName + "，")
+                .arg(m_report->lastActionAt().toString("yyyy-MM-dd hh:mm"))
+                .arg(comment.toHtmlEscaped()));
+        m_workflowBar->setVisible(true);
+    } else {
+        m_workflowBar->setVisible(false);
+    }
+}
+
+void ReportEditorWindow::onRecall()
+{
+    if (!m_report || m_report->status() != ReportStatus::Submitted) return;
+
+    const bool confirmed = UiHelper::confirm(
+        this, tr("撤回提交"),
+        tr("撤回后报告将回到草稿状态，可继续编辑。\n确定撤回「%1」的提交吗？")
+            .arg(m_report->title()));
+    if (!confirmed) return;
+
+    WorkflowService::Result r = WorkflowService::recall(
+        m_report->id(), UserSession::instance().userId());
+    if (r.success) {
+        m_report = ReportService::getById(m_report->id());
+        if (m_report) {
+            m_editor->loadReport(m_report);
+            m_loadedUpdatedAt = m_report->updatedAt();
+            updateWorkflowActions();
+            refreshRejectComment();
+            showStatusMessage(tr("已撤回提交，报告回到草稿状态"));
+        }
+    } else {
+        UiHelper::error(this, tr("撤回失败"), r.errorMessage);
+    }
+}
+
+void ReportEditorWindow::onSubmit()
+{
+    if (!m_report) return;
+    // 先保存当前编辑内容
+    onSave();
+    WorkflowService::Result r = WorkflowService::submit(m_report->id(), UserSession::instance().userId());
+    if (r.success) {
+        m_report = ReportService::getById(m_report->id());
+        m_editor->loadReport(m_report);
+        if (m_report) m_loadedUpdatedAt = m_report->updatedAt();
+        updateWorkflowActions();
+        refreshRejectComment();
+        showStatusMessage(tr("报告已提交，等待审核"));
+    } else {
+        UiHelper::error(this, tr("提交失败"), r.errorMessage);
+    }
+}
+
+void ReportEditorWindow::onReviewApprove()
+{
+    if (!m_report) return;
+    WorkflowService::Result r = WorkflowService::reviewApprove(
+        m_report->id(), UserSession::instance().userId(), QString());
+    if (r.success) {
+        m_report = ReportService::getById(m_report->id());
+        m_editor->loadReport(m_report);
+        if (m_report) m_loadedUpdatedAt = m_report->updatedAt();
+        updateWorkflowActions();
+        refreshRejectComment();
+        showStatusMessage(tr("审核通过，等待审批"));
+    } else {
+        UiHelper::error(this, tr("审核失败"), r.errorMessage);
+    }
+}
+
+void ReportEditorWindow::onReviewReject()
+{
+    if (!m_report) return;
+    bool ok = false;
+    const QString comment = QInputDialog::getMultiLineText(
+        this, tr("审核退回"), tr("请填写退回意见（必填）："), QString(), &ok);
+    if (!ok || comment.trimmed().isEmpty()) {
+        if (ok) UiHelper::error(this, tr("退回失败"), tr("退回意见不能为空"));
+        return;
+    }
+    WorkflowService::Result r = WorkflowService::reviewReject(
+        m_report->id(), UserSession::instance().userId(), comment);
+    if (r.success) {
+        m_report = ReportService::getById(m_report->id());
+        m_editor->loadReport(m_report);
+        if (m_report) m_loadedUpdatedAt = m_report->updatedAt();
+        updateWorkflowActions();
+        refreshRejectComment();
+        showStatusMessage(tr("已退回，意见已记录"));
+    } else {
+        UiHelper::error(this, tr("退回失败"), r.errorMessage);
+    }
+}
+
+void ReportEditorWindow::onApproveApprove()
+{
+    if (!m_report) return;
+    WorkflowService::Result r = WorkflowService::approveApprove(
+        m_report->id(), UserSession::instance().userId(), QString());
+    if (r.success) {
+        m_report = ReportService::getById(m_report->id());
+        m_editor->loadReport(m_report);
+        if (m_report) m_loadedUpdatedAt = m_report->updatedAt();
+        updateWorkflowActions();
+        refreshRejectComment();
+        showStatusMessage(tr("审批通过"));
+    } else {
+        UiHelper::error(this, tr("审批失败"), r.errorMessage);
+    }
+}
+
+void ReportEditorWindow::onApproveReject()
+{
+    if (!m_report) return;
+    bool ok = false;
+    const QString comment = QInputDialog::getMultiLineText(
+        this, tr("审批退回"), tr("请填写退回意见（必填）："), QString(), &ok);
+    if (!ok || comment.trimmed().isEmpty()) {
+        if (ok) UiHelper::error(this, tr("退回失败"), tr("退回意见不能为空"));
+        return;
+    }
+    WorkflowService::Result r = WorkflowService::approveReject(
+        m_report->id(), UserSession::instance().userId(), comment);
+    if (r.success) {
+        m_report = ReportService::getById(m_report->id());
+        m_editor->loadReport(m_report);
+        if (m_report) m_loadedUpdatedAt = m_report->updatedAt();
+        updateWorkflowActions();
+        refreshRejectComment();
+        showStatusMessage(tr("已退回，意见已记录"));
+    } else {
+        UiHelper::error(this, tr("退回失败"), r.errorMessage);
+    }
+}
+
+
+void ReportEditorWindow::onWritingTools()
+{
+    if (!m_editor || !m_editor->textEdit()) return;
+    DocumentTextEdit* te = m_editor->textEdit();
+
+    DocumentContext ctx;
+    ctx.text = te->toPlainText();
+    const QTextCursor c = te->textCursor();
+    ctx.cursorPos = c.position();
+    ctx.selectionStart = c.selectionStart();
+    ctx.selectionEnd = c.selectionEnd();
+    ctx.reportTitle = m_report ? m_report->title() : QString();
+    ctx.tableCount = 0;  // 表格对象数未提供时省略该指标
+
+    WritingToolsDialog dlg(ctx, this);
+    dlg.exec();
+    if (dlg.insertRequested()) {
+        QTextCursor cur = te->textCursor();
+        const int maxPos = te->document()->characterCount() - 1;
+        cur.setPosition(qBound(0, dlg.insertPos(), maxPos));
+        cur.insertText(dlg.insertText());
+        te->setTextCursor(cur);
+        m_editor->refreshFormattingState();
+        showStatusMessage(tr("已插入常用片段"), 2000);
+    }
+}
+
+void ReportEditorWindow::onSaveAsTemplate()
+{
+    if (!m_report || !m_report->isPersisted()) {
+        UiHelper::error(this, tr("保存失败"), tr("请先保存报告后再保存为模板"));
+        return;
+    }
+    User::Ptr user = UserSession::instance().currentUser();
+    if (!PermissionService::canSaveAsTemplate(user)) {
+        UiHelper::error(this, tr("无权限"), tr("您没有权限保存为模板"));
+        return;
+    }
+
+    // 对话框：模板名+分类+可见性
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        this, tr("保存为模板"), tr("模板名称："), QLineEdit::Normal, m_report->title(), &ok);
+    if (!ok || name.trimmed().isEmpty()) return;
+
+    const QString category = QInputDialog::getText(
+        this, tr("保存为模板"), tr("模板分类（可选）："), QLineEdit::Normal, "general", &ok);
+    if (!ok) return;
+
+    // 可见性：学生/组长默认 private，总管/超管可选择
+    QString visibility = "private";
+    if (user->isManager() || user->isSuperAdmin()) {
+        QStringList items = {tr("全局模板（所有用户可见）"), tr("私有模板（仅自己可见）")};
+        bool visOk = false;
+        const QString choice = QInputDialog::getItem(
+            this, tr("保存为模板"), tr("模板可见性："), items, 0, false, &visOk);
+        if (!visOk) return;
+        visibility = (choice == items.first()) ? "public" : "private";
+    }
+
+    // 从报告复制内容创建模板
+    Template::Ptr tpl = Template::create();
+    tpl->setName(name.trimmed());
+    tpl->setCategory(category.trimmed().isEmpty() ? "general" : category.trimmed());
+    tpl->setDescription(tr("由报告「%1」保存").arg(m_report->title()));
+    tpl->setDocument(m_report->document());
+    tpl->setObjects(m_report->objects());
+    tpl->setVisibility(visibility);
+    tpl->setCreatedBy(user->id());
+
+    if (TemplateService::save(tpl)) {
+        showStatusMessage(tr("模板已保存：%1").arg(tpl->name()));
+    } else {
+        UiHelper::error(this, tr("保存失败"), tr("保存模板失败，请重试"));
+    }
 }

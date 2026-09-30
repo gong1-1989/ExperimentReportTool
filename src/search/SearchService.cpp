@@ -6,12 +6,12 @@
  */
 
 #include "SearchService.h"
-#include "service/ReportService.h"
 #include "data/repositories/ReportRepository.h"
 #include "service/TagService.h"
 #include "service/ProjectService.h"
 #include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
+#include "service/ReportService.h"
 
 #include <QSqlQuery>
 #include <QSqlError>

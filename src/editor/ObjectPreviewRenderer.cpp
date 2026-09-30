@@ -9,7 +9,7 @@
 #include "core/models/DataTable.h"
 #include "chart/ChartRenderer.h"
 #include "chart/ChartConfigDialog.h"
-
+#include "extension/ObjectRegistry.h"
 #include <QPainter>
 #include <QImageReader>
 #include <QJsonArray>
@@ -34,6 +34,16 @@ QPixmap ObjectPreviewRenderer::render(const ContentBlock& object)
         return renderImage(object);
     case BlockType::Formula:
         return renderFormula(object);
+    case BlockType::AttachmentCard:
+    case BlockType::MediaRef: {
+        // D 域：可插拔对象预览（委托 ObjectRegistry）
+        const QString typeId = (object.type == BlockType::AttachmentCard)
+                                   ? QStringLiteral("attachment_card")
+                                   : QStringLiteral("media_ref");
+        DocumentObjectProviderPtr provider = ObjectRegistry::instance().providerById(typeId);
+        if (provider) return provider->renderPreview(object.data.toVariantMap(), 560);
+        return QPixmap();
+    }
     default:
         return QPixmap();
     }

@@ -19,8 +19,8 @@
  */
 
 #include "DataTableRepository.h"
-#include "data/database/DatabaseManager.h"
 #include "core/utils/Logger.h"
+#include "data/database/DatabaseManager.h"
 
 #include <QSqlQuery>
 #include <QSqlError>

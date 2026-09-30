@@ -26,7 +26,8 @@
 #include <QButtonGroup>
 
 #include "core/models/DataTable.h"
-#include "utils/CsvParser.h"
+#include "import/ImportData.h"
+#include "import/ImportValidator.h"
 
 // 前向声明 UI 类（由 uic 工具从 .ui 文件自动生成）
 namespace Ui {
@@ -40,6 +41,14 @@ enum class ImportMode {
     Append,     ///< 追加到现有数据
     Replace,    ///< 替换现有数据
     NewTable    ///< 创建新数据表
+};
+
+/**
+ * @brief 后台解析结果（数据 + 错误信息）
+ */
+struct ParseOutcome {
+    ImportData data;        ///< 统一解析结果
+    QString errorMessage;   ///< 解析错误信息（data 为空时有效）
 };
 
 /**
@@ -71,6 +80,8 @@ public:
 private slots:
     /// 后台解析完成（回主线程更新预览）
     void onParseFinished();
+    /// 导出标准模板（按当前数据表列定义）
+    void on_m_exportTemplateBtn_clicked();
     void on_m_browseBtn_clicked();
     void on_m_previewBtn_clicked();
     void on_m_delimiterCombo_currentIndexChanged(int index);
@@ -84,7 +95,7 @@ private slots:
 private:
     bool loadAndPreview();
     void updatePreviewTable();
-    void updateColumnMapping();
+    void runValidation();
     void applyImport();
 
     // -----------------------------------------------------------------------
@@ -94,11 +105,17 @@ private:
     Ui::DataImportDialog* ui;     ///< UI 界面对象（从 .ui 文件自动生成）
     DataTable::Ptr m_targetTable; ///< 目标数据表
     DataTable::Ptr m_importedTable; ///< 导入后的数据表
-    CsvParseResult m_parseResult; ///< 解析结果
+    ImportData m_importData;      ///< 统一解析结果
     ImportMode m_importMode;       ///< 导入模式
     QString m_currentFilePath;     ///< 当前文件路径
 
-    QFutureWatcher<CsvParseResult>* m_watcher;  ///< 后台解析监视器（setFuture 替换即只响应最新任务）
+    /// 校验结果（预览时生成；导入前复查）
+    QHash<int, int> m_columnMapping;          ///< 文件列 → 目标列 映射
+    QList<CellIssue> m_issues;                ///< 校验问题列表
+    QStringList m_missingRequired;            ///< 缺失的必填列（Error）
+    QStringList m_unknownColumns;             ///< 未知列（Warning，忽略）
+
+    QFutureWatcher<ParseOutcome>* m_watcher;    ///< 后台解析监视器（setFuture 替换即只响应最新任务）
 };
 
 #endif // DATA_IMPORT_DIALOG_H

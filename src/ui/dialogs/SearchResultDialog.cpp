@@ -6,9 +6,7 @@
 #include "SearchResultDialog.h"
 #include "ui_SearchResultDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "service/ProjectService.h"
-#include "data/repositories/ProjectRepository.h"
 #include "service/TagService.h"
-#include "data/repositories/TagRepository.h"
 #include "core/models/Tag.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
@@ -16,6 +14,8 @@
 
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/ProjectRepository.h"
+#include "data/repositories/TagRepository.h"
 #include <QDateTime>
 #include <QLabel>
 
@@ -43,6 +43,14 @@ SearchResultDialog::SearchResultDialog(QWidget* parent, const QString& initialKe
     // 初始化搜索历史
     updateHistory();
 
+    // 搜索防抖：输入停顿 300ms 后自动搜索，连续输入不触发
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    m_searchTimer->setInterval(300);
+    connect(m_searchTimer, &QTimer::timeout, this, &SearchResultDialog::debouncedSearch);
+    connect(ui->m_searchEdit, &QLineEdit::textChanged,
+            this, &SearchResultDialog::on_m_searchEdit_textChanged);
+
     if (!initialKeyword.isEmpty()) {
         ui->m_searchEdit->setText(initialKeyword);
         performSearch();
@@ -63,6 +71,22 @@ SearchResultDialog::~SearchResultDialog()
 // ===========================================================================
 // 搜索
 // ===========================================================================
+
+void SearchResultDialog::on_m_searchEdit_textChanged(const QString& text)
+{
+    // 空关键词不自动搜索（避免频繁弹提示/刷结果）
+    if (text.trimmed().isEmpty()) {
+        m_searchTimer->stop();
+        return;
+    }
+    m_searchTimer->start();   // 重新计时，实现防抖
+}
+
+void SearchResultDialog::debouncedSearch()
+{
+    if (ui->m_searchEdit->text().trimmed().isEmpty()) return;
+    performSearch();
+}
 
 void SearchResultDialog::on_m_searchBtn_clicked()
 {

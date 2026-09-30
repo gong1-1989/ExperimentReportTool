@@ -33,6 +33,7 @@ private slots:
     void on_btnEdit_clicked();
     void on_btnDelete_clicked();
     void on_btnResetPassword_clicked();
+    void on_btnManageGroup_clicked();
     void on_btnRefresh_clicked();
     void on_btnClose_clicked();
     void on_userTable_itemSelectionChanged();

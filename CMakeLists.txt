@@ -67,12 +67,19 @@ file(GLOB_RECURSE CORE_QRC CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.qrc")
 # 排除 main.cpp
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
 
-# 排除已删除的旧块编辑器（v9.17.0 重构后文件已移除；
-# Windows 工作副本可能残留旧文件，排除后即使残留也不参与编译）
-list(FILTER CORE_SOURCES EXCLUDE REGEX
-    ".*/src/editor/(BlockEditor|TextBlockEditor|TableBlockEditor|ChartBlockEditor|ImageBlockEditor|CodeBlockEditor|FormulaBlockEditor|OtherBlockEditors)\..*$")
 
 add_library(core_lib SHARED ${CORE_SOURCES} ${CORE_UI} ${CORE_QRC})
+
+# 预编译头（Qt 聚合头）：显著减少全量/增量编译时间
+# 注意：首次全量编译会稍慢（生成 .gch），之后所有 .cpp 编译均受益
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)
+    target_precompile_headers(core_lib PRIVATE
+        <QtCore>
+        <QtGui>
+        <QtWidgets>
+        <QtSql>
+    )
+endif()
 
 target_include_directories(core_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(core_lib PUBLIC ${QT_LIBS})

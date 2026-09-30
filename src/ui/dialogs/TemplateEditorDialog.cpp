@@ -11,12 +11,12 @@
 #include "ui_TemplateEditorDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "editor/ReportEditor.h"
 #include "service/TemplateService.h"
-#include "data/repositories/TemplateRepository.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
 
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/TemplateRepository.h"
 #include <QInputDialog>
 #include <QVBoxLayout>
 

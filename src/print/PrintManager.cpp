@@ -7,9 +7,6 @@
 #include "export/ObjectRenderer.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
-#include "core/utils/AppTheme.h"
-#include "chart/ChartRenderer.h"
-#include "chart/ChartConfigDialog.h"
 #include "service/DataTableService.h"
 #include "core/models/DataTable.h"
 
@@ -21,6 +18,9 @@
 #include <QPainter>
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "core/utils/AppTheme.h"
+#include "chart/ChartRenderer.h"
+#include "chart/ChartConfigDialog.h"
 #include <QApplication>
 #include <QSettings>
 #include <QFile>

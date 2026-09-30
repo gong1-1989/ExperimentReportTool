@@ -71,7 +71,6 @@ private slots:
     void onOpenReport();
     void onImportData();
     void onExportProject();
-    void onExit();
     void onLogout();
 
     // -----------------------------------------------------------------------
@@ -109,6 +108,10 @@ private slots:
     void onAboutQt();
     void onCheckUpdate();
     void onPluginManager();
+    void onAuditLog();
+    void onStats();
+    void onBatchExport();
+    void onBatchDelete();
     void onUserManager();
 
     // -----------------------------------------------------------------------
@@ -245,6 +248,10 @@ private:
     QAction* m_actionCheckUpdate;
     QAction* m_actionPluginManager;
     QAction* m_actionUserManager;  ///< 用户管理（仅管理员可见）
+    QAction* m_actionAuditLog;     ///< 审计日志（仅超管/总管可见）
+    QAction* m_actionStats;       ///< 报表中心（超管/总管全局，组长本组）
+    QAction* m_actionBatchExport;  ///< 批量导出选中报告
+    QAction* m_actionBatchDelete;  ///< 批量删除选中报告
 
     // -----------------------------------------------------------------------
     // 成员变量 - 数据

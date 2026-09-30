@@ -7,15 +7,14 @@
  */
 
 #include "LoginDialog.h"
+#include "service/AuditService.h"
 #include "ui_LoginDialog.h"
 #include "core/utils/AppDimensions.h"
 #include "core/utils/UserSession.h"
 #include "service/UserService.h"
-#include "data/repositories/UserRepository.h"
-#include "ui/dialogs/ChangePasswordDialog.h"
-
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/UserRepository.h"
 #include <QTimer>
 
 // ============================================================================
@@ -77,25 +76,8 @@ void LoginDialog::on_loginButton_clicked()
     // 保存到会话
     UserSession::instance().setCurrentUser(user);
 
-    // 检查是否需要首次改密码
-    if (user->mustChangePassword()) {
-        ChangePasswordDialog dlg(true, this);
-        if (dlg.exec() == QDialog::Accepted) {
-            if (UserService::changePassword(user->id(), dlg.newPassword())) {
-                user->setMustChangePassword(false);
-                UiHelper::info(this, tr("成功"), tr("密码修改成功，请重新登录"));
-                // 清空密码框，让用户重新登录
-                ui->passwordEdit->clear();
-                ui->passwordEdit->setFocus();
-                return;
-            } else {
-                UiHelper::warning(this, tr("错误"), tr("密码修改失败，请重试"));
-                return;
-            }
-        }
-        // 用户取消改密码，不允许登录
-        return;
-    }
+    // 审计留痕
+    AuditService::log(tr("登录"), username);
 
     accept();  // 登录成功，关闭对话框
 }

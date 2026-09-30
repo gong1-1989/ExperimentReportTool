@@ -265,15 +265,12 @@ private slots:
     // 标题栏信号
     // -----------------------------------------------------------------------
     void onTitleChanged(const QString& title);
-    void onStatusChanged(int index);
     void onDateChanged(const QDate& date);
     void on_m_tagCombo_currentIndexChanged(int index);
 
     // -----------------------------------------------------------------------
     // 工具栏
     // -----------------------------------------------------------------------
-    void onUndo();
-    void onRedo();
 
 private:
     // -----------------------------------------------------------------------

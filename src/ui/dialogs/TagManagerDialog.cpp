@@ -6,14 +6,13 @@
 #include "TagManagerDialog.h"
 #include "ui_TagManagerDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "service/TagService.h"
-#include "data/repositories/TagRepository.h"
 #include "core/models/Tag.h"
 #include "core/utils/Logger.h"
 #include "core/utils/AppDimensions.h"
-#include "core/utils/AppTheme.h"
-
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/TagRepository.h"
+#include "core/utils/AppTheme.h"
 #include <QInputDialog>
 #include <QColor>
 #include <QBrush>

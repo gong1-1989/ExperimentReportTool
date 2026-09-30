@@ -13,12 +13,15 @@
 #include "chart/ChartConfigDialog.h"
 #include "data/repositories/DataTableRepository.h"
 #include "core/models/DataTable.h"
-#include "core/models/Report.h"
 #include "ui/UiHelper.h"
+#include "core/models/Report.h"
+#include "service/AttachmentService.h"
+#include "core/models/Attachment.h"
 
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QFileInfo>
 
 ObjectInsertionController::ObjectInsertionController(QWidget* parent, ReportEditor* editor)
     : m_parent(parent)
@@ -105,6 +108,68 @@ void ObjectInsertionController::insertDivider()
     m_editor->insertDividerAtCursor();
     m_editor->focusDocument();
 }
+void ObjectInsertionController::insertAttachmentCard()
+{
+    if (!m_editor) return;
+    const QString filePath = QFileDialog::getOpenFileName(
+        m_parent, QObject::tr("选择附件文件"), QDir::homePath(),
+        QObject::tr("所有文件 (*.*)"));
+    if (filePath.isEmpty()) return;
+
+    const Attachment::Ptr att = AttachmentService::uploadFile(m_editor->reportId(), filePath);
+    if (!att) {
+        UiHelper::warning(m_parent, QObject::tr("插入附件"),
+                          QObject::tr("附件上传失败，请检查文件是否可读。"));
+        return;
+    }
+    bool ok = false;
+    const QString caption = QInputDialog::getText(
+        m_parent, QObject::tr("附件说明"), QObject::tr("题注（可留空）:"), QLineEdit::Normal,
+        QString(), &ok);
+
+    QJsonObject data;
+    data["fileName"] = att->fileName();
+    data["filePath"] = att->storedPath();
+    data["fileSize"] = att->fileSize();
+    data["mimeType"] = att->mimeType();
+    data["uploadedAt"] = att->uploadedAt().toString(Qt::ISODate);
+    data["caption"] = ok ? caption : QString();
+    m_editor->insertObject(BlockType::AttachmentCard, data);
+    m_editor->focusDocument();
+}
+
+void ObjectInsertionController::insertMediaRef()
+{
+    if (!m_editor) return;
+    const QString filePath = QFileDialog::getOpenFileName(
+        m_parent, QObject::tr("选择音视频文件"), QDir::homePath(),
+        QObject::tr("媒体文件 (*.mp4 *.avi *.mov *.mkv *.wmv *.flv *.mp3 *.wav *.flac *.m4a *.ogg)"));
+    if (filePath.isEmpty()) return;
+
+    const Attachment::Ptr att = AttachmentService::uploadFile(m_editor->reportId(), filePath);
+    if (!att) {
+        UiHelper::warning(m_parent, QObject::tr("插入音视频"),
+                          QObject::tr("媒体文件上传失败，请检查文件是否可读。"));
+        return;
+    }
+    const QString suffix = QFileInfo(att->storedPath()).suffix().toLower();
+    const bool isVideo = QStringList{ "mp4", "avi", "mov", "mkv", "wmv", "flv" }.contains(suffix);
+    const bool isAudio = QStringList{ "mp3", "wav", "flac", "m4a", "ogg" }.contains(suffix);
+    if (!isVideo && !isAudio) {
+        UiHelper::warning(m_parent, QObject::tr("插入音视频"),
+                          QObject::tr("不支持的文件类型（%1），请选择音视频文件。").arg(suffix));
+        AttachmentService::remove(att->id());
+        return;
+    }
+
+    QJsonObject data;
+    data["mediaType"] = isVideo ? QStringLiteral("video") : QStringLiteral("audio");
+    data["title"] = att->fileName();
+    data["filePath"] = att->storedPath();
+    m_editor->insertObject(BlockType::MediaRef, data);
+    m_editor->focusDocument();
+}
+
 
 void ObjectInsertionController::editObject(const QString& objectId)
 {
@@ -204,6 +269,12 @@ void ObjectInsertionController::editObject(const QString& objectId)
         }
         break;
     }
+    case BlockType::AttachmentCard:
+    case BlockType::MediaRef:
+        // D 域对象：无可编辑字段（删除可通过删除键/对象菜单）
+        UiHelper::info(m_parent, QObject::tr("编辑对象"),
+                       QObject::tr("该对象为卡片/引用类型，不支持内容编辑；如需移除请删除对象。"));
+        break;
     default:
         break;
     }

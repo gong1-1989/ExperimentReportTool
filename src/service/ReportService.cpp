@@ -4,6 +4,7 @@
  */
 
 #include "ReportService.h"
+#include "AuditService.h"
 #include "data/repositories/ReportRepository.h"
 #include "data/repositories/TagRepository.h"
 #include "core/models/Tag.h"
@@ -45,6 +46,10 @@ bool ReportService::update(const Report::Ptr& report)
     Q_ASSERT(report);
     if (!report) return false;
     report->setUpdatedAt(QDateTime::currentDateTime());
+    // 状态只能由工作流流转（WorkflowService/updateStatus）修改：
+    // 普通保存时强制保留数据库中的原状态，防止任何路径绕过审核流程
+    const Report::Ptr old = ReportRepository::findById(report->id());
+    if (old) report->setStatus(old->status());
     return ReportRepository::update(report);
 }
 
@@ -61,9 +66,15 @@ bool ReportService::save(const Report::Ptr& report)
 
 bool ReportService::remove(qint64 id)
 {
+    // 先取标题用于审计（删除后不可查）
+    QString title;
+    if (const Report::Ptr r = getById(id)) title = r->title();
+
     const bool ok = ReportRepository::remove(id);
     if (!ok) {
         LOG_ERROR(QString("删除报告失败: id=%1").arg(id));
+    } else {
+        AuditService::log(QObject::tr("删除报告"), title, id);
     }
     return ok;
 }

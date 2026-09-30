@@ -23,7 +23,7 @@ public:
     static bool resetPassword(qint64 userId);
     static void updateLastLogin(qint64 userId);
     static User::Ptr create(const QString& username, const QString& displayName,
-                            const QString& password, UserRole role = UserRole::User);
+                            const QString& password, UserRole role = UserRole::Member);
     static bool save(const User::Ptr& user);
     static bool update(const User::Ptr& user);
     static bool remove(qint64 id);

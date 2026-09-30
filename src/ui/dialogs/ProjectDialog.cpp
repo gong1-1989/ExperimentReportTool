@@ -10,11 +10,11 @@
 #include "ProjectDialog.h"
 #include "ui_ProjectDialog.h"  // 由 uic 工具从 .ui 文件自动生成
 #include "service/ProjectService.h"
-#include "data/repositories/ProjectRepository.h"
 #include "core/utils/UserSession.h"
 
 #include <QMessageBox>
 #include "ui/UiHelper.h"
+#include "data/repositories/ProjectRepository.h"
 #include <QPushButton>
 
 // ===========================================================================

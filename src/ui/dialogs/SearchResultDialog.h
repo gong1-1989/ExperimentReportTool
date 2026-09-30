@@ -20,6 +20,7 @@
 #include <QTextBrowser>
 #include <QList>
 #include <QSplitter>
+#include <QTimer>
 
 #include "search/SearchService.h"
 
@@ -54,6 +55,7 @@ signals:
     void reportOpenRequested(qint64 reportId);
 
 private slots:
+    void on_m_searchEdit_textChanged(const QString& text);
     void on_m_searchBtn_clicked();
     void on_m_clearHistoryBtn_clicked();
     void on_m_openBtn_clicked();
@@ -67,6 +69,7 @@ private:
 
     Ui::SearchResultDialog* ui;  ///< UI 界面对象（从 .ui 文件自动生成）
     void performSearch();
+    void debouncedSearch();          ///< 防抖触发（输入停顿后自动搜索）
     void displayResults(const QList<SearchResultItem>& results);
     void updateHistory();
 
@@ -83,6 +86,7 @@ private:
 
     SearchService* m_searchService;    ///< 搜索服务
     QList<SearchResultItem> m_results; ///< 当前搜索结果
+    QTimer* m_searchTimer;             ///< 搜索防抖定时器（300ms）
 };
 
 #endif // SEARCH_RESULT_DIALOG_H

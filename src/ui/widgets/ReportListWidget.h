@@ -25,6 +25,7 @@
 
 #include "core/models/Report.h"
 #include "ReportListModel.h"
+#include "service/PermissionService.h"
 
 namespace Ui {
 class ReportListWidget;
@@ -36,6 +37,16 @@ class ReportListWidget;
  * 顶部为工具栏（搜索框、筛选、视图切换、新建按钮），
  * 下方为报告列表（表格视图 / 卡片视图切换）。
  */
+/// 报告列表筛选类型（标签按钮）
+enum class ReportFilter {
+    All,        ///< 全部（当前项目内）
+    Mine,       ///< 我的（当前项目内，创建者=当前用户）
+    Group,      ///< 本组（当前项目内，创建者与当前用户同组）
+    ToReview,   ///< 待审核（全局跨项目，状态=Submitted）
+    ToApprove,  ///< 待审批（全局跨项目，状态=Reviewed）
+    Rejected    ///< 被退回（状态=Draft 且 last_action 以 _reject 结尾）
+};
+
 class ReportListWidget : public QWidget
 {
     Q_OBJECT
@@ -54,12 +65,17 @@ public:
      * @brief 刷新报告列表
      */
     void refreshList();
+    void syncFilterButtons();
+    Report::List rejectedReportsFor(const User::Ptr& user, const Report::List& all);
 
     /**
      * @brief 获取当前选中的报告 ID
      * @return 报告 ID，未选中返回 -1
      */
     qint64 currentReportId() const;
+
+    /// 当前选中的报告 ID 列表（批量导出/批量删除用）
+    QList<qint64> selectedReportIds() const;
 
 signals:
     /**
@@ -123,6 +139,12 @@ private:
     /// 获取筛选后的报告列表
     Report::List getFilteredReports();
 
+    /// 创建筛选标签按钮栏（动态创建，不依赖.ui）
+    void setupFilterButtons();
+
+    /// 根据当前用户角色和待办数量，设置默认选中的筛选标签
+    void applyDefaultFilter();
+
     Ui::ReportListWidget* ui;
     ReportListModel* m_tableModel;   ///< 表格模型（虚拟化 + 局部刷新）
     QTimer* m_searchTimer;           ///< 搜索防抖计时器（击键后延迟刷新列表）
@@ -134,6 +156,8 @@ private:
     qint64 m_currentProjectId;  ///< 当前项目 ID
     QString m_searchKeyword;    ///< 搜索关键词
     int m_statusFilterIndex;    ///< 状态筛选索引（0=全部）
+    ReportFilter m_reportFilter; ///< 角色筛选标签（默认All）
+    QList<QPushButton*> m_filterButtons; ///< 筛选标签按钮
 };
 
 #endif // REPORT_LIST_WIDGET_H
